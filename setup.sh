@@ -34,7 +34,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Global variables
-SCRIPT_VERSION="self-hosting-install.sh v1.2.6-selfhost-2025-01-20-1"
+SCRIPT_VERSION="self-hosting-install.sh v1.2.7-selfhost-2025-01-20-1"
 DEFAULT_GITHUB_REPO="https://github.com/9technologygroup/patchmon.net.git"
 FQDN=""
 CUSTOM_FQDN=""
@@ -819,7 +819,7 @@ EOF
     cat > frontend/.env << EOF
 VITE_API_URL=$SERVER_PROTOCOL_SEL://$FQDN/api/v1
 VITE_APP_NAME=PatchMon
-VITE_APP_VERSION=1.2.6
+VITE_APP_VERSION=1.2.7
 EOF
 
     print_status "Environment files created"
@@ -1191,7 +1191,7 @@ create_agent_version() {
     
     # Priority 2: Use fallback version if not found
     if [ "$current_version" = "N/A" ] || [ -z "$current_version" ]; then
-        current_version="1.2.6"
+        current_version="1.2.7"
         print_warning "Could not determine version, using fallback: $current_version"
     fi
     
@@ -1208,100 +1208,7 @@ create_agent_version() {
     if [ -f "$APP_DIR/agents/patchmon-agent.sh" ]; then
         cp "$APP_DIR/agents/patchmon-agent.sh" "$APP_DIR/backend/"
         
-        # Create agent version using Node.js script
-        node -e "
-require('dotenv').config();
-const { PrismaClient } = require('@prisma/client');
-const fs = require('fs');
-const crypto = require('crypto');
-
-async function createAgentVersion() {
-  let prisma;
-  try {
-    // Initialize Prisma client with proper error handling
-    prisma = new PrismaClient();
-    
-    // Test database connection
-    await prisma.\$connect();
-    console.log('✅ Database connection established');
-    
-    // Debug: Check what models are available
-    console.log('Available Prisma models:', Object.keys(prisma).filter(key => !key.startsWith('\$')));
-    
-    // Check if agent_versions model exists
-    if (!prisma.agent_versions) {
-      console.log('❌ agent_versions model not found in Prisma client');
-      console.log('Available models:', Object.keys(prisma).filter(key => !key.startsWith('\$')));
-      console.log('Skipping agent version creation...');
-      return;
-    }
-    
-    const currentVersion = '$current_version';
-    const agentScript = fs.readFileSync('./patchmon-agent.sh', 'utf8');
-    
-    // Check if current version already exists
-    const existingVersion = await prisma.agent_versions.findUnique({
-      where: { version: currentVersion }
-    });
-    
-    if (existingVersion) {
-      // Version exists, always update the script content during updates
-      console.log('📝 Updating existing agent version ' + currentVersion + ' with latest script content...');
-      await prisma.agent_versions.update({
-        where: { version: currentVersion },
-        data: {
-          script_content: agentScript,
-          is_current: true,
-          is_default: true,
-          release_notes: 'Version ' + currentVersion + ' - Initial Deployment\\n\\nThis version contains the latest agent script from the deployment.'
-        }
-      });
-      console.log('✅ Agent version ' + currentVersion + ' updated successfully with latest script');
-    } else {
-      // Version doesn't exist, create it
-      console.log('🆕 Creating new agent version ' + currentVersion + '...');
-      await prisma.agent_versions.create({
-        data: {
-          id: crypto.randomUUID(),
-          version: currentVersion,
-          script_content: agentScript,
-          is_current: true,
-          is_default: true,
-          release_notes: 'Version ' + currentVersion + ' - Initial Deployment\\n\\nThis version contains the latest agent script from the deployment.',
-          updated_at: new Date()
-        }
-      });
-      console.log('✅ Agent version ' + currentVersion + ' created successfully');
-    }
-    
-    // Set all other versions to not be current/default
-    await prisma.agent_versions.updateMany({
-      where: { version: { not: currentVersion } },
-      data: { is_current: false, is_default: false }
-    });
-    
-    console.log('✅ Agent version management completed successfully');
-  } catch (error) {
-    console.error('❌ Error creating agent version:', error.message);
-    console.error('❌ Error details:', error);
-    process.exit(1);
-  } finally {
-    if (prisma) {
-      await prisma.\$disconnect();
-    }
-  }
-}
-
-createAgentVersion();
-"
-        
-        # Clean up
-        rm -f "$APP_DIR/backend/patchmon-agent.sh"
-        
-        print_status "Agent version created"
-    else
-        print_warning "Agent script not found, skipping agent version creation"
-    fi
+        print_status "Agent version management removed - using file-based approach"
 }
 
 # Create deployment summary

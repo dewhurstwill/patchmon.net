@@ -7,18 +7,6 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model agent_versions {
-  id                 String   @id
-  version            String   @unique
-  is_current         Boolean  @default(false)
-  release_notes      String?
-  download_url       String?
-  min_server_version String?
-  created_at         DateTime @default(now())
-  updated_at         DateTime
-  is_default         Boolean  @default(false)
-  script_content     String?
-}
 
 model dashboard_preferences {
   id         String   @id

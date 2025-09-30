@@ -37,7 +37,7 @@ function createPrismaClient() {
 			},
 		},
 		log:
-			process.env.NODE_ENV === "development"
+			process.env.PRISMA_LOG_QUERIES === "true"
 				? ["query", "info", "warn", "error"]
 				: ["warn", "error"],
 		errorFormat: "pretty",
@@ -66,17 +66,21 @@ async function waitForDatabase(prisma, options = {}) {
 		parseInt(process.env.PM_DB_CONN_WAIT_INTERVAL, 10) ||
 		2;
 
-	console.log(
-		`Waiting for database connection (max ${maxAttempts} attempts, ${waitInterval}s interval)...`,
-	);
+	if (process.env.ENABLE_LOGGING === "true") {
+		console.log(
+			`Waiting for database connection (max ${maxAttempts} attempts, ${waitInterval}s interval)...`,
+		);
+	}
 
 	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
 		try {
 			const isConnected = await checkDatabaseConnection(prisma);
 			if (isConnected) {
-				console.log(
-					`Database connected successfully after ${attempt} attempt(s)`,
-				);
+				if (process.env.ENABLE_LOGGING === "true") {
+					console.log(
+						`Database connected successfully after ${attempt} attempt(s)`,
+					);
+				}
 				return true;
 			}
 		} catch {
@@ -84,9 +88,11 @@ async function waitForDatabase(prisma, options = {}) {
 		}
 
 		if (attempt < maxAttempts) {
-			console.log(
-				`⏳ Database not ready (attempt ${attempt}/${maxAttempts}), retrying in ${waitInterval}s...`,
-			);
+			if (process.env.ENABLE_LOGGING === "true") {
+				console.log(
+					`⏳ Database not ready (attempt ${attempt}/${maxAttempts}), retrying in ${waitInterval}s...`,
+				);
+			}
 			await new Promise((resolve) => setTimeout(resolve, waitInterval * 1000));
 		}
 	}

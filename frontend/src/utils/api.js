@@ -114,18 +114,11 @@ export const settingsAPI = {
 	getServerUrl: () => api.get("/settings/server-url"),
 };
 
-// Agent Version API
-export const agentVersionAPI = {
-	list: () => api.get("/hosts/agent/versions"),
-	create: (data) => api.post("/hosts/agent/versions", data),
-	update: (id, data) => api.put(`/hosts/agent/versions/${id}`, data),
-	delete: (id) => api.delete(`/hosts/agent/versions/${id}`),
-	setCurrent: (id) => api.patch(`/hosts/agent/versions/${id}/current`),
-	setDefault: (id) => api.patch(`/hosts/agent/versions/${id}/default`),
-	download: (version) =>
-		api.get(`/hosts/agent/download${version ? `?version=${version}` : ""}`, {
-			responseType: "blob",
-		}),
+// Agent File Management API
+export const agentFileAPI = {
+	getInfo: () => api.get("/hosts/agent/info"),
+	upload: (scriptContent) => api.post("/hosts/agent/upload", { scriptContent }),
+	download: () => api.get("/hosts/agent/download", { responseType: "blob" }),
 };
 
 // Repository API

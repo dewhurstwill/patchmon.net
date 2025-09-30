@@ -1083,13 +1083,13 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 								One-Line Installation
 							</h4>
 							<p className="text-sm text-primary-700 dark:text-primary-300 mb-3">
-								Copy and run this command on the target host to automatically
-								install and configure the PatchMon agent:
+								Copy and run this command on the target host to securely install
+								and configure the PatchMon agent:
 							</p>
 							<div className="flex items-center gap-2">
 								<input
 									type="text"
-									value={`curl -s ${serverUrl}/api/v1/hosts/install | bash -s -- ${serverUrl} "${host.api_id}" "${host.api_key}"`}
+									value={`curl -ks ${serverUrl}/api/v1/hosts/install -H "X-API-ID: ${host.api_id}" -H "X-API-KEY: ${host.api_key}" | bash`}
 									readOnly
 									className="flex-1 px-3 py-2 border border-primary-300 dark:border-primary-600 rounded-md bg-white dark:bg-secondary-800 text-sm font-mono text-secondary-900 dark:text-white"
 								/>
@@ -1097,7 +1097,7 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 									type="button"
 									onClick={() =>
 										copyToClipboard(
-											`curl -s ${serverUrl}/api/v1/hosts/install | bash -s -- ${serverUrl} "${host.api_id}" "${host.api_key}"`,
+											`curl -ks ${serverUrl}/api/v1/hosts/install -H "X-API-ID: ${host.api_id}" -H "X-API-KEY: ${host.api_key}" | bash`,
 										)
 									}
 									className="btn-primary flex items-center gap-1"
@@ -1118,21 +1118,19 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 							<div className="space-y-3">
 								<div className="bg-white dark:bg-secondary-800 rounded-md p-3 border border-secondary-200 dark:border-secondary-600">
 									<h5 className="text-sm font-medium text-secondary-900 dark:text-white mb-2">
-										1. Download Agent Script
+										1. Create Configuration Directory
 									</h5>
 									<div className="flex items-center gap-2">
 										<input
 											type="text"
-											value={`curl -o /tmp/patchmon-agent.sh ${serverUrl}/api/v1/hosts/agent/download`}
+											value="sudo mkdir -p /etc/patchmon"
 											readOnly
 											className="flex-1 px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-sm font-mono text-secondary-900 dark:text-white"
 										/>
 										<button
 											type="button"
 											onClick={() =>
-												copyToClipboard(
-													`curl -o /tmp/patchmon-agent.sh ${serverUrl}/api/v1/hosts/agent/download`,
-												)
+												copyToClipboard("sudo mkdir -p /etc/patchmon")
 											}
 											className="btn-secondary flex items-center gap-1"
 										>
@@ -1144,12 +1142,12 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 
 								<div className="bg-white dark:bg-secondary-800 rounded-md p-3 border border-secondary-200 dark:border-secondary-600">
 									<h5 className="text-sm font-medium text-secondary-900 dark:text-white mb-2">
-										2. Install Agent
+										2. Download and Install Agent Script
 									</h5>
 									<div className="flex items-center gap-2">
 										<input
 											type="text"
-											value="sudo mkdir -p /etc/patchmon && sudo mv /tmp/patchmon-agent.sh /usr/local/bin/patchmon-agent.sh && sudo chmod +x /usr/local/bin/patchmon-agent.sh"
+											value={`curl -ko /usr/local/bin/patchmon-agent.sh ${serverUrl}/api/v1/hosts/agent/download -H "X-API-ID: ${host.api_id}" -H "X-API-KEY: ${host.api_key}" && sudo chmod +x /usr/local/bin/patchmon-agent.sh`}
 											readOnly
 											className="flex-1 px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-sm font-mono text-secondary-900 dark:text-white"
 										/>
@@ -1157,7 +1155,7 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 											type="button"
 											onClick={() =>
 												copyToClipboard(
-													"sudo mkdir -p /etc/patchmon && sudo mv /tmp/patchmon-agent.sh /usr/local/bin/patchmon-agent.sh && sudo chmod +x /usr/local/bin/patchmon-agent.sh",
+													`curl -ko /usr/local/bin/patchmon-agent.sh ${serverUrl}/api/v1/hosts/agent/download -H "X-API-ID: ${host.api_id}" -H "X-API-KEY: ${host.api_key}" && sudo chmod +x /usr/local/bin/patchmon-agent.sh`,
 												)
 											}
 											className="btn-secondary flex items-center gap-1"
@@ -1175,7 +1173,7 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 									<div className="flex items-center gap-2">
 										<input
 											type="text"
-											value={`sudo /usr/local/bin/patchmon-agent.sh configure "${host.api_id}" "${host.api_key}"`}
+											value={`sudo /usr/local/bin/patchmon-agent.sh configure "${host.api_id}" "${host.api_key}" "${serverUrl}"`}
 											readOnly
 											className="flex-1 px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-sm font-mono text-secondary-900 dark:text-white"
 										/>
@@ -1183,7 +1181,7 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 											type="button"
 											onClick={() =>
 												copyToClipboard(
-													`sudo /usr/local/bin/patchmon-agent.sh configure "${host.api_id}" "${host.api_key}"`,
+													`sudo /usr/local/bin/patchmon-agent.sh configure "${host.api_id}" "${host.api_key}" "${serverUrl}"`,
 												)
 											}
 											className="btn-secondary flex items-center gap-1"
@@ -1253,7 +1251,7 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 									<div className="flex items-center gap-2">
 										<input
 											type="text"
-											value={`echo "${new Date().getMinutes()} * * * * /usr/local/bin/patchmon-agent.sh update >/dev/null 2>&1" | sudo crontab -`}
+											value={`(sudo crontab -l 2>/dev/null | grep -v "patchmon-agent.sh update"; echo "${new Date().getMinutes()} * * * * /usr/local/bin/patchmon-agent.sh update >/dev/null 2>&1") | sudo crontab -`}
 											readOnly
 											className="flex-1 px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-sm font-mono text-secondary-900 dark:text-white"
 										/>
@@ -1261,7 +1259,7 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 											type="button"
 											onClick={() =>
 												copyToClipboard(
-													`echo "${new Date().getMinutes()} * * * * /usr/local/bin/patchmon-agent.sh update >/dev/null 2>&1" | sudo crontab -`,
+													`(sudo crontab -l 2>/dev/null | grep -v "patchmon-agent.sh update"; echo "${new Date().getMinutes()} * * * * /usr/local/bin/patchmon-agent.sh update >/dev/null 2>&1") | sudo crontab -`,
 												)
 											}
 											className="btn-secondary flex items-center gap-1"

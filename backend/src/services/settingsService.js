@@ -72,9 +72,11 @@ async function syncEnvironmentToSettings(currentSettings) {
 			if (currentValue !== convertedValue) {
 				updates[settingsField] = convertedValue;
 				hasChanges = true;
-				console.log(
-					`Environment variable ${envVar} (${envValue}) differs from settings ${settingsField} (${currentValue}), updating...`,
-				);
+				if (process.env.ENABLE_LOGGING === "true") {
+					console.log(
+						`Environment variable ${envVar} (${envValue}) differs from settings ${settingsField} (${currentValue}), updating...`,
+					);
+				}
 			}
 		}
 	}
@@ -89,7 +91,9 @@ async function syncEnvironmentToSettings(currentSettings) {
 	if (currentSettings.server_url !== constructedServerUrl) {
 		updates.server_url = constructedServerUrl;
 		hasChanges = true;
-		console.log(`Updating server_url to: ${constructedServerUrl}`);
+		if (process.env.ENABLE_LOGGING === "true") {
+			console.log(`Updating server_url to: ${constructedServerUrl}`);
+		}
 	}
 
 	// Update settings if there are changes
@@ -101,9 +105,11 @@ async function syncEnvironmentToSettings(currentSettings) {
 				updated_at: new Date(),
 			},
 		});
-		console.log(
-			`Synced ${Object.keys(updates).length} environment variables to settings`,
-		);
+		if (process.env.ENABLE_LOGGING === "true") {
+			console.log(
+				`Synced ${Object.keys(updates).length} environment variables to settings`,
+			);
+		}
 		return updatedSettings;
 	}
 

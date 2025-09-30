@@ -20,10 +20,14 @@ else
     log "Agents directory already contains files, skipping copy"
 fi
 
-log "Starting PatchMon Backend..."
+log "Starting PatchMon Backend (${NODE_ENV:-production})..."
 
 log "Running database migrations..."
 npx prisma migrate deploy
 
 log "Starting application..."
-exec npm start
+if [ "${NODE_ENV}" = "development" ]; then
+    exec npm run dev
+else
+    exec npm start
+fi

@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# PatchMon Agent Script v1.2.6
+# PatchMon Agent Script v1.2.7
 # This script sends package update information to the PatchMon server using API credentials
 
 # Configuration
 PATCHMON_SERVER="${PATCHMON_SERVER:-http://localhost:3001}"
 API_VERSION="v1"
-AGENT_VERSION="1.2.6"
+AGENT_VERSION="1.2.7"
 CONFIG_FILE="/etc/patchmon/agent.conf"
 CREDENTIALS_FILE="/etc/patchmon/credentials"
 LOG_FILE="/var/log/patchmon-agent.log"
@@ -144,7 +144,7 @@ EOF
 test_credentials() {
     load_credentials
     
-    local response=$(curl -s -X POST \
+    local response=$(curl -ks -X POST \
         -H "Content-Type: application/json" \
         -H "X-API-ID: $API_ID" \
         -H "X-API-KEY: $API_KEY" \
@@ -809,7 +809,7 @@ EOF
     local payload=$(echo "$base_payload $merged_json" | jq -s '.[0] * .[1]')
     
     
-    local response=$(curl -s -X POST \
+    local response=$(curl -ks -X POST \
         -H "Content-Type: application/json" \
         -H "X-API-ID: $API_ID" \
         -H "X-API-KEY: $API_KEY" \
@@ -821,25 +821,18 @@ EOF
             success "Update sent successfully"
             echo "$response" | grep -o '"packagesProcessed":[0-9]*' | cut -d':' -f2 | xargs -I {} info "Processed {} packages"
             
-            # Check for PatchMon agent update instructions (this updates the agent script, not system packages)
-            if echo "$response" | grep -q '"autoUpdate":{'; then
-                local auto_update_section=$(echo "$response" | grep -o '"autoUpdate":{[^}]*}')
-                local should_update=$(echo "$auto_update_section" | grep -o '"shouldUpdate":true' | cut -d':' -f2)
-                if [[ "$should_update" == "true" ]]; then
-                    local latest_version=$(echo "$auto_update_section" | grep -o '"latestVersion":"[^"]*' | cut -d'"' -f4)
-                    local current_version=$(echo "$auto_update_section" | grep -o '"currentVersion":"[^"]*' | cut -d'"' -f4)
-                    local update_message=$(echo "$auto_update_section" | grep -o '"message":"[^"]*' | cut -d'"' -f4)
-                    
-                    info "PatchMon agent update detected: $update_message"
-                    info "Current version: $current_version, Latest version: $latest_version"
-                    
-                    # Automatically run update-agent command to update the PatchMon agent script
-                    info "Automatically updating PatchMon agent to latest version..."
+            # Check if auto-update is enabled and check for agent updates locally
+            if check_auto_update_enabled; then
+                info "Auto-update is enabled, checking for agent updates..."
+                if check_agent_update_needed; then
+                    info "Agent update available, automatically updating..."
                     if "$0" update-agent; then
                         success "PatchMon agent update completed successfully"
                     else
                         warning "PatchMon agent update failed, but data was sent successfully"
                     fi
+                else
+                    info "Agent is up to date"
                 fi
             fi
             
@@ -877,7 +870,7 @@ EOF
 ping_server() {
     load_credentials
     
-    local response=$(curl -s -X POST \
+    local response=$(curl -ks -X POST \
         -H "Content-Type: application/json" \
         -H "X-API-ID: $API_ID" \
         -H "X-API-KEY: $API_KEY" \
@@ -920,7 +913,7 @@ check_version() {
     
     info "Checking for agent updates..."
     
-    local response=$(curl -s -X GET "$PATCHMON_SERVER/api/$API_VERSION/hosts/agent/version")
+    local response=$(curl -ks -H "X-API-ID: $API_ID" -H "X-API-KEY: $API_KEY" -X GET "$PATCHMON_SERVER/api/$API_VERSION/hosts/agent/version")
     
     if [[ $? -eq 0 ]]; then
         local current_version=$(echo "$response" | grep -o '"currentVersion":"[^"]*' | cut -d'"' -f4)
@@ -949,59 +942,147 @@ check_version() {
     fi
 }
 
+# Check if auto-update is enabled (both globally and for this host)
+check_auto_update_enabled() {
+    # Get settings from server using API credentials
+    local response=$(curl -ks -H "X-API-ID: $API_ID" -H "X-API-KEY: $API_KEY" -X GET "$PATCHMON_SERVER/api/$API_VERSION/hosts/settings" 2>/dev/null)
+    if [[ $? -ne 0 ]]; then
+        return 1
+    fi
+    
+    # Check if both global and host auto-update are enabled
+    local global_auto_update=$(echo "$response" | grep -o '"auto_update":true' | cut -d':' -f2)
+    local host_auto_update=$(echo "$response" | grep -o '"host_auto_update":true' | cut -d':' -f2)
+    
+    if [[ "$global_auto_update" == "true" && "$host_auto_update" == "true" ]]; then
+        return 0
+    else
+        return 1
+    fi
+}
+
+# Check if agent update is needed (internal function for auto-update)
+check_agent_update_needed() {
+    # Get current agent timestamp
+    local current_timestamp=0
+    if [[ -f "$0" ]]; then
+        current_timestamp=$(stat -c %Y "$0" 2>/dev/null || stat -f %m "$0" 2>/dev/null || echo "0")
+    fi
+    
+    # Get server agent info using API credentials
+    local response=$(curl -ks -H "X-API-ID: $API_ID" -H "X-API-KEY: $API_KEY" -X GET "$PATCHMON_SERVER/api/$API_VERSION/hosts/agent/timestamp" 2>/dev/null)
+    
+    if [[ $? -eq 0 ]]; then
+        local server_version=$(echo "$response" | grep -o '"version":"[^"]*' | cut -d'"' -f4)
+        local server_timestamp=$(echo "$response" | grep -o '"timestamp":[0-9]*' | cut -d':' -f2)
+        local server_exists=$(echo "$response" | grep -o '"exists":true' | cut -d':' -f2)
+        
+        if [[ "$server_exists" != "true" ]]; then
+            return 1
+        fi
+        
+        # Check if update is needed
+        if [[ "$server_version" != "$AGENT_VERSION" ]]; then
+            return 0  # Update needed due to version mismatch
+        elif [[ "$server_timestamp" -gt "$current_timestamp" ]]; then
+            return 0  # Update needed due to newer timestamp
+        else
+            return 1  # No update needed
+        fi
+    else
+        return 1  # Failed to check
+    fi
+}
+
+# Check for agent updates based on version and timestamp (interactive command)
+check_agent_update() {
+    load_credentials
+    
+    info "Checking for agent updates..."
+    
+    # Get current agent timestamp
+    local current_timestamp=0
+    if [[ -f "$0" ]]; then
+        current_timestamp=$(stat -c %Y "$0" 2>/dev/null || stat -f %m "$0" 2>/dev/null || echo "0")
+    fi
+    
+    # Get server agent info using API credentials
+    local response=$(curl -ks -H "X-API-ID: $API_ID" -H "X-API-KEY: $API_KEY" -X GET "$PATCHMON_SERVER/api/$API_VERSION/hosts/agent/timestamp")
+    
+    if [[ $? -eq 0 ]]; then
+        local server_version=$(echo "$response" | grep -o '"version":"[^"]*' | cut -d'"' -f4)
+        local server_timestamp=$(echo "$response" | grep -o '"timestamp":[0-9]*' | cut -d':' -f2)
+        local server_exists=$(echo "$response" | grep -o '"exists":true' | cut -d':' -f2)
+        
+        if [[ "$server_exists" != "true" ]]; then
+            warning "No agent script found on server"
+            return 1
+        fi
+        
+        info "Current agent version: $AGENT_VERSION (timestamp: $current_timestamp)"
+        info "Server agent version: $server_version (timestamp: $server_timestamp)"
+        
+        # Check if update is needed
+        if [[ "$server_version" != "$AGENT_VERSION" ]]; then
+            info "Version mismatch detected - update needed"
+            return 0
+        elif [[ "$server_timestamp" -gt "$current_timestamp" ]]; then
+            info "Server script is newer - update needed"
+            return 0
+        else
+            info "Agent is up to date"
+            return 1
+        fi
+    else
+        error "Failed to check agent timestamp from server"
+        return 1
+    fi
+}
+
 # Update agent script
 update_agent() {
     load_credentials
     
     info "Updating agent script..."
     
-    local response=$(curl -s -X GET "$PATCHMON_SERVER/api/$API_VERSION/hosts/agent/version")
+    local download_url="$PATCHMON_SERVER/api/$API_VERSION/hosts/agent/download"
     
-    if [[ $? -eq 0 ]]; then
-        local download_url=$(echo "$response" | grep -o '"downloadUrl":"[^"]*' | cut -d'"' -f4)
-        
-        if [[ -z "$download_url" ]]; then
-            download_url="$PATCHMON_SERVER/api/$API_VERSION/hosts/agent/download"
-        elif [[ "$download_url" =~ ^/ ]]; then
-            # If download_url is relative, prepend the server URL
-            download_url="$PATCHMON_SERVER$download_url"
-        fi
-        
-        info "Downloading latest agent from: $download_url"
-        
-        # Create backup of current script
-        cp "$0" "$0.backup.$(date +%Y%m%d_%H%M%S)"
-        
-        # Download new version
-        if curl -s -o "/tmp/patchmon-agent-new.sh" "$download_url"; then
-            # Verify the downloaded script is valid
-            if bash -n "/tmp/patchmon-agent-new.sh" 2>/dev/null; then
-                # Replace current script
-                mv "/tmp/patchmon-agent-new.sh" "$0"
-                chmod +x "$0"
-                success "Agent updated successfully"
-                info "Backup saved as: $0.backup.$(date +%Y%m%d_%H%M%S)"
-                
-                # Get the new version number
-                local new_version=$(grep '^AGENT_VERSION=' "$0" | cut -d'"' -f2)
-                info "Updated to version: $new_version"
-                
-                # Automatically run update to send new information to PatchMon
-                info "Sending updated information to PatchMon..."
-                if "$0" update; then
-                    success "Successfully sent updated information to PatchMon"
-                else
-                    warning "Failed to send updated information to PatchMon (this is not critical)"
-                fi
+    info "Downloading latest agent from: $download_url"
+    
+    # Clean up old backups (keep only last 3)
+    ls -t "$0.backup."* 2>/dev/null | tail -n +4 | xargs -r rm -f
+    
+    # Create backup of current script
+    local backup_file="$0.backup.$(date +%Y%m%d_%H%M%S)"
+    cp "$0" "$backup_file"
+    
+    # Download new version using API credentials
+    if curl -ks -H "X-API-ID: $API_ID" -H "X-API-KEY: $API_KEY" -o "/tmp/patchmon-agent-new.sh" "$download_url"; then
+        # Verify the downloaded script is valid
+        if bash -n "/tmp/patchmon-agent-new.sh" 2>/dev/null; then
+            # Replace current script
+            mv "/tmp/patchmon-agent-new.sh" "$0"
+            chmod +x "$0"
+            success "Agent updated successfully"
+            info "Backup saved as: $backup_file"
+            
+            # Get the new version number
+            local new_version=$(grep '^AGENT_VERSION=' "$0" | cut -d'"' -f2)
+            info "Updated to version: $new_version"
+            
+            # Automatically run update to send new information to PatchMon
+            info "Sending updated information to PatchMon..."
+            if "$0" update; then
+                success "Successfully sent updated information to PatchMon"
             else
-                error "Downloaded script is invalid"
-                rm -f "/tmp/patchmon-agent-new.sh"
+                warning "Failed to send updated information to PatchMon (this is not critical)"
             fi
         else
-            error "Failed to download new agent script"
+            error "Downloaded script is invalid"
+            rm -f "/tmp/patchmon-agent-new.sh"
         fi
     else
-        error "Failed to get update information"
+        error "Failed to download new agent script"
     fi
 }
 
@@ -1009,7 +1090,7 @@ update_agent() {
 update_crontab() {
     load_credentials
     info "Updating crontab with current policy..."
-    local response=$(curl -s -X GET "$PATCHMON_SERVER/api/$API_VERSION/settings/update-interval")
+    local response=$(curl -ks -H "X-API-ID: $API_ID" -H "X-API-KEY: $API_KEY" -X GET "$PATCHMON_SERVER/api/$API_VERSION/settings/update-interval")
     if [[ $? -eq 0 ]]; then
         local update_interval=$(echo "$response" | grep -o '"updateInterval":[0-9]*' | cut -d':' -f2)
         if [[ -n "$update_interval" ]]; then
@@ -1024,18 +1105,27 @@ update_crontab() {
                 expected_crontab="*/$update_interval * * * * /usr/local/bin/patchmon-agent.sh update >/dev/null 2>&1"
             fi
             
-            # Get current crontab
-            local current_crontab=$(crontab -l 2>/dev/null | grep "patchmon-agent.sh update" | head -1)
+            # Get current crontab (without patchmon entries)
+            local current_crontab_without_patchmon=$(crontab -l 2>/dev/null | grep -v "/usr/local/bin/patchmon-agent.sh update" || true)
+            local current_patchmon_entry=$(crontab -l 2>/dev/null | grep "/usr/local/bin/patchmon-agent.sh update" | head -1)
             
             # Check if crontab needs updating
-            if [[ "$current_crontab" == "$expected_crontab" ]]; then
+            if [[ "$current_patchmon_entry" == "$expected_crontab" ]]; then
                 info "Crontab is already up to date (interval: $update_interval minutes)"
                 return 0
             fi
             
             info "Setting update interval to $update_interval minutes"
-            echo "$expected_crontab" | crontab -
-            success "Crontab updated successfully"
+            
+            # Combine existing cron (without patchmon entries) + new patchmon entry
+            {
+                if [[ -n "$current_crontab_without_patchmon" ]]; then
+                    echo "$current_crontab_without_patchmon"
+                fi
+                echo "$expected_crontab"
+            } | crontab -
+            
+            success "Crontab updated successfully (duplicates removed)"
         else
             error "Could not determine update interval from server"
         fi
@@ -1147,7 +1237,7 @@ main() {
             check_root
             setup_directories
             load_config
-            configure_credentials "$2" "$3"
+            configure_credentials "$2" "$3" "$4"
             ;;
         "test")
             check_root
@@ -1178,6 +1268,11 @@ main() {
             load_config
             check_version
             ;;
+        "check-agent-update")
+            setup_directories
+            load_config
+            check_agent_update
+            ;;
         "update-agent")
             check_root
             setup_directories
@@ -1195,22 +1290,23 @@ main() {
             ;;
         *)
             echo "PatchMon Agent v$AGENT_VERSION - API Credential Based"
-            echo "Usage: $0 {configure|test|update|ping|config|check-version|update-agent|update-crontab|diagnostics}"
+            echo "Usage: $0 {configure|test|update|ping|config|check-version|check-agent-update|update-agent|update-crontab|diagnostics}"
             echo ""
             echo "Commands:"
-            echo "  configure <API_ID> <API_KEY>  - Configure API credentials for this host"
+            echo "  configure <API_ID> <API_KEY> [SERVER_URL] - Configure API credentials for this host"
             echo "  test                          - Test API credentials connectivity"
             echo "  update                        - Send package update information to server"
             echo "  ping                          - Test connectivity to server"
             echo "  config                        - Show current configuration"
             echo "  check-version                 - Check for agent updates"
+            echo "  check-agent-update            - Check for agent updates using timestamp comparison"
             echo "  update-agent                  - Update agent to latest version"
             echo "  update-crontab                - Update crontab with current policy"
             echo "  diagnostics                   - Show detailed system diagnostics"
             echo ""
             echo "Setup Process:"
             echo "  1. Contact your PatchMon administrator to create a host entry"
-            echo "  2. Run: $0 configure <API_ID> <API_KEY> (provided by admin)"
+            echo "  2. Run: $0 configure <API_ID> <API_KEY> [SERVER_URL] (provided by admin)"
             echo "  3. Run: $0 test (to verify connection)"
             echo "  4. Run: $0 update (to send initial package data)"
             echo ""

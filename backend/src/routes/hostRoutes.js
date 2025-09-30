@@ -3,8 +3,8 @@ const { PrismaClient } = require("@prisma/client");
 const { body, validationResult } = require("express-validator");
 const { v4: uuidv4 } = require("uuid");
 const crypto = require("node:crypto");
-const path = require("node:path");
-const fs = require("node:fs");
+const _path = require("node:path");
+const _fs = require("node:fs");
 const { authenticateToken, _requireAdmin } = require("../middleware/auth");
 const {
 	requireManageHosts,
@@ -14,72 +14,48 @@ const {
 const router = express.Router();
 const prisma = new PrismaClient();
 
-// Public endpoint to download the agent script
+// Secure endpoint to download the agent script (requires API authentication)
 router.get("/agent/download", async (req, res) => {
 	try {
-		const { version } = req.query;
+		// Verify API credentials
+		const apiId = req.headers["x-api-id"];
+		const apiKey = req.headers["x-api-key"];
 
-		let agentVersion;
-
-		if (version) {
-			// Download specific version
-			agentVersion = await prisma.agent_versions.findUnique({
-				where: { version },
-			});
-
-			if (!agentVersion) {
-				return res.status(404).json({ error: "Agent version not found" });
-			}
-		} else {
-			// Download current version (latest)
-			agentVersion = await prisma.agent_versions.findFirst({
-				where: { is_current: true },
-				orderBy: { created_at: "desc" },
-			});
-
-			if (!agentVersion) {
-				// Fallback to default version
-				agentVersion = await prisma.agent_versions.findFirst({
-					where: { is_default: true },
-					orderBy: { created_at: "desc" },
-				});
-			}
+		if (!apiId || !apiKey) {
+			return res.status(401).json({ error: "API credentials required" });
 		}
 
-		// Use script content from database if available, otherwise fallback to file
-		if (agentVersion?.script_content) {
-			// Convert Windows line endings to Unix line endings
-			const scriptContent = agentVersion.script_content
-				.replace(/\r\n/g, "\n")
-				.replace(/\r/g, "\n");
-			res.setHeader("Content-Type", "application/x-shellscript");
-			res.setHeader(
-				"Content-Disposition",
-				`attachment; filename="patchmon-agent-${agentVersion.version}.sh"`,
-			);
-			res.send(scriptContent);
-		} else {
-			// Fallback to file system when no database version exists or script has no content
-			const agentPath = path.join(
-				__dirname,
-				"../../../agents/patchmon-agent.sh",
-			);
-			if (!fs.existsSync(agentPath)) {
-				return res.status(404).json({ error: "Agent script not found" });
-			}
-			// Read file and convert line endings
-			const scriptContent = fs
-				.readFileSync(agentPath, "utf8")
-				.replace(/\r\n/g, "\n")
-				.replace(/\r/g, "\n");
-			res.setHeader("Content-Type", "application/x-shellscript");
-			const version = agentVersion ? `-${agentVersion.version}` : "";
-			res.setHeader(
-				"Content-Disposition",
-				`attachment; filename="patchmon-agent${version}.sh"`,
-			);
-			res.send(scriptContent);
+		// Validate API credentials
+		const host = await prisma.hosts.findUnique({
+			where: { api_id: apiId },
+		});
+
+		if (!host || host.api_key !== apiKey) {
+			return res.status(401).json({ error: "Invalid API credentials" });
 		}
+
+		// Serve agent script directly from file system
+		const fs = require("node:fs");
+		const path = require("node:path");
+
+		const agentPath = path.join(__dirname, "../../../agents/patchmon-agent.sh");
+
+		if (!fs.existsSync(agentPath)) {
+			return res.status(404).json({ error: "Agent script not found" });
+		}
+
+		// Read file and convert line endings
+		const scriptContent = fs
+			.readFileSync(agentPath, "utf8")
+			.replace(/\r\n/g, "\n")
+			.replace(/\r/g, "\n");
+
+		res.setHeader("Content-Type", "application/x-shellscript");
+		res.setHeader(
+			"Content-Disposition",
+			'attachment; filename="patchmon-agent.sh"',
+		);
+		res.send(scriptContent);
 	} catch (error) {
 		console.error("Agent download error:", error);
 		res.status(500).json({ error: "Failed to download agent script" });
@@ -89,21 +65,32 @@ router.get("/agent/download", async (req, res) => {
 // Version check endpoint for agents
 router.get("/agent/version", async (_req, res) => {
 	try {
-		const currentVersion = await prisma.agent_versions.findFirst({
-			where: { is_current: true },
-			orderBy: { created_at: "desc" },
-		});
+		const fs = require("node:fs");
+		const path = require("node:path");
 
-		if (!currentVersion) {
-			return res.status(404).json({ error: "No current agent version found" });
+		// Read version directly from agent script file
+		const agentPath = path.join(__dirname, "../../../agents/patchmon-agent.sh");
+
+		if (!fs.existsSync(agentPath)) {
+			return res.status(404).json({ error: "Agent script not found" });
 		}
 
+		const scriptContent = fs.readFileSync(agentPath, "utf8");
+		const versionMatch = scriptContent.match(/AGENT_VERSION="([^"]+)"/);
+
+		if (!versionMatch) {
+			return res
+				.status(500)
+				.json({ error: "Could not extract version from agent script" });
+		}
+
+		const currentVersion = versionMatch[1];
+
 		res.json({
-			currentVersion: currentVersion.version,
-			downloadUrl:
-				currentVersion.download_url || `/api/v1/hosts/agent/download`,
-			releaseNotes: currentVersion.release_notes,
-			minServerVersion: currentVersion.min_server_version,
+			currentVersion: currentVersion,
+			downloadUrl: `/api/v1/hosts/agent/download`,
+			releaseNotes: `PatchMon Agent v${currentVersion}`,
+			minServerVersion: null,
 		});
 	} catch (error) {
 		console.error("Version check error:", error);
@@ -527,42 +514,7 @@ router.post(
 				});
 			});
 
-			// Check if agent auto-update is enabled and if there's a newer version available
-			let autoUpdateResponse = null;
-			try {
-				const settings = await prisma.settings.findFirst();
-				// Check both global agent auto-update setting AND host-specific agent auto-update setting
-				if (settings?.auto_update && host.auto_update) {
-					// Get current agent version from the request
-					const currentAgentVersion = req.body.agentVersion;
-
-					if (currentAgentVersion) {
-						// Get the latest agent version
-						const latestAgentVersion = await prisma.agent_versions.findFirst({
-							where: { is_current: true },
-							orderBy: { created_at: "desc" },
-						});
-
-						if (
-							latestAgentVersion &&
-							latestAgentVersion.version !== currentAgentVersion
-						) {
-							// There's a newer version available
-							autoUpdateResponse = {
-								shouldUpdate: true,
-								currentVersion: currentAgentVersion,
-								latestVersion: latestAgentVersion.version,
-								message:
-									"A newer agent version is available. Run: /usr/local/bin/patchmon-agent.sh update-agent",
-								updateCommand: "update-agent",
-							};
-						}
-					}
-				}
-			} catch (error) {
-				console.error("Agent auto-update check error:", error);
-				// Don't fail the update if agent auto-update check fails
-			}
+			// Agent auto-update is now handled client-side by the agent itself
 
 			const response = {
 				message: "Host updated successfully",
@@ -570,11 +522,6 @@ router.post(
 				updatesAvailable: updatesCount,
 				securityUpdates: securityCount,
 			};
-
-			// Add agent auto-update response if available
-			if (autoUpdateResponse) {
-				response.autoUpdate = autoUpdateResponse;
-			}
 
 			// Check if crontab update is needed (when update interval changes)
 			// This is a simple check - if the host has auto-update enabled, we'll suggest crontab update
@@ -1103,9 +1050,26 @@ router.patch(
 	},
 );
 
-// Serve the installation script
-router.get("/install", async (_req, res) => {
+// Serve the installation script (requires API authentication)
+router.get("/install", async (req, res) => {
 	try {
+		// Verify API credentials
+		const apiId = req.headers["x-api-id"];
+		const apiKey = req.headers["x-api-key"];
+
+		if (!apiId || !apiKey) {
+			return res.status(401).json({ error: "API credentials required" });
+		}
+
+		// Validate API credentials
+		const host = await prisma.hosts.findUnique({
+			where: { api_id: apiId },
+		});
+
+		if (!host || host.api_key !== apiKey) {
+			return res.status(401).json({ error: "Invalid API credentials" });
+		}
+
 		const fs = require("node:fs");
 		const path = require("node:path");
 
@@ -1124,14 +1088,11 @@ router.get("/install", async (_req, res) => {
 		script = script.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 
 		// Get the configured server URL from settings
+		let serverUrl = "http://localhost:3001";
 		try {
 			const settings = await prisma.settings.findFirst();
-			if (settings) {
-				// Replace the default server URL in the script with the configured one
-				script = script.replace(
-					/PATCHMON_URL="[^"]*"/g,
-					`PATCHMON_URL="${settings.server_url}"`,
-				);
+			if (settings?.server_url) {
+				serverUrl = settings.server_url;
 			}
 		} catch (settingsError) {
 			console.warn(
@@ -1139,6 +1100,18 @@ router.get("/install", async (_req, res) => {
 				settingsError.message,
 			);
 		}
+
+		// Inject the API credentials and server URL into the script as environment variables
+		const envVars = `#!/bin/bash
+export PATCHMON_URL="${serverUrl}"
+export API_ID="${host.api_id}"
+export API_KEY="${host.api_key}"
+
+`;
+
+		// Remove the shebang from the original script and prepend our env vars
+		script = script.replace(/^#!/, "#");
+		script = envVars + script;
 
 		res.setHeader("Content-Type", "text/plain");
 		res.setHeader(
@@ -1152,214 +1125,246 @@ router.get("/install", async (_req, res) => {
 	}
 });
 
-// ==================== AGENT VERSION MANAGEMENT ====================
+// Serve the removal script (public endpoint - no authentication required)
+router.get("/remove", async (_req, res) => {
+	try {
+		const fs = require("node:fs");
+		const path = require("node:path");
 
-// Get all agent versions (admin only)
+		const scriptPath = path.join(
+			__dirname,
+			"../../../agents/patchmon_remove.sh",
+		);
+
+		if (!fs.existsSync(scriptPath)) {
+			return res.status(404).json({ error: "Removal script not found" });
+		}
+
+		// Read the script content
+		const script = fs.readFileSync(scriptPath, "utf8");
+
+		// Set appropriate headers for script download
+		res.setHeader("Content-Type", "text/plain");
+		res.setHeader(
+			"Content-Disposition",
+			'inline; filename="patchmon_remove.sh"',
+		);
+		res.send(script);
+	} catch (error) {
+		console.error("Removal script error:", error);
+		res.status(500).json({ error: "Failed to serve removal script" });
+	}
+});
+
+// ==================== AGENT FILE MANAGEMENT ====================
+
+// Get agent file information (admin only)
 router.get(
-	"/agent/versions",
+	"/agent/info",
 	authenticateToken,
 	requireManageSettings,
 	async (_req, res) => {
 		try {
-			const versions = await prisma.agent_versions.findMany({
-				orderBy: { created_at: "desc" },
-			});
+			const fs = require("node:fs").promises;
+			const path = require("node:path");
 
-			res.json(versions);
-		} catch (error) {
-			console.error("Get agent versions error:", error);
-			res.status(500).json({ error: "Failed to get agent versions" });
-		}
-	},
-);
+			const agentPath = path.join(
+				__dirname,
+				"../../../agents/patchmon-agent.sh",
+			);
 
-// Create new agent version (admin only)
-router.post(
-	"/agent/versions",
-	authenticateToken,
-	requireManageSettings,
-	[
-		body("version").isLength({ min: 1 }).withMessage("Version is required"),
-		body("releaseNotes").optional().isString(),
-		body("downloadUrl")
-			.optional()
-			.isURL()
-			.withMessage("Download URL must be valid"),
-		body("minServerVersion").optional().isString(),
-		body("scriptContent").optional().isString(),
-		body("isDefault").optional().isBoolean(),
-	],
-	async (req, res) => {
-		try {
-			const errors = validationResult(req);
-			if (!errors.isEmpty()) {
-				return res.status(400).json({ errors: errors.array() });
-			}
+			try {
+				const stats = await fs.stat(agentPath);
+				const content = await fs.readFile(agentPath, "utf8");
 
-			const {
-				version,
-				releaseNotes,
-				downloadUrl,
-				minServerVersion,
-				scriptContent,
-				isDefault,
-			} = req.body;
+				// Extract version from agent script (look for AGENT_VERSION= line)
+				const versionMatch = content.match(/^AGENT_VERSION="([^"]+)"/m);
+				const version = versionMatch ? versionMatch[1] : "unknown";
 
-			// Check if version already exists
-			const existingVersion = await prisma.agent_versions.findUnique({
-				where: { version },
-			});
-
-			if (existingVersion) {
-				return res.status(400).json({ error: "Version already exists" });
-			}
-
-			// If this is being set as default, unset other defaults
-			if (isDefault) {
-				await prisma.agent_versions.updateMany({
-					where: { is_default: true },
-					data: {
-						is_default: false,
-						updated_at: new Date(),
-					},
-				});
-			}
-
-			const agentVersion = await prisma.agent_versions.create({
-				data: {
-					id: uuidv4(),
+				res.json({
+					exists: true,
 					version,
-					release_notes: releaseNotes,
-					download_url: downloadUrl,
-					min_server_version: minServerVersion,
-					script_content: scriptContent,
-					is_default: isDefault || false,
-					is_current: false,
-					updated_at: new Date(),
-				},
-			});
-
-			res.status(201).json(agentVersion);
+					lastModified: stats.mtime,
+					size: stats.size,
+					sizeFormatted: `${(stats.size / 1024).toFixed(1)} KB`,
+				});
+			} catch (error) {
+				if (error.code === "ENOENT") {
+					res.json({
+						exists: false,
+						version: null,
+						lastModified: null,
+						size: 0,
+						sizeFormatted: "0 KB",
+					});
+				} else {
+					throw error;
+				}
+			}
 		} catch (error) {
-			console.error("Create agent version error:", error);
-			res.status(500).json({ error: "Failed to create agent version" });
+			console.error("Get agent info error:", error);
+			res.status(500).json({ error: "Failed to get agent information" });
 		}
 	},
 );
 
-// Set current agent version (admin only)
-router.patch(
-	"/agent/versions/:versionId/current",
+// Update agent file (admin only)
+router.post(
+	"/agent/upload",
 	authenticateToken,
 	requireManageSettings,
 	async (req, res) => {
 		try {
-			const { versionId } = req.params;
+			const { scriptContent } = req.body;
 
-			// First, unset all current versions
-			await prisma.agent_versions.updateMany({
-				where: { is_current: true },
-				data: { is_current: false, updated_at: new Date() },
-			});
+			if (!scriptContent || typeof scriptContent !== "string") {
+				return res.status(400).json({ error: "Script content is required" });
+			}
 
-			// Set the specified version as current
-			const agentVersion = await prisma.agent_versions.update({
-				where: { id: versionId },
-				data: { is_current: true, updated_at: new Date() },
-			});
-
-			res.json(agentVersion);
-		} catch (error) {
-			console.error("Set current agent version error:", error);
-			res.status(500).json({ error: "Failed to set current agent version" });
-		}
-	},
-);
-
-// Set default agent version (admin only)
-router.patch(
-	"/agent/versions/:versionId/default",
-	authenticateToken,
-	requireManageSettings,
-	async (req, res) => {
-		try {
-			const { versionId } = req.params;
-
-			// First, unset all default versions
-			await prisma.agent_versions.updateMany({
-				where: { is_default: true },
-				data: { is_default: false, updated_at: new Date() },
-			});
-
-			// Set the specified version as default
-			const agentVersion = await prisma.agent_versions.update({
-				where: { id: versionId },
-				data: { is_default: true, updated_at: new Date() },
-			});
-
-			res.json(agentVersion);
-		} catch (error) {
-			console.error("Set default agent version error:", error);
-			res.status(500).json({ error: "Failed to set default agent version" });
-		}
-	},
-);
-
-// Delete agent version (admin only)
-router.delete(
-	"/agent/versions/:versionId",
-	authenticateToken,
-	requireManageSettings,
-	async (req, res) => {
-		try {
-			const { versionId } = req.params;
-
-			// Validate versionId format
-			if (!versionId || versionId.length < 10) {
+			// Basic validation - check if it looks like a shell script
+			if (!scriptContent.trim().startsWith("#!/")) {
 				return res.status(400).json({
-					error: "Invalid agent version ID format",
-					details: "The provided ID does not match expected format",
+					error: "Invalid script format - must start with shebang (#!/...)",
 				});
 			}
 
-			const agentVersion = await prisma.agent_versions.findUnique({
-				where: { id: versionId },
-			});
+			const fs = require("node:fs").promises;
+			const path = require("node:path");
 
-			if (!agentVersion) {
-				return res.status(404).json({
-					error: "Agent version not found",
-					details: `No agent version found with ID: ${versionId}`,
-					suggestion:
-						"Please refresh the page to get the latest agent versions",
-				});
+			const agentPath = path.join(
+				__dirname,
+				"../../../agents/patchmon-agent.sh",
+			);
+
+			// Create backup of existing file
+			try {
+				const backupPath = `${agentPath}.backup.${Date.now()}`;
+				await fs.copyFile(agentPath, backupPath);
+				console.log(`Created backup: ${backupPath}`);
+			} catch (error) {
+				// Ignore if original doesn't exist
+				if (error.code !== "ENOENT") {
+					console.warn("Failed to create backup:", error.message);
+				}
 			}
 
-			if (agentVersion.is_current) {
-				return res.status(400).json({
-					error: "Cannot delete current agent version",
-					details: `Version ${agentVersion.version} is currently active`,
-					suggestion: "Set another version as current before deleting this one",
-				});
-			}
+			// Write new agent script
+			await fs.writeFile(agentPath, scriptContent, { mode: 0o755 });
 
-			await prisma.agent_versions.delete({
-				where: { id: versionId },
-			});
+			// Get updated file info
+			const stats = await fs.stat(agentPath);
+			const versionMatch = scriptContent.match(/^AGENT_VERSION="([^"]+)"/m);
+			const version = versionMatch ? versionMatch[1] : "unknown";
 
 			res.json({
-				message: "Agent version deleted successfully",
-				deletedVersion: agentVersion.version,
+				message: "Agent script updated successfully",
+				version,
+				lastModified: stats.mtime,
+				size: stats.size,
+				sizeFormatted: `${(stats.size / 1024).toFixed(1)} KB`,
 			});
 		} catch (error) {
-			console.error("Delete agent version error:", error);
-			res.status(500).json({
-				error: "Failed to delete agent version",
-				details: error.message,
-			});
+			console.error("Upload agent error:", error);
+			res.status(500).json({ error: "Failed to update agent script" });
 		}
 	},
 );
+
+// Get agent file timestamp for update checking (requires API credentials)
+router.get("/agent/timestamp", async (req, res) => {
+	try {
+		// Check for API credentials
+		const apiId = req.headers["x-api-id"];
+		const apiKey = req.headers["x-api-key"];
+
+		if (!apiId || !apiKey) {
+			return res.status(401).json({ error: "API credentials required" });
+		}
+
+		// Verify API credentials
+		const host = await prisma.hosts.findFirst({
+			where: {
+				api_id: apiId,
+				api_key: apiKey,
+			},
+		});
+
+		if (!host) {
+			return res.status(401).json({ error: "Invalid API credentials" });
+		}
+
+		const fs = require("node:fs").promises;
+		const path = require("node:path");
+
+		const agentPath = path.join(__dirname, "../../../agents/patchmon-agent.sh");
+
+		try {
+			const stats = await fs.stat(agentPath);
+			const content = await fs.readFile(agentPath, "utf8");
+
+			// Extract version from agent script
+			const versionMatch = content.match(/^AGENT_VERSION="([^"]+)"/m);
+			const version = versionMatch ? versionMatch[1] : "unknown";
+
+			res.json({
+				version,
+				lastModified: stats.mtime,
+				timestamp: Math.floor(stats.mtime.getTime() / 1000), // Unix timestamp
+				exists: true,
+			});
+		} catch (error) {
+			if (error.code === "ENOENT") {
+				res.json({
+					version: null,
+					lastModified: null,
+					timestamp: 0,
+					exists: false,
+				});
+			} else {
+				throw error;
+			}
+		}
+	} catch (error) {
+		console.error("Get agent timestamp error:", error);
+		res.status(500).json({ error: "Failed to get agent timestamp" });
+	}
+});
+
+// Get settings for agent (requires API credentials)
+router.get("/settings", async (req, res) => {
+	try {
+		// Check for API credentials
+		const apiId = req.headers["x-api-id"];
+		const apiKey = req.headers["x-api-key"];
+
+		if (!apiId || !apiKey) {
+			return res.status(401).json({ error: "API credentials required" });
+		}
+
+		// Verify API credentials
+		const host = await prisma.hosts.findFirst({
+			where: {
+				api_id: apiId,
+				api_key: apiKey,
+			},
+		});
+
+		if (!host) {
+			return res.status(401).json({ error: "Invalid API credentials" });
+		}
+
+		const settings = await prisma.settings.findFirst();
+
+		// Return both global and host-specific auto-update settings
+		res.json({
+			auto_update: settings?.auto_update || false,
+			host_auto_update: host.auto_update || false,
+		});
+	} catch (error) {
+		console.error("Get settings error:", error);
+		res.status(500).json({ error: "Failed to get settings" });
+	}
+});
 
 // Update host friendly name (admin only)
 router.patch(

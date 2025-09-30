@@ -10,8 +10,6 @@ import {
 	Server,
 	Settings as SettingsIcon,
 	Shield,
-	Star,
-	Trash2,
 	X,
 } from "lucide-react";
 
@@ -19,7 +17,7 @@ import { useEffect, useId, useState } from "react";
 import UpgradeNotificationIcon from "../components/UpgradeNotificationIcon";
 import { useUpdateNotification } from "../contexts/UpdateNotificationContext";
 import {
-	agentVersionAPI,
+	agentFileAPI,
 	permissionsAPI,
 	settingsAPI,
 	versionAPI,
@@ -36,6 +34,8 @@ const Settings = () => {
 	const defaultRoleId = useId();
 	const githubRepoUrlId = useId();
 	const sshKeyPathId = useId();
+	const _scriptFileId = useId();
+	const _scriptContentId = useId();
 	const [formData, setFormData] = useState({
 		serverProtocol: "http",
 		serverHost: "localhost",
@@ -70,8 +70,15 @@ const Settings = () => {
 		},
 	];
 
-	// Agent version management state
-	const [showAgentVersionModal, setShowAgentVersionModal] = useState(false);
+	// Agent management state
+	const [_agentInfo, _setAgentInfo] = useState({
+		version: null,
+		lastModified: null,
+		size: null,
+		loading: true,
+		error: null,
+	});
+	const [showUploadModal, setShowUploadModal] = useState(false);
 
 	// Version checking state
 	const [versionInfo, setVersionInfo] = useState({
@@ -157,17 +164,26 @@ const Settings = () => {
 		},
 	});
 
-	// Agent version queries and mutations
+	// Agent file queries and mutations
 	const {
-		data: agentVersions,
-		isLoading: agentVersionsLoading,
-		error: agentVersionsError,
+		data: agentFileInfo,
+		isLoading: agentFileLoading,
+		error: agentFileError,
+		refetch: refetchAgentFile,
 	} = useQuery({
-		queryKey: ["agentVersions"],
-		queryFn: () => {
-			return agentVersionAPI.list().then((res) => {
-				return res.data;
-			});
+		queryKey: ["agentFile"],
+		queryFn: () => agentFileAPI.getInfo().then((res) => res.data),
+	});
+
+	const uploadAgentMutation = useMutation({
+		mutationFn: (scriptContent) =>
+			agentFileAPI.upload(scriptContent).then((res) => res.data),
+		onSuccess: () => {
+			refetchAgentFile();
+			setShowUploadModal(false);
+		},
+		onError: (error) => {
+			console.error("Upload agent error:", error);
 		},
 	});
 
@@ -188,63 +204,6 @@ const Settings = () => {
 
 		loadCurrentVersion();
 	}, []);
-
-	const createAgentVersionMutation = useMutation({
-		mutationFn: (data) => agentVersionAPI.create(data).then((res) => res.data),
-		onSuccess: () => {
-			queryClient.invalidateQueries(["agentVersions"]);
-			setShowAgentVersionModal(false);
-			setAgentVersionForm({
-				version: "",
-				releaseNotes: "",
-				scriptContent: "",
-				isDefault: false,
-			});
-		},
-	});
-
-	const setCurrentAgentVersionMutation = useMutation({
-		mutationFn: (id) => agentVersionAPI.setCurrent(id).then((res) => res.data),
-		onSuccess: () => {
-			queryClient.invalidateQueries(["agentVersions"]);
-		},
-	});
-
-	const setDefaultAgentVersionMutation = useMutation({
-		mutationFn: (id) => agentVersionAPI.setDefault(id).then((res) => res.data),
-		onSuccess: () => {
-			queryClient.invalidateQueries(["agentVersions"]);
-		},
-	});
-
-	const deleteAgentVersionMutation = useMutation({
-		mutationFn: (id) => agentVersionAPI.delete(id).then((res) => res.data),
-		onSuccess: () => {
-			queryClient.invalidateQueries(["agentVersions"]);
-		},
-		onError: (error) => {
-			console.error("Delete agent version error:", error);
-
-			// Show user-friendly error message
-			if (error.response?.data?.error === "Agent version not found") {
-				alert(
-					"Agent version not found. Please refresh the page to get the latest data.",
-				);
-				// Force refresh the agent versions list
-				queryClient.invalidateQueries(["agentVersions"]);
-			} else if (
-				error.response?.data?.error === "Cannot delete current agent version"
-			) {
-				alert(
-					"Cannot delete the current agent version. Please set another version as current first.",
-				);
-			} else {
-				alert(
-					`Failed to delete agent version: ${error.response?.data?.error || error.message}`,
-				);
-			}
-		},
-	});
 
 	// Version checking functions
 	const checkForUpdates = async () => {
@@ -813,180 +772,164 @@ const Settings = () => {
 									<div className="flex items-center mb-2">
 										<SettingsIcon className="h-6 w-6 text-primary-600 mr-3" />
 										<h2 className="text-xl font-semibold text-secondary-900 dark:text-white">
-											Agent Version Management
+											Agent File Management
 										</h2>
 									</div>
 									<p className="text-sm text-secondary-500 dark:text-secondary-300">
-										Manage different versions of the PatchMon agent script
+										Manage the PatchMon agent script file used for installations
+										and updates
 									</p>
 								</div>
-								<button
-									type="button"
-									onClick={() => setShowAgentVersionModal(true)}
-									className="btn-primary flex items-center gap-2"
-								>
-									<Plus className="h-4 w-4" />
-									Add Version
-								</button>
+								<div className="flex items-center gap-2">
+									<button
+										type="button"
+										onClick={() => {
+											const url = "/api/v1/hosts/agent/download";
+											const link = document.createElement("a");
+											link.href = url;
+											link.download = "patchmon-agent.sh";
+											document.body.appendChild(link);
+											link.click();
+											document.body.removeChild(link);
+										}}
+										className="btn-outline flex items-center gap-2"
+									>
+										<Download className="h-4 w-4" />
+										Download
+									</button>
+									<button
+										type="button"
+										onClick={() => setShowUploadModal(true)}
+										className="btn-primary flex items-center gap-2"
+									>
+										<Plus className="h-4 w-4" />
+										Replace Script
+									</button>
+								</div>
 							</div>
 
-							{/* Version Summary */}
-							{agentVersions && agentVersions.length > 0 && (
-								<div className="bg-secondary-50 dark:bg-secondary-700 rounded-lg p-4 mb-6">
-									<div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-										<div className="flex items-center gap-2">
-											<CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400" />
-											<span className="text-sm font-medium text-secondary-700 dark:text-secondary-300">
-												Current Version:
-											</span>
-											<span className="text-sm text-secondary-900 dark:text-white font-mono">
-												{agentVersions.find((v) => v.is_current)?.version ||
-													"None"}
-											</span>
-										</div>
-										<div className="flex items-center gap-2">
-											<Star className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
-											<span className="text-sm font-medium text-secondary-700 dark:text-secondary-300">
-												Default Version:
-											</span>
-											<span className="text-sm text-secondary-900 dark:text-white font-mono">
-												{agentVersions.find((v) => v.is_default)?.version ||
-													"None"}
-											</span>
-										</div>
-									</div>
-								</div>
-							)}
-
-							{agentVersionsLoading ? (
+							{agentFileLoading ? (
 								<div className="flex items-center justify-center py-8">
 									<div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
 								</div>
-							) : agentVersionsError ? (
+							) : agentFileError ? (
 								<div className="text-center py-8">
 									<p className="text-red-600 dark:text-red-400">
-										Error loading agent versions: {agentVersionsError.message}
+										Error loading agent file: {agentFileError.message}
 									</p>
 								</div>
-							) : !agentVersions || agentVersions.length === 0 ? (
+							) : !agentFileInfo?.exists ? (
 								<div className="text-center py-8">
-									<p className="text-secondary-500 dark:text-secondary-400">
-										No agent versions found
+									<Code className="h-12 w-12 text-secondary-400 mx-auto mb-4" />
+									<p className="text-secondary-500 dark:text-secondary-300">
+										No agent script found
+									</p>
+									<p className="text-sm text-secondary-400 dark:text-secondary-400 mt-2">
+										Upload an agent script to get started
 									</p>
 								</div>
 							) : (
-								<div className="space-y-4">
-									{agentVersions.map((version) => (
-										<div
-											key={version.id}
-											className="border border-secondary-200 dark:border-secondary-600 rounded-lg p-4"
-										>
-											<div className="flex items-center justify-between">
-												<div className="flex items-center gap-3">
-													<Code className="h-5 w-5 text-secondary-400 dark:text-secondary-500" />
-													<div>
-														<div className="flex items-center gap-2">
-															<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
-																Version {version.version}
-															</h3>
-															{version.is_default && (
-																<span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary-100 text-primary-800 dark:bg-primary-900 dark:text-primary-200">
-																	<Star className="h-3 w-3 mr-1" />
-																	Default
-																</span>
-															)}
-															{version.is_current && (
-																<span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
-																	Current
-																</span>
-															)}
-														</div>
-														{version.release_notes && (
-															<div className="text-sm text-secondary-500 dark:text-secondary-300 mt-1">
-																<p className="line-clamp-3 whitespace-pre-line">
-																	{version.release_notes}
-																</p>
-															</div>
-														)}
-														<p className="text-xs text-secondary-400 dark:text-secondary-400 mt-1">
-															Created:{" "}
-															{new Date(
-																version.created_at,
-															).toLocaleDateString()}
-														</p>
-													</div>
-												</div>
-												<div className="flex items-center gap-2">
-													<button
-														type="button"
-														onClick={() => {
-															const downloadUrl = `/api/v1/hosts/agent/download?version=${version.version}`;
-															window.open(downloadUrl, "_blank");
-														}}
-														className="btn-outline text-xs flex items-center gap-1"
-													>
-														<Download className="h-3 w-3" />
-														Download
-													</button>
-													<button
-														type="button"
-														onClick={() =>
-															setCurrentAgentVersionMutation.mutate(version.id)
-														}
-														disabled={
-															version.is_current ||
-															setCurrentAgentVersionMutation.isPending
-														}
-														className="btn-outline text-xs flex items-center gap-1"
-													>
-														<CheckCircle className="h-3 w-3" />
-														Set Current
-													</button>
-													<button
-														type="button"
-														onClick={() =>
-															setDefaultAgentVersionMutation.mutate(version.id)
-														}
-														disabled={
-															version.is_default ||
-															setDefaultAgentVersionMutation.isPending
-														}
-														className="btn-outline text-xs flex items-center gap-1"
-													>
-														<Star className="h-3 w-3" />
-														Set Default
-													</button>
-													<button
-														type="button"
-														onClick={() =>
-															deleteAgentVersionMutation.mutate(version.id)
-														}
-														disabled={
-															version.is_default ||
-															version.is_current ||
-															deleteAgentVersionMutation.isPending
-														}
-														className="btn-danger text-xs flex items-center gap-1"
-													>
-														<Trash2 className="h-3 w-3" />
-														Delete
-													</button>
+								<div className="space-y-6">
+									{/* Agent File Info */}
+									<div className="bg-secondary-50 dark:bg-secondary-700 rounded-lg p-6">
+										<h3 className="text-lg font-medium text-secondary-900 dark:text-white mb-4">
+											Current Agent Script
+										</h3>
+										<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+											<div className="flex items-center gap-2">
+												<Code className="h-4 w-4 text-blue-600 dark:text-blue-400" />
+												<span className="text-sm font-medium text-secondary-700 dark:text-secondary-300">
+													Version:
+												</span>
+												<span className="text-sm text-secondary-900 dark:text-white font-mono">
+													{agentFileInfo.version}
+												</span>
+											</div>
+											<div className="flex items-center gap-2">
+												<Download className="h-4 w-4 text-green-600 dark:text-green-400" />
+												<span className="text-sm font-medium text-secondary-700 dark:text-secondary-300">
+													Size:
+												</span>
+												<span className="text-sm text-secondary-900 dark:text-white">
+													{agentFileInfo.sizeFormatted}
+												</span>
+											</div>
+											<div className="flex items-center gap-2">
+												<Clock className="h-4 w-4 text-yellow-600 dark:text-yellow-400" />
+												<span className="text-sm font-medium text-secondary-700 dark:text-secondary-300">
+													Modified:
+												</span>
+												<span className="text-sm text-secondary-900 dark:text-white">
+													{new Date(
+														agentFileInfo.lastModified,
+													).toLocaleDateString()}
+												</span>
+											</div>
+										</div>
+									</div>
+
+									{/* Usage Instructions */}
+									<div className="bg-blue-50 dark:bg-blue-900 border border-blue-200 dark:border-blue-700 rounded-md p-4">
+										<div className="flex">
+											<Shield className="h-5 w-5 text-blue-400 dark:text-blue-300" />
+											<div className="ml-3">
+												<h3 className="text-sm font-medium text-blue-800 dark:text-blue-200">
+													Agent Script Usage
+												</h3>
+												<div className="mt-2 text-sm text-blue-700 dark:text-blue-300">
+													<p className="mb-2">This script is used for:</p>
+													<ul className="list-disc list-inside space-y-1">
+														<li>
+															New agent installations via the install script
+														</li>
+														<li>
+															Agent downloads from the
+															/api/v1/hosts/agent/download endpoint
+														</li>
+														<li>Manual agent deployments and updates</li>
+													</ul>
 												</div>
 											</div>
 										</div>
-									))}
+									</div>
 
-									{agentVersions?.length === 0 && (
-										<div className="text-center py-8">
-											<Code className="h-12 w-12 text-secondary-400 mx-auto mb-4" />
-											<p className="text-secondary-500 dark:text-secondary-300">
-												No agent versions found
-											</p>
-											<p className="text-sm text-secondary-400 dark:text-secondary-400 mt-2">
-												Add your first agent version to get started
-											</p>
+									{/* Uninstall Instructions */}
+									<div className="bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700 rounded-md p-4">
+										<div className="flex">
+											<Shield className="h-5 w-5 text-red-400 dark:text-red-300" />
+											<div className="ml-3">
+												<h3 className="text-sm font-medium text-red-800 dark:text-red-200">
+													Agent Uninstall Command
+												</h3>
+												<div className="mt-2 text-sm text-red-700 dark:text-red-300">
+													<p className="mb-2">
+														To completely remove PatchMon from a host:
+													</p>
+													<div className="flex items-center gap-2">
+														<div className="bg-red-100 dark:bg-red-800 rounded p-2 font-mono text-xs flex-1">
+															curl -ks {window.location.origin}
+															/api/v1/hosts/remove | sudo bash
+														</div>
+														<button
+															type="button"
+															onClick={() => {
+																const command = `curl -ks ${window.location.origin}/api/v1/hosts/remove | sudo bash`;
+																navigator.clipboard.writeText(command);
+																// You could add a toast notification here
+															}}
+															className="px-2 py-1 bg-red-200 dark:bg-red-700 text-red-800 dark:text-red-200 rounded text-xs hover:bg-red-300 dark:hover:bg-red-600 transition-colors"
+														>
+															Copy
+														</button>
+													</div>
+													<p className="mt-2 text-xs">
+														⚠️ This will remove all PatchMon files,
+														configuration, and crontab entries
+													</p>
+												</div>
+											</div>
 										</div>
-									)}
+									</div>
 								</div>
 							)}
 						</div>
@@ -1330,52 +1273,42 @@ const Settings = () => {
 				</div>
 			</div>
 
-			{/* Agent Version Modal */}
-			{showAgentVersionModal && (
-				<AgentVersionModal
-					isOpen={showAgentVersionModal}
-					onClose={() => {
-						setShowAgentVersionModal(false);
-						setAgentVersionForm({
-							version: "",
-							releaseNotes: "",
-							scriptContent: "",
-							isDefault: false,
-						});
-					}}
-					onSubmit={createAgentVersionMutation.mutate}
-					isLoading={createAgentVersionMutation.isPending}
+			{/* Agent Upload Modal */}
+			{showUploadModal && (
+				<AgentUploadModal
+					isOpen={showUploadModal}
+					onClose={() => setShowUploadModal(false)}
+					onSubmit={uploadAgentMutation.mutate}
+					isLoading={uploadAgentMutation.isPending}
+					error={uploadAgentMutation.error}
 				/>
 			)}
 		</div>
 	);
 };
 
-// Agent Version Modal Component
-const AgentVersionModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
-	const [formData, setFormData] = useState({
-		version: "",
-		releaseNotes: "",
-		scriptContent: "",
-		isDefault: false,
-	});
-	const [errors, setErrors] = useState({});
+// Agent Upload Modal Component
+const AgentUploadModal = ({ isOpen, onClose, onSubmit, isLoading, error }) => {
+	const [scriptContent, setScriptContent] = useState("");
+	const [uploadError, setUploadError] = useState("");
 
 	const handleSubmit = (e) => {
 		e.preventDefault();
+		setUploadError("");
 
-		// Basic validation
-		const newErrors = {};
-		if (!formData.version.trim()) newErrors.version = "Version is required";
-		if (!formData.scriptContent.trim())
-			newErrors.scriptContent = "Script content is required";
-
-		if (Object.keys(newErrors).length > 0) {
-			setErrors(newErrors);
+		if (!scriptContent.trim()) {
+			setUploadError("Script content is required");
 			return;
 		}
 
-		onSubmit(formData);
+		if (!scriptContent.trim().startsWith("#!/")) {
+			setUploadError(
+				"Script must start with a shebang (#!/bin/bash or #!/bin/sh)",
+			);
+			return;
+		}
+
+		onSubmit(scriptContent);
 	};
 
 	const handleFileUpload = (e) => {
@@ -1383,10 +1316,8 @@ const AgentVersionModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
 		if (file) {
 			const reader = new FileReader();
 			reader.onload = (event) => {
-				setFormData((prev) => ({
-					...prev,
-					scriptContent: event.target.result,
-				}));
+				setScriptContent(event.target.result);
+				setUploadError("");
 			};
 			reader.readAsText(file);
 		}
@@ -1396,11 +1327,11 @@ const AgentVersionModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
 
 	return (
 		<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-			<div className="bg-white dark:bg-secondary-800 rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+			<div className="bg-white dark:bg-secondary-800 rounded-lg shadow-xl max-w-4xl w-full mx-4 max-h-[90vh] overflow-y-auto">
 				<div className="px-6 py-4 border-b border-secondary-200 dark:border-secondary-600">
 					<div className="flex items-center justify-between">
 						<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
-							Add Agent Version
+							Replace Agent Script
 						</h3>
 						<button
 							type="button"
@@ -1416,112 +1347,69 @@ const AgentVersionModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
 					<div className="space-y-4">
 						<div>
 							<label
-								htmlFor={versionId}
-								className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-1"
+								htmlFor={scriptFileId}
+								className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-2"
 							>
-								Version *
+								Upload Script File
 							</label>
 							<input
-								id={versionId}
-								type="text"
-								value={formData.version}
-								onChange={(e) =>
-									setFormData((prev) => ({ ...prev, version: e.target.value }))
-								}
-								className={`block w-full border rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white ${
-									errors.version
-										? "border-red-300 dark:border-red-500"
-										: "border-secondary-300 dark:border-secondary-600"
-								}`}
-								placeholder="e.g., 1.0.1"
+								id={scriptFileId}
+								type="file"
+								accept=".sh"
+								onChange={handleFileUpload}
+								className="block w-full text-sm text-secondary-500 dark:text-secondary-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100 dark:file:bg-primary-900 dark:file:text-primary-200"
 							/>
-							{errors.version && (
-								<p className="mt-1 text-sm text-red-600 dark:text-red-400">
-									{errors.version}
-								</p>
-							)}
-						</div>
-
-						<div>
-							<label
-								htmlFor={releaseNotesId}
-								className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-1"
-							>
-								Release Notes
-							</label>
-							<textarea
-								id={releaseNotesId}
-								value={formData.releaseNotes}
-								onChange={(e) =>
-									setFormData((prev) => ({
-										...prev,
-										releaseNotes: e.target.value,
-									}))
-								}
-								rows={3}
-								className="block w-full border border-secondary-300 dark:border-secondary-600 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white"
-								placeholder="Describe what's new in this version..."
-							/>
+							<p className="mt-1 text-xs text-secondary-500 dark:text-secondary-400">
+								Select a .sh file to upload, or paste the script content below
+							</p>
 						</div>
 
 						<div>
 							<label
 								htmlFor={scriptContentId}
-								className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-1"
+								className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-2"
 							>
 								Script Content *
 							</label>
-							<div className="space-y-2">
-								<input
-									type="file"
-									accept=".sh"
-									onChange={handleFileUpload}
-									className="block w-full text-sm text-secondary-500 dark:text-secondary-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100 dark:file:bg-primary-900 dark:file:text-primary-200"
-								/>
-								<textarea
-									id={scriptContentId}
-									value={formData.scriptContent}
-									onChange={(e) =>
-										setFormData((prev) => ({
-											...prev,
-											scriptContent: e.target.value,
-										}))
-									}
-									rows={10}
-									className={`block w-full border rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white font-mono text-sm ${
-										errors.scriptContent
-											? "border-red-300 dark:border-red-500"
-											: "border-secondary-300 dark:border-secondary-600"
-									}`}
-									placeholder="Paste the agent script content here..."
-								/>
-								{errors.scriptContent && (
-									<p className="mt-1 text-sm text-red-600 dark:text-red-400">
-										{errors.scriptContent}
-									</p>
-								)}
-							</div>
+							<textarea
+								id={scriptContentId}
+								value={scriptContent}
+								onChange={(e) => {
+									setScriptContent(e.target.value);
+									setUploadError("");
+								}}
+								rows={15}
+								className="block w-full border border-secondary-300 dark:border-secondary-600 rounded-md shadow-sm focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white font-mono text-sm"
+								placeholder="#!/bin/bash&#10;&#10;# PatchMon Agent Script&#10;VERSION=&quot;1.0.0&quot;&#10;&#10;# Your script content here..."
+							/>
 						</div>
 
-						<div className="flex items-center">
-							<input
-								type="checkbox"
-								id={isDefaultId}
-								checked={formData.isDefault}
-								onChange={(e) =>
-									setFormData((prev) => ({
-										...prev,
-										isDefault: e.target.checked,
-									}))
-								}
-								className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-secondary-300 dark:border-secondary-600 rounded"
-							/>
-							<label
-								htmlFor={isDefaultId}
-								className="ml-2 block text-sm text-secondary-700 dark:text-secondary-200"
-							>
-								Set as default version for new installations
-							</label>
+						{(uploadError || error) && (
+							<div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-3">
+								<p className="text-sm text-red-800 dark:text-red-200">
+									{uploadError ||
+										error?.response?.data?.error ||
+										error?.message}
+								</p>
+							</div>
+						)}
+
+						<div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-md p-3">
+							<div className="flex">
+								<AlertCircle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 mr-2 mt-0.5" />
+								<div className="text-sm text-yellow-800 dark:text-yellow-200">
+									<p className="font-medium">Important:</p>
+									<ul className="mt-1 list-disc list-inside space-y-1">
+										<li>This will replace the current agent script file</li>
+										<li>A backup will be created automatically</li>
+										<li>All new installations will use this script</li>
+										<li>
+											Existing agents will download this version on their next
+											update
+										</li>
+									</ul>
+								</div>
+							</div>
 						</div>
 					</div>
 
@@ -1529,8 +1417,12 @@ const AgentVersionModal = ({ isOpen, onClose, onSubmit, isLoading }) => {
 						<button type="button" onClick={onClose} className="btn-outline">
 							Cancel
 						</button>
-						<button type="submit" disabled={isLoading} className="btn-primary">
-							{isLoading ? "Creating..." : "Create Version"}
+						<button
+							type="submit"
+							disabled={isLoading || !scriptContent.trim()}
+							className="btn-primary"
+						>
+							{isLoading ? "Uploading..." : "Replace Script"}
 						</button>
 					</div>
 				</form>

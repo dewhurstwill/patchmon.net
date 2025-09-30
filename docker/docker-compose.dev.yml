@@ -6,6 +6,8 @@ services:
       POSTGRES_DB: patchmon_db
       POSTGRES_USER: patchmon_user
       POSTGRES_PASSWORD: INSECURE_REPLACE_ME_PLEASE_INSECURE
+    ports:
+      - "5432:5432"
     volumes:
       - ./compose_dev_data/db:/var/lib/postgresql/data
     healthcheck:
@@ -18,8 +20,10 @@ services:
     build:
       context: ..
       dockerfile: docker/backend.Dockerfile
+      target: development
     restart: unless-stopped
     environment:
+      NODE_ENV: development
       LOG_LEVEL: info
       DATABASE_URL: postgresql://patchmon_user:INSECURE_REPLACE_ME_PLEASE_INSECURE@database:5432/patchmon_db
       PM_DB_CONN_MAX_ATTEMPTS: 30
@@ -30,16 +34,31 @@ services:
       CORS_ORIGIN: http://localhost:3000
       RATE_LIMIT_WINDOW_MS: 900000
       RATE_LIMIT_MAX: 100
+    ports:
+      - "3001:3001"
     volumes:
       - ./compose_dev_data/agents:/app/agents
     depends_on:
       database:
         condition: service_healthy
+    develop:
+      watch:
+        - action: sync
+          path: ../backend/src
+          target: /app/backend/src
+          ignore:
+            - node_modules/
+        - action: sync
+          path: ../backend/prisma
+          target: /app/backend/prisma
+        - action: rebuild
+          path: ../backend/package.json
 
   frontend:
     build:
       context: ..
       dockerfile: docker/frontend.Dockerfile
+      target: development
     restart: unless-stopped
     environment:
       BACKEND_HOST: backend
@@ -49,3 +68,12 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    develop:
+      watch:
+        - action: sync
+          path: ../frontend/src
+          target: /app/frontend/src
+          ignore:
+            - node_modules/
+        - action: rebuild
+          path: ../frontend/package.json

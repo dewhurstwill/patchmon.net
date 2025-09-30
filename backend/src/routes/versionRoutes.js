@@ -14,7 +14,7 @@ const router = express.Router();
 router.get("/current", authenticateToken, async (_req, res) => {
 	try {
 		// Read version from package.json dynamically
-		let currentVersion = "1.2.6"; // fallback
+		let currentVersion = "1.2.7"; // fallback
 
 		try {
 			const packageJson = require("../../package.json");
@@ -174,7 +174,7 @@ router.get(
 				return res.status(400).json({ error: "Settings not found" });
 			}
 
-			const currentVersion = "1.2.6";
+			const currentVersion = "1.2.7";
 			const latestVersion = settings.latest_version || currentVersion;
 			const isUpdateAvailable = settings.update_available || false;
 			const lastUpdateCheck = settings.last_update_check || null;

@@ -109,7 +109,9 @@ async function triggerCrontabUpdates() {
 router.get("/", authenticateToken, requireManageSettings, async (_req, res) => {
 	try {
 		const settings = await getSettings();
-		console.log("Returning settings:", settings);
+		if (process.env.ENABLE_LOGGING === "true") {
+			console.log("Returning settings:", settings);
+		}
 		res.json(settings);
 	} catch (error) {
 		console.error("Settings fetch error:", error);
@@ -239,9 +241,26 @@ router.get("/server-url", async (_req, res) => {
 	}
 });
 
-// Get update interval policy for agents (public endpoint)
-router.get("/update-interval", async (_req, res) => {
+// Get update interval policy for agents (requires API authentication)
+router.get("/update-interval", async (req, res) => {
 	try {
+		// Verify API credentials
+		const apiId = req.headers["x-api-id"];
+		const apiKey = req.headers["x-api-key"];
+
+		if (!apiId || !apiKey) {
+			return res.status(401).json({ error: "API credentials required" });
+		}
+
+		// Validate API credentials
+		const host = await prisma.hosts.findUnique({
+			where: { api_id: apiId },
+		});
+
+		if (!host || host.api_key !== apiKey) {
+			return res.status(401).json({ error: "Invalid API credentials" });
+		}
+
 		const settings = await getSettings();
 		res.json({
 			updateInterval: settings.update_interval,

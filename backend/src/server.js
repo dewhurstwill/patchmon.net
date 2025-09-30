@@ -30,200 +30,6 @@ const { initSettings } = require("./services/settingsService");
 // Initialize Prisma client with optimized connection pooling for multiple instances
 const prisma = createPrismaClient();
 
-// Simple version comparison function for semantic versioning
-function compareVersions(version1, version2) {
-	const v1Parts = version1.split(".").map(Number);
-	const v2Parts = version2.split(".").map(Number);
-
-	// Ensure both arrays have the same length
-	const maxLength = Math.max(v1Parts.length, v2Parts.length);
-	while (v1Parts.length < maxLength) v1Parts.push(0);
-	while (v2Parts.length < maxLength) v2Parts.push(0);
-
-	for (let i = 0; i < maxLength; i++) {
-		if (v1Parts[i] > v2Parts[i]) return true;
-		if (v1Parts[i] < v2Parts[i]) return false;
-	}
-
-	return false; // versions are equal
-}
-
-// Function to check and import agent version on startup
-async function checkAndImportAgentVersion() {
-	console.log("🔍 Starting agent version auto-import check...");
-
-	// Skip if auto-import is disabled
-	if (process.env.AUTO_IMPORT_AGENT_VERSION === "false") {
-		console.log("❌ Auto-import of agent version is disabled");
-		if (process.env.ENABLE_LOGGING === "true") {
-			logger.info("Auto-import of agent version is disabled");
-		}
-		return;
-	}
-
-	try {
-		const fs = require("node:fs");
-		const path = require("node:path");
-		const crypto = require("node:crypto");
-
-		// Read and validate agent script
-		const agentScriptPath = path.join(
-			__dirname,
-			"../../agents/patchmon-agent.sh",
-		);
-		console.log("📁 Agent script path:", agentScriptPath);
-
-		// Check if file exists
-		if (!fs.existsSync(agentScriptPath)) {
-			console.log("❌ Agent script file not found, skipping version check");
-			if (process.env.ENABLE_LOGGING === "true") {
-				logger.warn("Agent script file not found, skipping version check");
-			}
-			return;
-		}
-
-		console.log("✅ Agent script file found");
-
-		// Read the file content
-		const scriptContent = fs.readFileSync(agentScriptPath, "utf8");
-
-		// Extract version from script content
-		const versionMatch = scriptContent.match(/AGENT_VERSION="([^"]+)"/);
-
-		if (!versionMatch) {
-			console.log(
-				"❌ Could not extract version from agent script, skipping version check",
-			);
-			if (process.env.ENABLE_LOGGING === "true") {
-				logger.warn(
-					"Could not extract version from agent script, skipping version check",
-				);
-			}
-			return;
-		}
-
-		const localVersion = versionMatch[1];
-		console.log("📋 Local version:", localVersion);
-
-		// Check if this version already exists in database
-		const existingVersion = await prisma.agent_versions.findUnique({
-			where: { version: localVersion },
-		});
-
-		if (existingVersion) {
-			console.log(
-				`✅ Agent version ${localVersion} already exists in database`,
-			);
-			if (process.env.ENABLE_LOGGING === "true") {
-				logger.info(`Agent version ${localVersion} already exists in database`);
-			}
-			return;
-		}
-
-		console.log(`🆕 Agent version ${localVersion} not found in database`);
-
-		// Get existing versions for comparison
-		const allVersions = await prisma.agent_versions.findMany({
-			select: { version: true },
-			orderBy: { created_at: "desc" },
-		});
-
-		// Determine version flags and whether to proceed
-		const isFirstVersion = allVersions.length === 0;
-		const isNewerVersion =
-			!isFirstVersion && compareVersions(localVersion, allVersions[0].version);
-
-		if (!isFirstVersion && !isNewerVersion) {
-			console.log(
-				`❌ Agent version ${localVersion} is not newer than existing versions, skipping import`,
-			);
-			if (process.env.ENABLE_LOGGING === "true") {
-				logger.info(
-					`Agent version ${localVersion} is not newer than existing versions, skipping import`,
-				);
-			}
-			return;
-		}
-
-		const shouldSetAsCurrent = isFirstVersion || isNewerVersion;
-		const shouldSetAsDefault = isFirstVersion;
-
-		console.log(
-			isFirstVersion
-				? `📊 No existing versions found in database`
-				: `📊 Found ${allVersions.length} existing versions in database, latest: ${allVersions[0].version}`,
-		);
-
-		if (!isFirstVersion) {
-			console.log(
-				`🔄 Version comparison: ${localVersion} > ${allVersions[0].version} = ${isNewerVersion}`,
-			);
-		}
-
-		// Clear existing flags if needed
-		const updatePromises = [];
-		if (shouldSetAsCurrent) {
-			updatePromises.push(
-				prisma.agent_versions.updateMany({
-					where: { is_current: true },
-					data: { is_current: false },
-				}),
-			);
-		}
-		if (shouldSetAsDefault) {
-			updatePromises.push(
-				prisma.agent_versions.updateMany({
-					where: { is_default: true },
-					data: { is_default: false },
-				}),
-			);
-		}
-
-		if (updatePromises.length > 0) {
-			await Promise.all(updatePromises);
-		}
-
-		// Create new version
-		await prisma.agent_versions.create({
-			data: {
-				id: crypto.randomUUID(),
-				version: localVersion,
-				release_notes: `Auto-imported on startup (${new Date().toISOString()})`,
-				script_content: scriptContent,
-				is_default: shouldSetAsDefault,
-				is_current: shouldSetAsCurrent,
-				updated_at: new Date(),
-			},
-		});
-
-		console.log(
-			`🎉 Successfully auto-imported new agent version ${localVersion} on startup`,
-		);
-		if (shouldSetAsCurrent) {
-			console.log(`✅ Set version ${localVersion} as current version`);
-		}
-		if (shouldSetAsDefault) {
-			console.log(`✅ Set version ${localVersion} as default version`);
-		}
-		if (process.env.ENABLE_LOGGING === "true") {
-			logger.info(
-				`✅ Auto-imported new agent version ${localVersion} on startup (current: ${shouldSetAsCurrent}, default: ${shouldSetAsDefault})`,
-			);
-		}
-	} catch (error) {
-		console.error(
-			"❌ Failed to check/import agent version on startup:",
-			error.message,
-		);
-		if (process.env.ENABLE_LOGGING === "true") {
-			logger.error(
-				"Failed to check/import agent version on startup:",
-				error.message,
-			);
-		}
-	}
-}
-
 // Function to check and create default role permissions on startup
 async function checkAndCreateRolePermissions() {
 	console.log("🔐 Starting role permissions auto-creation check...");
@@ -610,8 +416,6 @@ process.on("SIGTERM", async () => {
 // Initialize dashboard preferences for all users
 async function initializeDashboardPreferences() {
 	try {
-		console.log("🔧 Initializing dashboard preferences for all users...");
-
 		// Get all users
 		const users = await prisma.users.findMany({
 			select: {
@@ -628,11 +432,8 @@ async function initializeDashboardPreferences() {
 		});
 
 		if (users.length === 0) {
-			console.log("ℹ️  No users found in database");
 			return;
 		}
-
-		console.log(`📊 Found ${users.length} users to initialize`);
 
 		let initializedCount = 0;
 		let updatedCount = 0;
@@ -648,10 +449,6 @@ async function initializeDashboardPreferences() {
 
 			if (!hasPreferences) {
 				// User has no preferences - create them
-				console.log(
-					`⚙️  Creating preferences for ${user.username} (${user.role})`,
-				);
-
 				const preferencesData = expectedPreferences.map((pref) => ({
 					id: require("uuid").v4(),
 					user_id: user.id,
@@ -667,18 +464,11 @@ async function initializeDashboardPreferences() {
 				});
 
 				initializedCount++;
-				console.log(
-					`   ✅ Created ${expectedCardCount} cards based on permissions`,
-				);
 			} else {
 				// User already has preferences - check if they need updating
 				const currentCardCount = user.dashboard_preferences.length;
 
 				if (currentCardCount !== expectedCardCount) {
-					console.log(
-						`🔄 Updating preferences for ${user.username} (${user.role}) - ${currentCardCount} → ${expectedCardCount} cards`,
-					);
-
 					// Delete existing preferences
 					await prisma.dashboard_preferences.deleteMany({
 						where: { user_id: user.id },
@@ -700,29 +490,16 @@ async function initializeDashboardPreferences() {
 					});
 
 					updatedCount++;
-					console.log(
-						`   ✅ Updated to ${expectedCardCount} cards based on permissions`,
-					);
-				} else {
-					console.log(
-						`✅ ${user.username} already has correct preferences (${currentCardCount} cards)`,
-					);
 				}
 			}
 		}
 
-		console.log(`\n📋 Dashboard Preferences Initialization Complete:`);
-		console.log(`   - New users initialized: ${initializedCount}`);
-		console.log(`   - Existing users updated: ${updatedCount}`);
-		console.log(
-			`   - Users with correct preferences: ${users.length - initializedCount - updatedCount}`,
-		);
-		console.log(`\n🎯 Permission-based preferences:`);
-		console.log(`   - Cards are now assigned based on actual user permissions`);
-		console.log(
-			`   - Each card requires specific permissions (can_view_hosts, can_view_users, etc.)`,
-		);
-		console.log(`   - Users only see cards they have permission to access`);
+		// Only show summary if there were changes
+		if (initializedCount > 0 || updatedCount > 0) {
+			console.log(
+				`✅ Dashboard preferences: ${initializedCount} initialized, ${updatedCount} updated`,
+			);
+		}
 	} catch (error) {
 		console.error("❌ Error initializing dashboard preferences:", error);
 		throw error;
@@ -888,9 +665,6 @@ async function startServer() {
 			}
 			throw initError; // Fail startup if settings can't be initialised
 		}
-
-		// Check and import agent version on startup
-		await checkAndImportAgentVersion();
 
 		// Check and create default role permissions on startup
 		await checkAndCreateRolePermissions();

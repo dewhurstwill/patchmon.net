@@ -800,7 +800,7 @@ const Layout = ({ children }) => {
 									)}
 								</a>
 								<a
-									href="https://discord.gg/DDKQeW6mnq"
+									href="https://patchmon.net/discord"
 									target="_blank"
 									rel="noopener noreferrer"
 									className="flex items-center justify-center w-10 h-10 bg-gray-50 dark:bg-gray-800 text-secondary-600 dark:text-secondary-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors shadow-sm"
