@@ -722,7 +722,7 @@ install_dependencies() {
         export NPM_CONFIG_CACHE=$APP_DIR/.npm
         export NPM_CONFIG_PREFIX=$APP_DIR/.npm-global
         export NPM_CONFIG_TMP=$APP_DIR/.npm/tmp
-        npm install --omit=dev --no-audit --no-fund --no-save
+        npm install --omit=dev --no-audit --no-fund --no-save --ignore-scripts
     "; then
         print_error "Failed to install root dependencies"
         return 1
@@ -737,7 +737,7 @@ install_dependencies() {
         export NPM_CONFIG_CACHE=$APP_DIR/.npm
         export NPM_CONFIG_PREFIX=$APP_DIR/.npm-global
         export NPM_CONFIG_TMP=$APP_DIR/.npm/tmp
-        npm install --omit=dev --no-audit --no-fund --no-save
+        npm install --omit=dev --no-audit --no-fund --no-save --ignore-scripts
     "; then
         print_error "Failed to install backend dependencies"
         return 1
@@ -753,7 +753,7 @@ install_dependencies() {
         export NPM_CONFIG_CACHE=$APP_DIR/.npm
         export NPM_CONFIG_PREFIX=$APP_DIR/.npm-global
         export NPM_CONFIG_TMP=$APP_DIR/.npm/tmp
-        npm install --no-audit --no-fund --no-save
+        npm install --no-audit --no-fund --no-save --ignore-scripts
     "; then
         print_error "Failed to install frontend dependencies"
         return 1
@@ -1209,7 +1209,11 @@ create_agent_version() {
         cp "$APP_DIR/agents/patchmon-agent.sh" "$APP_DIR/backend/"
         
         print_status "Agent version management removed - using file-based approach"
+# Ensure we close the conditional and the function properly
+    fi
 
+    return 0
+}
 # Create deployment summary
 create_deployment_summary() {
     print_info "Writing deployment summary into deployment-info.txt..."
