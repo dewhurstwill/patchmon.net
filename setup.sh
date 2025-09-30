@@ -1209,7 +1209,6 @@ create_agent_version() {
         cp "$APP_DIR/agents/patchmon-agent.sh" "$APP_DIR/backend/"
         
         print_status "Agent version management removed - using file-based approach"
-}
 
 # Create deployment summary
 create_deployment_summary() {
