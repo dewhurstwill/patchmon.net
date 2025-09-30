@@ -1,6 +1,7 @@
 const { PrismaClient } = require("@prisma/client");
 const { exec } = require("node:child_process");
 const { promisify } = require("node:util");
+const { DAY_IN_MS, CURRENT_DEFAULT_VERSION } = require("../constants");
 
 const prisma = new PrismaClient();
 const execAsync = promisify(exec);
@@ -9,7 +10,7 @@ class UpdateScheduler {
 	constructor() {
 		this.isRunning = false;
 		this.intervalId = null;
-		this.checkInterval = 24 * 60 * 60 * 1000; // 24 hours in milliseconds
+		this.checkInterval = DAY_IN_MS;
 	}
 
 	// Start the scheduler
@@ -109,7 +110,7 @@ class UpdateScheduler {
 			}
 
 			// Read version from package.json dynamically
-			let currentVersion = "1.2.7"; // fallback
+			let currentVersion = CURRENT_DEFAULT_VERSION; // fallback
 			try {
 				const packageJson = require("../../package.json");
 				if (packageJson?.version) {

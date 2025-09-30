@@ -3,6 +3,7 @@ const { PrismaClient } = require("@prisma/client");
 const speakeasy = require("speakeasy");
 const QRCode = require("qrcode");
 const { authenticateToken } = require("../middleware/auth");
+const { TFA_TOKEN_LENGTH, TFA_SECRET_LENGTH } = require("../constants");
 const { body, validationResult } = require("express-validator");
 
 const router = express.Router();
@@ -29,7 +30,7 @@ router.get("/setup", authenticateToken, async (req, res) => {
 		const secret = speakeasy.generateSecret({
 			name: `PatchMon (${req.user.username})`,
 			issuer: "PatchMon",
-			length: 32,
+			length: TFA_SECRET_LENGTH,
 		});
 
 		// Generate QR code
@@ -60,8 +61,8 @@ router.post(
 	authenticateToken,
 	[
 		body("token")
-			.isLength({ min: 6, max: 6 })
-			.withMessage("Token must be 6 digits"),
+			.isLength({ min: TFA_TOKEN_LENGTH, max: TFA_TOKEN_LENGTH })
+			.withMessage(`Token must be ${TFA_TOKEN_LENGTH} digits`),
 		body("token").isNumeric().withMessage("Token must contain only numbers"),
 	],
 	async (req, res) => {

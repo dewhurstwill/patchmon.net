@@ -4,6 +4,7 @@ const { requireManageSettings } = require("../middleware/permissions");
 const { PrismaClient } = require("@prisma/client");
 const { exec } = require("node:child_process");
 const { promisify } = require("node:util");
+const { CURRENT_DEFAULT_VERSION } = require("../constants");
 
 const prisma = new PrismaClient();
 const execAsync = promisify(exec);
@@ -14,7 +15,7 @@ const router = express.Router();
 router.get("/current", authenticateToken, async (_req, res) => {
 	try {
 		// Read version from package.json dynamically
-		let currentVersion = "1.2.7"; // fallback
+		let currentVersion = CURRENT_DEFAULT_VERSION;
 
 		try {
 			const packageJson = require("../../package.json");
