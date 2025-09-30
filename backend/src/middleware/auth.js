@@ -1,5 +1,6 @@
 const jwt = require("jsonwebtoken");
 const { PrismaClient } = require("@prisma/client");
+const { ADMIN_ROLE } = require("../constants/roles");
 
 const prisma = new PrismaClient();
 
@@ -63,7 +64,7 @@ const authenticateToken = async (req, res, next) => {
 
 // Middleware to check admin role
 const requireAdmin = (req, res, next) => {
-	if (req.user.role !== "admin") {
+	if (req.user.role !== ADMIN_ROLE) {
 		return res.status(403).json({ error: "Admin access required" });
 	}
 	next();

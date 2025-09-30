@@ -53,7 +53,7 @@ async function getUserPermissions(userRole) {
 }
 
 // Helper function to create permission-based dashboard preferences for a new user
-async function createDefaultDashboardPreferences(userId, userRole = "user") {
+async function createDefaultDashboardPreferences(userId, userRole = USER_ROLE) {
 	try {
 		// Get user's actual permissions
 		const permissions = await getUserPermissions(userRole);

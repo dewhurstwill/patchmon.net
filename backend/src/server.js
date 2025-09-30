@@ -26,6 +26,7 @@ const versionRoutes = require("./routes/versionRoutes");
 const tfaRoutes = require("./routes/tfaRoutes");
 const updateScheduler = require("./services/updateScheduler");
 const { initSettings } = require("./services/settingsService");
+const { ADMIN_ROLE } = require("./constants/roles");
 
 // Initialize Prisma client with optimized connection pooling for multiple instances
 const prisma = createPrismaClient();
@@ -50,7 +51,7 @@ async function checkAndCreateRolePermissions() {
 		const defaultRoles = [
 			{
 				id: crypto.randomUUID(),
-				role: "admin",
+				role: ADMIN_ROLE,
 				can_view_dashboard: true,
 				can_view_hosts: true,
 				can_manage_hosts: true,
@@ -66,7 +67,7 @@ async function checkAndCreateRolePermissions() {
 			},
 			{
 				id: crypto.randomUUID(),
-				role: "user",
+				role: USER_ROLE,
 				can_view_dashboard: true,
 				can_view_hosts: true,
 				can_manage_hosts: false,

@@ -240,7 +240,7 @@ router.put(
 				auto_update: autoUpdate || false,
 				signup_enabled: signupEnabled || false,
 				default_user_role:
-					defaultUserRole || process.env.DEFAULT_USER_ROLE || "user",
+					defaultUserRole || process.env.DEFAULT_USER_ROLE || USER_ROLE,
 				github_repo_url:
 					githubRepoUrl !== undefined
 						? githubRepoUrl

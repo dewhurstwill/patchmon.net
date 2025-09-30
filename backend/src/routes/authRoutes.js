@@ -12,6 +12,7 @@ const { v4: uuidv4 } = require("uuid");
 const {
 	createDefaultDashboardPreferences,
 } = require("./dashboardPreferencesRoutes");
+const { ADMIN_ROLE, USER_ROLE } = require("../constants/roles");
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -20,7 +21,7 @@ const prisma = new PrismaClient();
 router.get("/check-admin-users", async (_req, res) => {
 	try {
 		const adminCount = await prisma.users.count({
-			where: { role: "admin" },
+			where: { role: ADMIN_ROLE },
 		});
 
 		res.json({
@@ -64,7 +65,7 @@ router.post(
 
 			// Check if any admin users already exist
 			const adminCount = await prisma.users.count({
-				where: { role: "admin" },
+				where: { role: ADMIN_ROLE },
 			});
 
 			if (adminCount > 0) {
@@ -99,7 +100,7 @@ router.post(
 					password_hash: passwordHash,
 					first_name: firstName.trim(),
 					last_name: lastName.trim(),
-					role: "admin",
+					role: ADMIN_ROLE,
 					is_active: true,
 					created_at: new Date(),
 					updated_at: new Date(),
@@ -116,7 +117,7 @@ router.post(
 			});
 
 			// Create default dashboard preferences for the new admin user
-			await createDefaultDashboardPreferences(user.id, "admin");
+			await createDefaultDashboardPreferences(user.id, ADMIN_ROLE);
 
 			// Generate token for immediate login
 			const token = generateToken(user.id);
@@ -207,7 +208,7 @@ router.post(
 			.custom(async (value) => {
 				if (!value) return true; // Optional field
 				// Allow built-in roles even if not in role_permissions table yet
-				const builtInRoles = ["admin", "user"];
+				const builtInRoles = [ADMIN_ROLE, USER_ROLE];
 				if (builtInRoles.includes(value)) return true;
 				const rolePermissions = await prisma.role_permissions.findUnique({
 					where: { role: value },
@@ -232,7 +233,7 @@ router.post(
 			let userRole = role;
 			if (!userRole) {
 				const settings = await prisma.settings.findFirst();
-				userRole = settings?.default_user_role || "user";
+				userRole = settings?.default_user_role || USER_ROLE;
 			}
 
 			// Check if user already exists
@@ -367,10 +368,10 @@ router.put(
 			}
 
 			// Prevent deactivating the last admin
-			if (isActive === false && existingUser.role === "admin") {
+			if (isActive === false && existingUser.role === ADMIN_ROLE) {
 				const adminCount = await prisma.users.count({
 					where: {
-						role: "admin",
+						role: ADMIN_ROLE,
 						is_active: true,
 					},
 				});
@@ -435,10 +436,10 @@ router.delete(
 			}
 
 			// Prevent deleting the last admin
-			if (user.role === "admin") {
+			if (user.role === ADMIN_ROLE) {
 				const adminCount = await prisma.users.count({
 					where: {
-						role: "admin",
+						role: ADMIN_ROLE,
 						is_active: true,
 					},
 				});
@@ -600,7 +601,7 @@ router.post(
 
 			// Get default user role from settings or environment variable
 			const defaultRole =
-				settings?.default_user_role || process.env.DEFAULT_USER_ROLE || "user";
+				settings?.default_user_role || process.env.DEFAULT_USER_ROLE || USER_ROLE;
 
 			// Create user with default role from settings
 			const user = await prisma.users.create({

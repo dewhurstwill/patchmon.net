@@ -5,6 +5,7 @@ const {
 	requireManageSettings,
 	requireManageUsers,
 } = require("../middleware/permissions");
+const { ADMIN_ROLE, USER_ROLE } = require("../constants/roles");
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -77,7 +78,7 @@ router.put(
 			} = req.body;
 
 			// Prevent modifying admin and user role permissions (built-in roles)
-			if (role === "admin" || role === "user") {
+			if (role === ADMIN_ROLE || role === USER_ROLE) {
 				return res.status(400).json({
 					error: `Cannot modify ${role} role permissions - this is a built-in role`,
 				});
@@ -136,7 +137,7 @@ router.delete(
 			const { role } = req.params;
 
 			// Prevent deleting admin and user roles (built-in roles)
-			if (role === "admin" || role === "user") {
+			if (role === ADMIN_ROLE || role === USER_ROLE) {
 				return res.status(400).json({
 					error: `Cannot delete ${role} role - this is a built-in role`,
 				});
