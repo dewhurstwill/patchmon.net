@@ -1093,16 +1093,33 @@ update_crontab() {
     local response=$(curl -ks -H "X-API-ID: $API_ID" -H "X-API-KEY: $API_KEY" -X GET "$PATCHMON_SERVER/api/$API_VERSION/settings/update-interval")
     if [[ $? -eq 0 ]]; then
         local update_interval=$(echo "$response" | grep -o '"updateInterval":[0-9]*' | cut -d':' -f2)
+        # Fallback if not found
+        if [[ -z "$update_interval" ]]; then
+            update_interval=60
+        fi
+        # Normalize interval: 5-59 valid, otherwise snap to hour presets
+        if [[ $update_interval -lt 5 ]]; then
+            update_interval=5
+        elif [[ $update_interval -gt 1440 ]]; then
+            update_interval=1440
+        fi
         if [[ -n "$update_interval" ]]; then
             # Generate the expected crontab entry
             local expected_crontab=""
-            if [[ $update_interval -eq 60 ]]; then
-                # Hourly updates starting at current minute
-                local current_minute=$(date +%M)
-                expected_crontab="$current_minute * * * * /usr/local/bin/patchmon-agent.sh update >/dev/null 2>&1"
-            else
-                # Custom interval updates
+            if [[ $update_interval -lt 60 ]]; then
+                # Every N minutes (5-59)
                 expected_crontab="*/$update_interval * * * * /usr/local/bin/patchmon-agent.sh update >/dev/null 2>&1"
+            else
+                # Hour-based schedules
+                if [[ $update_interval -eq 60 ]]; then
+                    # Hourly updates starting at current minute to spread load
+                    local current_minute=$(date +%M)
+                    expected_crontab="$current_minute * * * * /usr/local/bin/patchmon-agent.sh update >/dev/null 2>&1"
+                else
+                    # For 120, 180, 360, 720, 1440 -> every H hours at minute 0
+                    local hours=$((update_interval / 60))
+                    expected_crontab="0 */$hours * * * /usr/local/bin/patchmon-agent.sh update >/dev/null 2>&1"
+                fi
             fi
             
             # Get current crontab (without patchmon entries)

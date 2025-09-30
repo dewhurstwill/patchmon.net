@@ -206,23 +206,35 @@ fi
 setup_crontab() {
     local update_interval="$1"
     local patchmon_pattern="/usr/local/bin/patchmon-agent.sh update"
-    
+
+    # Normalize interval: min 5, max 1440
+    if [[ -z "$update_interval" ]]; then update_interval=60; fi
+    if [[ "$update_interval" -lt 5 ]]; then update_interval=5; fi
+    if [[ "$update_interval" -gt 1440 ]]; then update_interval=1440; fi
+
     # Get current crontab, remove any existing patchmon entries
     local current_cron=$(crontab -l 2>/dev/null | grep -v "$patchmon_pattern" || true)
-    
+
     # Determine new cron entry
     local new_entry
-    if [[ "$update_interval" -eq 60 ]]; then
-        # Hourly updates - use a random minute to spread load
-        local current_minute=$(date +%M)
-        new_entry="$current_minute * * * * $patchmon_pattern >/dev/null 2>&1"
-        info "📋 Configuring hourly updates at minute $current_minute"
-    else
-        # Custom interval updates
+    if [[ "$update_interval" -lt 60 ]]; then
+        # Every N minutes (5-59)
         new_entry="*/$update_interval * * * * $patchmon_pattern >/dev/null 2>&1"
         info "📋 Configuring updates every $update_interval minutes"
+    else
+        if [[ "$update_interval" -eq 60 ]]; then
+            # Hourly updates - use current minute to spread load
+            local current_minute=$(date +%M)
+            new_entry="$current_minute * * * * $patchmon_pattern >/dev/null 2>&1"
+            info "📋 Configuring hourly updates at minute $current_minute"
+        else
+            # For 120, 180, 360, 720, 1440 -> every H hours at minute 0
+            local hours=$((update_interval / 60))
+            new_entry="0 */$hours * * * $patchmon_pattern >/dev/null 2>&1"
+            info "📋 Configuring updates every $hours hour(s)"
+        fi
     fi
-    
+
     # Combine existing cron (without patchmon entries) + new entry
     {
         if [[ -n "$current_cron" ]]; then
@@ -230,7 +242,7 @@ setup_crontab() {
         fi
         echo "$new_entry"
     } | crontab -
-    
+
     success "✅ Crontab configured successfully (duplicates removed)"
 }
 

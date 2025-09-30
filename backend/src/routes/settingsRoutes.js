@@ -105,6 +105,45 @@ async function triggerCrontabUpdates() {
 	}
 }
 
+// Helpers
+function normalizeUpdateInterval(minutes) {
+	let m = parseInt(minutes, 10);
+	if (Number.isNaN(m)) return 60;
+	if (m < 5) m = 5;
+	if (m > 1440) m = 1440;
+	if (m < 60) {
+		// Clamp to 5-59, step 5
+		const snapped = Math.round(m / 5) * 5;
+		return Math.min(59, Math.max(5, snapped));
+	}
+	// Allowed hour-based presets
+	const allowed = [60, 120, 180, 360, 720, 1440];
+	let nearest = allowed[0];
+	let bestDiff = Math.abs(m - nearest);
+	for (const a of allowed) {
+		const d = Math.abs(m - a);
+		if (d < bestDiff) {
+			bestDiff = d;
+			nearest = a;
+		}
+	}
+	return nearest;
+}
+
+function buildCronExpression(minutes) {
+	const m = normalizeUpdateInterval(minutes);
+	if (m < 60) {
+		return `*/${m} * * * *`;
+	}
+	if (m === 60) {
+		// Hourly at current minute is chosen by agent; default 0 here
+		return `0 * * * *`;
+	}
+	const hours = Math.floor(m / 60);
+	// Every N hours at minute 0
+	return `0 */${hours} * * *`;
+}
+
 // Get current settings
 router.get("/", authenticateToken, requireManageSettings, async (_req, res) => {
 	try {
@@ -191,11 +230,13 @@ router.put(
 			const oldUpdateInterval = currentSettings.update_interval;
 
 			// Update settings using the service
+			const normalizedInterval = normalizeUpdateInterval(updateInterval || 60);
+
 			const updatedSettings = await updateSettings(currentSettings.id, {
 				server_protocol: serverProtocol,
 				server_host: serverHost,
 				server_port: serverPort,
-				update_interval: updateInterval || 60,
+				update_interval: normalizedInterval,
 				auto_update: autoUpdate || false,
 				signup_enabled: signupEnabled || false,
 				default_user_role:
@@ -211,9 +252,9 @@ router.put(
 			console.log("Settings updated successfully:", updatedSettings);
 
 			// If update interval changed, trigger crontab updates on all hosts with auto-update enabled
-			if (oldUpdateInterval !== (updateInterval || 60)) {
+			if (oldUpdateInterval !== normalizedInterval) {
 				console.log(
-					`Update interval changed from ${oldUpdateInterval} to ${updateInterval || 60} minutes. Triggering crontab updates...`,
+					`Update interval changed from ${oldUpdateInterval} to ${normalizedInterval} minutes. Triggering crontab updates...`,
 				);
 				await triggerCrontabUpdates();
 			}
@@ -262,9 +303,10 @@ router.get("/update-interval", async (req, res) => {
 		}
 
 		const settings = await getSettings();
+		const interval = normalizeUpdateInterval(settings.update_interval || 60);
 		res.json({
-			updateInterval: settings.update_interval,
-			cronExpression: `*/${settings.update_interval} * * * *`, // Generate cron expression
+			updateInterval: interval,
+			cronExpression: buildCronExpression(interval),
 		});
 	} catch (error) {
 		console.error("Update interval fetch error:", error);

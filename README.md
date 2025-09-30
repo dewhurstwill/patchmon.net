@@ -84,7 +84,7 @@ apt install curl -y
 
 #### Script
 ```bash
-curl -fsSL -o setup.sh https://raw.githubusercontent.com/9technologygroup/patchmon.net/main/setup.sh && chmod +x setup.sh && bash setup.sh
+curl -fsSL -o setup.sh https://raw.githubusercontent.com/9technologygroup/patchmon.net/refs/heads/main/setup.sh && chmod +x setup.sh && bash setup.sh
 ```
 
 #### Minimum specs for building : #####

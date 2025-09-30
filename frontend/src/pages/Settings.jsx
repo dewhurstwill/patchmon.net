@@ -272,9 +272,37 @@ const Settings = () => {
 		}
 	};
 
+	// Normalize update interval to safe presets
+	const normalizeInterval = (minutes) => {
+		let m = parseInt(minutes, 10);
+		if (Number.isNaN(m)) return 60;
+		if (m < 5) m = 5;
+		if (m > 1440) m = 1440;
+		// If less than 60 minutes, keep within 5-59 and step of 5
+		if (m < 60) {
+			return Math.min(59, Math.max(5, Math.round(m / 5) * 5));
+		}
+		// 60 or more: only allow exact hour multiples (60, 120, 180, 360, 720, 1440)
+		const allowed = [60, 120, 180, 360, 720, 1440];
+		// Snap to nearest allowed value
+		let nearest = allowed[0];
+		let bestDiff = Math.abs(m - nearest);
+		for (const a of allowed) {
+			const d = Math.abs(m - a);
+			if (d < bestDiff) {
+				bestDiff = d;
+				nearest = a;
+			}
+		}
+		return nearest;
+	};
+
 	const handleInputChange = (field, value) => {
 		setFormData((prev) => {
-			const newData = { ...prev, [field]: value };
+			const newData = {
+				...prev,
+				[field]: field === "updateInterval" ? normalizeInterval(value) : value,
+			};
 			return newData;
 		});
 		setIsDirty(true);
@@ -563,21 +591,23 @@ const Settings = () => {
 
 								{/* Quick presets */}
 								<div className="mt-3 flex flex-wrap items-center gap-2">
-									{[15, 30, 60, 120, 360, 720, 1440].map((m) => (
-										<button
-											key={m}
-											type="button"
-											onClick={() => handleInputChange("updateInterval", m)}
-											className={`px-3 py-1.5 rounded-full text-xs font-medium border ${
-												formData.updateInterval === m
-													? "bg-primary-600 text-white border-primary-600"
-													: "bg-white dark:bg-secondary-700 text-secondary-700 dark:text-secondary-200 border-secondary-300 dark:border-secondary-600 hover:bg-secondary-50 dark:hover:bg-secondary-600"
-											}`}
-											aria-label={`Set ${m} minutes`}
-										>
-											{m % 60 === 0 ? `${m / 60}h` : `${m}m`}
-										</button>
-									))}
+									{[5, 10, 15, 30, 45, 60, 120, 180, 360, 720, 1440].map(
+										(m) => (
+											<button
+												key={m}
+												type="button"
+												onClick={() => handleInputChange("updateInterval", m)}
+												className={`px-3 py-1.5 rounded-full text-xs font-medium border ${
+													formData.updateInterval === m
+														? "bg-primary-600 text-white border-primary-600"
+														: "bg-white dark:bg-secondary-700 text-secondary-700 dark:text-secondary-200 border-secondary-300 dark:border-secondary-600 hover:bg-secondary-50 dark:hover:bg-secondary-600"
+												}`}
+												aria-label={`Set ${m} minutes`}
+											>
+												{m % 60 === 0 ? `${m / 60}h` : `${m}m`}
+											</button>
+										),
+									)}
 								</div>
 
 								{/* Range slider */}
@@ -588,12 +618,13 @@ const Settings = () => {
 										max="1440"
 										step="5"
 										value={formData.updateInterval}
-										onChange={(e) =>
+										onChange={(e) => {
+											const raw = parseInt(e.target.value, 10);
 											handleInputChange(
 												"updateInterval",
-												parseInt(e.target.value, 10),
-											)
-										}
+												normalizeInterval(raw),
+											);
+										}}
 										className="w-full accent-primary-600"
 										aria-label="Update interval slider"
 									/>
