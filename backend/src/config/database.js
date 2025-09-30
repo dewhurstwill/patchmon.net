@@ -4,17 +4,12 @@
  */
 
 const { PrismaClient } = require("@prisma/client");
+const { DATABASE_URL } = require("../config");
 
 // Parse DATABASE_URL and add connection pooling parameters
 function getOptimizedDatabaseUrl() {
-	const originalUrl = process.env.DATABASE_URL;
-
-	if (!originalUrl) {
-		throw new Error("DATABASE_URL environment variable is required");
-	}
-
 	// Parse the URL
-	const url = new URL(originalUrl);
+	const url = new URL(DATABASE_URL);
 
 	// Add connection pooling parameters for multiple instances
 	url.searchParams.set("connection_limit", "5"); // Reduced from default 10
