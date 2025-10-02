@@ -4,6 +4,9 @@ on:
     branches:
       - main
       - dev
+    paths-ignore:
+      - 'docker/**'
+
 jobs:
   deploy:
     runs-on: self-hosted
