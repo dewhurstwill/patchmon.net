@@ -11,7 +11,6 @@ import {
 	Moon,
 	RefreshCw,
 	Save,
-	Settings,
 	Shield,
 	Smartphone,
 	Sun,
@@ -142,7 +141,6 @@ const Profile = () => {
 		{ id: "profile", name: "Profile Information", icon: User },
 		{ id: "password", name: "Change Password", icon: Key },
 		{ id: "tfa", name: "Multi-Factor Authentication", icon: Smartphone },
-		{ id: "preferences", name: "Preferences", icon: Settings },
 	];
 
 	return (
@@ -338,6 +336,52 @@ const Profile = () => {
 								</div>
 							</div>
 
+							{/* Theme Settings */}
+							<div className="border-t border-secondary-200 dark:border-secondary-600 pt-6">
+								<h4 className="text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-3">
+									Appearance
+								</h4>
+								<div className="max-w-md">
+									<div className="flex items-center justify-between">
+										<div className="flex items-center space-x-3">
+											<div className="flex-shrink-0">
+												{isDark ? (
+													<Moon className="h-5 w-5 text-secondary-600 dark:text-secondary-400" />
+												) : (
+													<Sun className="h-5 w-5 text-secondary-600 dark:text-secondary-400" />
+												)}
+											</div>
+											<div>
+												<p className="text-sm font-medium text-secondary-900 dark:text-white">
+													{isDark ? "Dark Mode" : "Light Mode"}
+												</p>
+												<p className="text-xs text-secondary-500 dark:text-secondary-400">
+													{isDark
+														? "Switch to light mode"
+														: "Switch to dark mode"}
+												</p>
+											</div>
+										</div>
+										<button
+											type="button"
+											onClick={toggleTheme}
+											className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ${
+												isDark ? "bg-primary-600" : "bg-secondary-200"
+											}`}
+											role="switch"
+											aria-checked={isDark}
+										>
+											<span
+												aria-hidden="true"
+												className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${
+													isDark ? "translate-x-5" : "translate-x-0"
+												}`}
+											/>
+										</button>
+									</div>
+								</div>
+							</div>
+
 							<div className="flex justify-end">
 								<button
 									type="submit"
@@ -477,62 +521,6 @@ const Profile = () => {
 
 					{/* Multi-Factor Authentication Tab */}
 					{activeTab === "tfa" && <TfaTab />}
-
-					{/* Preferences Tab */}
-					{activeTab === "preferences" && (
-						<div className="space-y-6">
-							<div>
-								<h3 className="text-lg font-medium text-secondary-900 dark:text-white mb-4">
-									Preferences
-								</h3>
-
-								{/* Theme Settings */}
-								<div className="space-y-4">
-									<div>
-										<h4 className="text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-3">
-											Appearance
-										</h4>
-										<div className="bg-secondary-50 dark:bg-secondary-700 p-4 rounded-lg">
-											<div className="flex items-center justify-between">
-												<div className="flex items-center space-x-3">
-													<div className="flex-shrink-0">
-														{isDark ? (
-															<Moon className="h-5 w-5 text-secondary-600 dark:text-secondary-400" />
-														) : (
-															<Sun className="h-5 w-5 text-secondary-600 dark:text-secondary-400" />
-														)}
-													</div>
-													<div>
-														<p className="text-sm font-medium text-secondary-900 dark:text-white">
-															{isDark ? "Dark Mode" : "Light Mode"}
-														</p>
-														<p className="text-xs text-secondary-500 dark:text-secondary-400">
-															{isDark
-																? "Switch to light mode"
-																: "Switch to dark mode"}
-														</p>
-													</div>
-												</div>
-												<button
-													type="button"
-													onClick={toggleTheme}
-													className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ${
-														isDark ? "bg-primary-600" : "bg-secondary-300"
-													}`}
-												>
-													<span
-														className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-															isDark ? "translate-x-6" : "translate-x-1"
-														}`}
-													/>
-												</button>
-											</div>
-										</div>
-									</div>
-								</div>
-							</div>
-						</div>
-					)}
 				</div>
 			</div>
 		</div>
@@ -541,6 +529,7 @@ const Profile = () => {
 
 // TFA Tab Component
 const TfaTab = () => {
+	const verificationTokenId = useId();
 	const [setupStep, setSetupStep] = useState("status"); // 'status', 'setup', 'verify', 'backup-codes'
 	const [verificationToken, setVerificationToken] = useState("");
 	const [password, setPassword] = useState("");

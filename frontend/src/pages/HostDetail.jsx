@@ -102,6 +102,15 @@ const HostDetail = () => {
 		},
 	});
 
+	const updateNotesMutation = useMutation({
+		mutationFn: ({ hostId, notes }) =>
+			adminHostsAPI.updateNotes(hostId, notes).then((res) => res.data),
+		onSuccess: () => {
+			queryClient.invalidateQueries(["host", hostId]);
+			queryClient.invalidateQueries(["hosts"]);
+		},
+	});
+
 	const handleDeleteHost = async () => {
 		if (
 			window.confirm(
@@ -317,17 +326,6 @@ const HostDetail = () => {
 							</button>
 							<button
 								type="button"
-								onClick={() => handleTabChange("monitoring")}
-								className={`px-4 py-2 text-sm font-medium ${
-									activeTab === "monitoring"
-										? "text-primary-600 dark:text-primary-400 border-b-2 border-primary-500"
-										: "text-secondary-500 dark:text-secondary-400 hover:text-secondary-700 dark:hover:text-secondary-300"
-								}`}
-							>
-								Resource
-							</button>
-							<button
-								type="button"
 								onClick={() => handleTabChange("history")}
 								className={`px-4 py-2 text-sm font-medium ${
 									activeTab === "history"
@@ -335,7 +333,18 @@ const HostDetail = () => {
 										: "text-secondary-500 dark:text-secondary-400 hover:text-secondary-700 dark:hover:text-secondary-300"
 								}`}
 							>
-								Update History
+								Agent History
+							</button>
+							<button
+								type="button"
+								onClick={() => handleTabChange("notes")}
+								className={`px-4 py-2 text-sm font-medium ${
+									activeTab === "notes"
+										? "text-primary-600 dark:text-primary-400 border-b-2 border-primary-500"
+										: "text-secondary-500 dark:text-secondary-400 hover:text-secondary-700 dark:hover:text-secondary-300"
+								}`}
+							>
+								Notes
 							</button>
 						</div>
 
@@ -419,7 +428,7 @@ const HostDetail = () => {
 
 										<div>
 											<p className="text-xs text-secondary-500 dark:text-secondary-300 mb-1.5">
-												Auto-update
+												Agent Auto-update
 											</p>
 											<button
 												type="button"
@@ -506,55 +515,279 @@ const HostDetail = () => {
 								)}
 
 							{/* System Information */}
-							{activeTab === "system" &&
-								(host.kernel_version ||
-									host.selinux_status ||
-									host.architecture) && (
-									<div className="space-y-4">
-										<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-											{host.architecture && (
-												<div>
-													<p className="text-xs text-secondary-500 dark:text-secondary-300">
-														Architecture
-													</p>
-													<p className="font-medium text-secondary-900 dark:text-white text-sm">
-														{host.architecture}
-													</p>
-												</div>
-											)}
+							{activeTab === "system" && (
+								<div className="space-y-6">
+									{/* Basic System Information */}
+									{(host.kernel_version ||
+										host.selinux_status ||
+										host.architecture) && (
+										<div>
+											<h4 className="text-sm font-medium text-secondary-900 dark:text-white mb-3 flex items-center gap-2">
+												<Terminal className="h-4 w-4 text-primary-600 dark:text-primary-400" />
+												System Information
+											</h4>
+											<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+												{host.architecture && (
+													<div>
+														<p className="text-xs text-secondary-500 dark:text-secondary-300">
+															Architecture
+														</p>
+														<p className="font-medium text-secondary-900 dark:text-white text-sm">
+															{host.architecture}
+														</p>
+													</div>
+												)}
 
-											{host.kernel_version && (
-												<div>
-													<p className="text-xs text-secondary-500 dark:text-secondary-300">
-														Kernel Version
-													</p>
-													<p className="font-medium text-secondary-900 dark:text-white font-mono text-sm">
-														{host.kernel_version}
-													</p>
-												</div>
-											)}
+												{host.kernel_version && (
+													<div>
+														<p className="text-xs text-secondary-500 dark:text-secondary-300">
+															Kernel Version
+														</p>
+														<p className="font-medium text-secondary-900 dark:text-white font-mono text-sm">
+															{host.kernel_version}
+														</p>
+													</div>
+												)}
 
-											{host.selinux_status && (
-												<div>
-													<p className="text-xs text-secondary-500 dark:text-secondary-300">
-														SELinux Status
-													</p>
-													<span
-														className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
-															host.selinux_status === "enabled"
-																? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-																: host.selinux_status === "permissive"
-																	? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
-																	: "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200"
-														}`}
-													>
-														{host.selinux_status}
-													</span>
-												</div>
-											)}
+												{/* Empty div to push SELinux status to the right */}
+												<div></div>
+
+												{host.selinux_status && (
+													<div>
+														<p className="text-xs text-secondary-500 dark:text-secondary-300">
+															SELinux Status
+														</p>
+														<span
+															className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+																host.selinux_status === "enabled"
+																	? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+																	: host.selinux_status === "permissive"
+																		? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
+																		: "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-200"
+															}`}
+														>
+															{host.selinux_status}
+														</span>
+													</div>
+												)}
+											</div>
 										</div>
-									</div>
-								)}
+									)}
+
+									{/* Resource Information */}
+									{(host.system_uptime ||
+										host.cpu_model ||
+										host.cpu_cores ||
+										host.ram_installed ||
+										host.swap_size !== undefined ||
+										(host.load_average &&
+											Array.isArray(host.load_average) &&
+											host.load_average.length > 0 &&
+											host.load_average.some((load) => load != null)) ||
+										(host.disk_details &&
+											Array.isArray(host.disk_details) &&
+											host.disk_details.length > 0)) && (
+										<div className="pt-4 border-t border-secondary-200 dark:border-secondary-600">
+											<h4 className="text-sm font-medium text-secondary-900 dark:text-white mb-3 flex items-center gap-2">
+												<Monitor className="h-4 w-4 text-primary-600 dark:text-primary-400" />
+												Resource Information
+											</h4>
+
+											{/* System Overview */}
+											<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+												{/* System Uptime */}
+												{host.system_uptime && (
+													<div className="bg-secondary-50 dark:bg-secondary-700 p-4 rounded-lg">
+														<div className="flex items-center gap-2 mb-2">
+															<Clock className="h-4 w-4 text-primary-600 dark:text-primary-400" />
+															<p className="text-xs text-secondary-500 dark:text-secondary-300">
+																System Uptime
+															</p>
+														</div>
+														<p className="font-medium text-secondary-900 dark:text-white text-sm">
+															{host.system_uptime}
+														</p>
+													</div>
+												)}
+
+												{/* CPU Model */}
+												{host.cpu_model && (
+													<div className="bg-secondary-50 dark:bg-secondary-700 p-4 rounded-lg">
+														<div className="flex items-center gap-2 mb-2">
+															<Cpu className="h-4 w-4 text-primary-600 dark:text-primary-400" />
+															<p className="text-xs text-secondary-500 dark:text-secondary-300">
+																CPU Model
+															</p>
+														</div>
+														<p className="font-medium text-secondary-900 dark:text-white text-sm">
+															{host.cpu_model}
+														</p>
+													</div>
+												)}
+
+												{/* CPU Cores */}
+												{host.cpu_cores && (
+													<div className="bg-secondary-50 dark:bg-secondary-700 p-4 rounded-lg">
+														<div className="flex items-center gap-2 mb-2">
+															<Cpu className="h-4 w-4 text-primary-600 dark:text-primary-400" />
+															<p className="text-xs text-secondary-500 dark:text-secondary-300">
+																CPU Cores
+															</p>
+														</div>
+														<p className="font-medium text-secondary-900 dark:text-white text-sm">
+															{host.cpu_cores}
+														</p>
+													</div>
+												)}
+
+												{/* RAM Installed */}
+												{host.ram_installed && (
+													<div className="bg-secondary-50 dark:bg-secondary-700 p-4 rounded-lg">
+														<div className="flex items-center gap-2 mb-2">
+															<MemoryStick className="h-4 w-4 text-primary-600 dark:text-primary-400" />
+															<p className="text-xs text-secondary-500 dark:text-secondary-300">
+																RAM Installed
+															</p>
+														</div>
+														<p className="font-medium text-secondary-900 dark:text-white text-sm">
+															{host.ram_installed} GB
+														</p>
+													</div>
+												)}
+
+												{/* Swap Size */}
+												{host.swap_size !== undefined &&
+													host.swap_size !== null && (
+														<div className="bg-secondary-50 dark:bg-secondary-700 p-4 rounded-lg">
+															<div className="flex items-center gap-2 mb-2">
+																<MemoryStick className="h-4 w-4 text-primary-600 dark:text-primary-400" />
+																<p className="text-xs text-secondary-500 dark:text-secondary-300">
+																	Swap Size
+																</p>
+															</div>
+															<p className="font-medium text-secondary-900 dark:text-white text-sm">
+																{host.swap_size} GB
+															</p>
+														</div>
+													)}
+
+												{/* Load Average */}
+												{host.load_average &&
+													Array.isArray(host.load_average) &&
+													host.load_average.length > 0 &&
+													host.load_average.some((load) => load != null) && (
+														<div className="bg-secondary-50 dark:bg-secondary-700 p-4 rounded-lg">
+															<div className="flex items-center gap-2 mb-2">
+																<Activity className="h-4 w-4 text-primary-600 dark:text-primary-400" />
+																<p className="text-xs text-secondary-500 dark:text-secondary-300">
+																	Load Average
+																</p>
+															</div>
+															<p className="font-medium text-secondary-900 dark:text-white text-sm">
+																{host.load_average
+																	.filter((load) => load != null)
+																	.map((load, index) => (
+																		<span key={`load-${index}-${load}`}>
+																			{typeof load === "number"
+																				? load.toFixed(2)
+																				: String(load)}
+																			{index <
+																				host.load_average.filter(
+																					(load) => load != null,
+																				).length -
+																					1 && ", "}
+																		</span>
+																	))}
+															</p>
+														</div>
+													)}
+											</div>
+
+											{/* Disk Information */}
+											{host.disk_details &&
+												Array.isArray(host.disk_details) &&
+												host.disk_details.length > 0 && (
+													<div className="pt-4 border-t border-secondary-200 dark:border-secondary-600">
+														<h5 className="text-sm font-medium text-secondary-900 dark:text-white mb-3 flex items-center gap-2">
+															<HardDrive className="h-4 w-4 text-primary-600 dark:text-primary-400" />
+															Disk Usage
+														</h5>
+														<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+															{host.disk_details.map((disk, index) => (
+																<div
+																	key={disk.name || `disk-${index}`}
+																	className="bg-secondary-50 dark:bg-secondary-700 p-3 rounded-lg"
+																>
+																	<div className="flex items-center gap-2 mb-2">
+																		<HardDrive className="h-4 w-4 text-secondary-500" />
+																		<span className="font-medium text-secondary-900 dark:text-white text-sm">
+																			{disk.name || `Disk ${index + 1}`}
+																		</span>
+																	</div>
+																	{disk.size && (
+																		<p className="text-xs text-secondary-600 dark:text-secondary-300 mb-1">
+																			Size: {disk.size}
+																		</p>
+																	)}
+																	{disk.mountpoint && (
+																		<p className="text-xs text-secondary-600 dark:text-secondary-300 mb-1">
+																			Mount: {disk.mountpoint}
+																		</p>
+																	)}
+																	{disk.usage &&
+																		typeof disk.usage === "number" && (
+																			<div className="mt-2">
+																				<div className="flex justify-between text-xs text-secondary-600 dark:text-secondary-300 mb-1">
+																					<span>Usage</span>
+																					<span>{disk.usage}%</span>
+																				</div>
+																				<div className="w-full bg-secondary-200 dark:bg-secondary-600 rounded-full h-2">
+																					<div
+																						className="bg-primary-600 dark:bg-primary-400 h-2 rounded-full transition-all duration-300"
+																						style={{
+																							width: `${Math.min(Math.max(disk.usage, 0), 100)}%`,
+																						}}
+																					></div>
+																				</div>
+																			</div>
+																		)}
+																</div>
+															))}
+														</div>
+													</div>
+												)}
+										</div>
+									)}
+
+									{/* No Data State */}
+									{!host.kernel_version &&
+										!host.selinux_status &&
+										!host.architecture &&
+										!host.system_uptime &&
+										!host.cpu_model &&
+										!host.cpu_cores &&
+										!host.ram_installed &&
+										host.swap_size === undefined &&
+										(!host.load_average ||
+											!Array.isArray(host.load_average) ||
+											host.load_average.length === 0 ||
+											!host.load_average.some((load) => load != null)) &&
+										(!host.disk_details ||
+											!Array.isArray(host.disk_details) ||
+											host.disk_details.length === 0) && (
+											<div className="text-center py-8">
+												<Terminal className="h-8 w-8 text-secondary-400 mx-auto mb-2" />
+												<p className="text-sm text-secondary-500 dark:text-secondary-300">
+													No system information available
+												</p>
+												<p className="text-xs text-secondary-400 dark:text-secondary-400 mt-1">
+													System information will appear once the agent collects
+													data from this host
+												</p>
+											</div>
+										)}
+								</div>
+							)}
 
 							{activeTab === "network" &&
 								!(
@@ -569,213 +802,6 @@ const HostDetail = () => {
 										</p>
 									</div>
 								)}
-
-							{activeTab === "system" &&
-								!(
-									host.kernel_version ||
-									host.selinux_status ||
-									host.architecture
-								) && (
-									<div className="text-center py-8">
-										<Terminal className="h-8 w-8 text-secondary-400 mx-auto mb-2" />
-										<p className="text-sm text-secondary-500 dark:text-secondary-300">
-											No system information available
-										</p>
-									</div>
-								)}
-
-							{/* System Monitoring */}
-							{activeTab === "monitoring" && (
-								<div className="space-y-6">
-									{/* System Overview */}
-									<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-										{/* System Uptime */}
-										{host.system_uptime && (
-											<div className="bg-secondary-50 dark:bg-secondary-700 p-4 rounded-lg">
-												<div className="flex items-center gap-2 mb-2">
-													<Clock className="h-4 w-4 text-primary-600 dark:text-primary-400" />
-													<p className="text-xs text-secondary-500 dark:text-secondary-300">
-														System Uptime
-													</p>
-												</div>
-												<p className="font-medium text-secondary-900 dark:text-white text-sm">
-													{host.system_uptime}
-												</p>
-											</div>
-										)}
-
-										{/* CPU Model */}
-										{host.cpu_model && (
-											<div className="bg-secondary-50 dark:bg-secondary-700 p-4 rounded-lg">
-												<div className="flex items-center gap-2 mb-2">
-													<Cpu className="h-4 w-4 text-primary-600 dark:text-primary-400" />
-													<p className="text-xs text-secondary-500 dark:text-secondary-300">
-														CPU Model
-													</p>
-												</div>
-												<p className="font-medium text-secondary-900 dark:text-white text-sm">
-													{host.cpu_model}
-												</p>
-											</div>
-										)}
-
-										{/* CPU Cores */}
-										{host.cpu_cores && (
-											<div className="bg-secondary-50 dark:bg-secondary-700 p-4 rounded-lg">
-												<div className="flex items-center gap-2 mb-2">
-													<Cpu className="h-4 w-4 text-primary-600 dark:text-primary-400" />
-													<p className="text-xs text-secondary-500 dark:text-secondary-300">
-														CPU Cores
-													</p>
-												</div>
-												<p className="font-medium text-secondary-900 dark:text-white text-sm">
-													{host.cpu_cores}
-												</p>
-											</div>
-										)}
-
-										{/* RAM Installed */}
-										{host.ram_installed && (
-											<div className="bg-secondary-50 dark:bg-secondary-700 p-4 rounded-lg">
-												<div className="flex items-center gap-2 mb-2">
-													<MemoryStick className="h-4 w-4 text-primary-600 dark:text-primary-400" />
-													<p className="text-xs text-secondary-500 dark:text-secondary-300">
-														RAM Installed
-													</p>
-												</div>
-												<p className="font-medium text-secondary-900 dark:text-white text-sm">
-													{host.ram_installed} GB
-												</p>
-											</div>
-										)}
-
-										{/* Swap Size */}
-										{host.swap_size !== undefined &&
-											host.swap_size !== null && (
-												<div className="bg-secondary-50 dark:bg-secondary-700 p-4 rounded-lg">
-													<div className="flex items-center gap-2 mb-2">
-														<MemoryStick className="h-4 w-4 text-primary-600 dark:text-primary-400" />
-														<p className="text-xs text-secondary-500 dark:text-secondary-300">
-															Swap Size
-														</p>
-													</div>
-													<p className="font-medium text-secondary-900 dark:text-white text-sm">
-														{host.swap_size} GB
-													</p>
-												</div>
-											)}
-
-										{/* Load Average */}
-										{host.load_average &&
-											Array.isArray(host.load_average) &&
-											host.load_average.length > 0 &&
-											host.load_average.some((load) => load != null) && (
-												<div className="bg-secondary-50 dark:bg-secondary-700 p-4 rounded-lg">
-													<div className="flex items-center gap-2 mb-2">
-														<Activity className="h-4 w-4 text-primary-600 dark:text-primary-400" />
-														<p className="text-xs text-secondary-500 dark:text-secondary-300">
-															Load Average
-														</p>
-													</div>
-													<p className="font-medium text-secondary-900 dark:text-white text-sm">
-														{host.load_average
-															.filter((load) => load != null)
-															.map((load, index) => (
-																<span key={`load-${index}-${load}`}>
-																	{typeof load === "number"
-																		? load.toFixed(2)
-																		: String(load)}
-																	{index <
-																		host.load_average.filter(
-																			(load) => load != null,
-																		).length -
-																			1 && ", "}
-																</span>
-															))}
-													</p>
-												</div>
-											)}
-									</div>
-
-									{/* Disk Information */}
-									{host.disk_details &&
-										Array.isArray(host.disk_details) &&
-										host.disk_details.length > 0 && (
-											<div className="pt-4 border-t border-secondary-200 dark:border-secondary-600">
-												<h4 className="text-sm font-medium text-secondary-900 dark:text-white mb-3 flex items-center gap-2">
-													<HardDrive className="h-4 w-4 text-primary-600 dark:text-primary-400" />
-													Disk Usage
-												</h4>
-												<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-													{host.disk_details.map((disk, index) => (
-														<div
-															key={disk.name || `disk-${index}`}
-															className="bg-secondary-50 dark:bg-secondary-700 p-3 rounded-lg"
-														>
-															<div className="flex items-center gap-2 mb-2">
-																<HardDrive className="h-4 w-4 text-secondary-500" />
-																<span className="font-medium text-secondary-900 dark:text-white text-sm">
-																	{disk.name || `Disk ${index + 1}`}
-																</span>
-															</div>
-															{disk.size && (
-																<p className="text-xs text-secondary-600 dark:text-secondary-300 mb-1">
-																	Size: {disk.size}
-																</p>
-															)}
-															{disk.mountpoint && (
-																<p className="text-xs text-secondary-600 dark:text-secondary-300 mb-1">
-																	Mount: {disk.mountpoint}
-																</p>
-															)}
-															{disk.usage && typeof disk.usage === "number" && (
-																<div className="mt-2">
-																	<div className="flex justify-between text-xs text-secondary-600 dark:text-secondary-300 mb-1">
-																		<span>Usage</span>
-																		<span>{disk.usage}%</span>
-																	</div>
-																	<div className="w-full bg-secondary-200 dark:bg-secondary-600 rounded-full h-2">
-																		<div
-																			className="bg-primary-600 dark:bg-primary-400 h-2 rounded-full transition-all duration-300"
-																			style={{
-																				width: `${Math.min(Math.max(disk.usage, 0), 100)}%`,
-																			}}
-																		></div>
-																	</div>
-																</div>
-															)}
-														</div>
-													))}
-												</div>
-											</div>
-										)}
-
-									{/* No Data State */}
-									{!host.system_uptime &&
-										!host.cpu_model &&
-										!host.cpu_cores &&
-										!host.ram_installed &&
-										host.swap_size === undefined &&
-										(!host.load_average ||
-											!Array.isArray(host.load_average) ||
-											host.load_average.length === 0 ||
-											!host.load_average.some((load) => load != null)) &&
-										(!host.disk_details ||
-											!Array.isArray(host.disk_details) ||
-											host.disk_details.length === 0) && (
-											<div className="text-center py-8">
-												<Monitor className="h-8 w-8 text-secondary-400 mx-auto mb-2" />
-												<p className="text-sm text-secondary-500 dark:text-secondary-300">
-													No monitoring data available
-												</p>
-												<p className="text-xs text-secondary-400 dark:text-secondary-400 mt-1">
-													Monitoring data will appear once the agent collects
-													system information
-												</p>
-											</div>
-										)}
-								</div>
-							)}
 
 							{/* Update History */}
 							{activeTab === "history" && (
@@ -881,6 +907,56 @@ const HostDetail = () => {
 											</p>
 										</div>
 									)}
+								</div>
+							)}
+
+							{/* Notes */}
+							{activeTab === "notes" && (
+								<div className="space-y-4">
+									<div className="flex items-center justify-between">
+										<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
+											Host Notes
+										</h3>
+									</div>
+									<div className="bg-secondary-50 dark:bg-secondary-700 rounded-lg p-4">
+										<textarea
+											value={host.notes || ""}
+											onChange={(e) => {
+												// Update local state immediately for better UX
+												const updatedHost = { ...host, notes: e.target.value };
+												queryClient.setQueryData(["host", hostId], updatedHost);
+											}}
+											placeholder="Add notes about this host... (e.g., purpose, special configurations, maintenance notes)"
+											className="w-full h-32 p-3 border border-secondary-200 dark:border-secondary-600 rounded-lg bg-white dark:bg-secondary-800 text-secondary-900 dark:text-white placeholder-secondary-500 dark:placeholder-secondary-400 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 resize-none"
+											maxLength={1000}
+										/>
+										<div className="flex justify-between items-center mt-3">
+											<p className="text-xs text-secondary-500 dark:text-secondary-400">
+												Use this space to add important information about this
+												host for your team
+											</p>
+											<div className="flex items-center gap-2">
+												<span className="text-xs text-secondary-400 dark:text-secondary-500">
+													{(host.notes || "").length}/1000
+												</span>
+												<button
+													type="button"
+													onClick={() => {
+														updateNotesMutation.mutate({
+															hostId: host.id,
+															notes: host.notes || "",
+														});
+													}}
+													disabled={updateNotesMutation.isPending}
+													className="px-3 py-1.5 text-xs font-medium text-white bg-primary-600 hover:bg-primary-700 disabled:bg-primary-400 rounded-md transition-colors"
+												>
+													{updateNotesMutation.isPending
+														? "Saving..."
+														: "Save Notes"}
+												</button>
+											</div>
+										</div>
+									</div>
 								</div>
 							)}
 						</div>
@@ -993,6 +1069,17 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 
 	const serverUrl = serverUrlData?.server_url || "http://localhost:3001";
 
+	// Fetch settings for dynamic curl flags (local to modal)
+	const { data: settings } = useQuery({
+		queryKey: ["settings"],
+		queryFn: () => settingsAPI.get().then((res) => res.data),
+	});
+
+	// Helper function to get curl flags based on settings
+	const getCurlFlags = () => {
+		return settings?.ignore_ssl_self_signed ? "-sk" : "-s";
+	};
+
 	const copyToClipboard = async (text) => {
 		try {
 			// Try modern clipboard API first
@@ -1089,7 +1176,7 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 							<div className="flex items-center gap-2">
 								<input
 									type="text"
-									value={`curl -ks ${serverUrl}/api/v1/hosts/install -H "X-API-ID: ${host.api_id}" -H "X-API-KEY: ${host.api_key}" | bash`}
+									value={`curl ${getCurlFlags()} ${serverUrl}/api/v1/hosts/install -H "X-API-ID: ${host.api_id}" -H "X-API-KEY: ${host.api_key}" | bash`}
 									readOnly
 									className="flex-1 px-3 py-2 border border-primary-300 dark:border-primary-600 rounded-md bg-white dark:bg-secondary-800 text-sm font-mono text-secondary-900 dark:text-white"
 								/>
@@ -1097,7 +1184,7 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 									type="button"
 									onClick={() =>
 										copyToClipboard(
-											`curl -ks ${serverUrl}/api/v1/hosts/install -H "X-API-ID: ${host.api_id}" -H "X-API-KEY: ${host.api_key}" | bash`,
+											`curl ${getCurlFlags()} ${serverUrl}/api/v1/hosts/install -H "X-API-ID: ${host.api_id}" -H "X-API-KEY: ${host.api_key}" | bash`,
 										)
 									}
 									className="btn-primary flex items-center gap-1"
@@ -1147,7 +1234,7 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 									<div className="flex items-center gap-2">
 										<input
 											type="text"
-											value={`curl -ko /usr/local/bin/patchmon-agent.sh ${serverUrl}/api/v1/hosts/agent/download -H "X-API-ID: ${host.api_id}" -H "X-API-KEY: ${host.api_key}" && sudo chmod +x /usr/local/bin/patchmon-agent.sh`}
+											value={`curl ${getCurlFlags()} -o /usr/local/bin/patchmon-agent.sh ${serverUrl}/api/v1/hosts/agent/download -H "X-API-ID: ${host.api_id}" -H "X-API-KEY: ${host.api_key}" && sudo chmod +x /usr/local/bin/patchmon-agent.sh`}
 											readOnly
 											className="flex-1 px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-sm font-mono text-secondary-900 dark:text-white"
 										/>
@@ -1155,7 +1242,7 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 											type="button"
 											onClick={() =>
 												copyToClipboard(
-													`curl -ko /usr/local/bin/patchmon-agent.sh ${serverUrl}/api/v1/hosts/agent/download -H "X-API-ID: ${host.api_id}" -H "X-API-KEY: ${host.api_key}" && sudo chmod +x /usr/local/bin/patchmon-agent.sh`,
+													`curl ${getCurlFlags()} -o /usr/local/bin/patchmon-agent.sh ${serverUrl}/api/v1/hosts/agent/download -H "X-API-ID: ${host.api_id}" -H "X-API-KEY: ${host.api_key}" && sudo chmod +x /usr/local/bin/patchmon-agent.sh`,
 												)
 											}
 											className="btn-secondary flex items-center gap-1"

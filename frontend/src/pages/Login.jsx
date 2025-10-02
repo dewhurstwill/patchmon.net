@@ -22,6 +22,7 @@ const Login = () => {
 	const emailId = useId();
 	const passwordId = useId();
 	const tokenId = useId();
+	const { login, setAuthState } = useAuth();
 	const [isSignupMode, setIsSignupMode] = useState(false);
 	const [formData, setFormData] = useState({
 		username: "",
@@ -41,7 +42,6 @@ const Login = () => {
 	const [signupEnabled, setSignupEnabled] = useState(false);
 
 	const navigate = useNavigate();
-	const { login, setAuthState } = useAuth();
 
 	// Check if signup is enabled
 	useEffect(() => {
@@ -130,9 +130,8 @@ const Login = () => {
 			const response = await authAPI.verifyTfa(tfaUsername, tfaData.token);
 
 			if (response.data?.token) {
-				// Store token and user data
-				localStorage.setItem("token", response.data.token);
-				localStorage.setItem("user", JSON.stringify(response.data.user));
+				// Update AuthContext with the new authentication state
+				setAuthState(response.data.token, response.data.user);
 
 				// Redirect to dashboard
 				navigate("/");

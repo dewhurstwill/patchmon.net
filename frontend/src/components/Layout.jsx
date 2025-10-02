@@ -6,7 +6,6 @@ import {
 	ChevronRight,
 	Clock,
 	Container,
-	FileText,
 	GitBranch,
 	Github,
 	Globe,
@@ -23,8 +22,6 @@ import {
 	Shield,
 	Star,
 	UserCircle,
-	Users,
-	Wrench,
 	X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -141,69 +138,41 @@ const Layout = ({ children }) => {
 			}
 		}
 
-		// PatchMon Users section - only show if user can view/manage users
-		if (canViewUsers() || canManageUsers()) {
-			const userItems = [];
-
-			if (canViewUsers()) {
-				userItems.push({ name: "Users", href: "/users", icon: Users });
-			}
-
-			if (canManageSettings()) {
-				userItems.push({
-					name: "Permissions",
-					href: "/permissions",
-					icon: Shield,
-				});
-			}
-
-			if (userItems.length > 0) {
-				nav.push({
-					section: "PatchMon Users",
-					items: userItems,
-				});
-			}
-		}
-
-		// Settings section - only show if user has any settings permissions
-		if (canManageSettings() || canViewReports() || canExportData()) {
-			const settingsItems = [];
-
-			if (canManageSettings()) {
-				settingsItems.push({
-					name: "PatchMon Options",
-					href: "/options",
-					icon: Settings,
-				});
-				settingsItems.push({
-					name: "Server Config",
-					href: "/settings",
-					icon: Wrench,
-					showUpgradeIcon: updateAvailable,
-				});
-			}
-
-			if (canViewReports() || canExportData()) {
-				settingsItems.push({
-					name: "Audit Log",
-					href: "/audit-log",
-					icon: FileText,
-					comingSoon: true,
-				});
-			}
-
-			if (settingsItems.length > 0) {
-				nav.push({
-					section: "Settings",
-					items: settingsItems,
-				});
-			}
-		}
-
 		return nav;
 	};
 
+	// Build settings navigation separately (for bottom placement)
+	const buildSettingsNavigation = () => {
+		const settingsNav = [];
+
+		// Settings section - consolidated all settings into one page
+		if (
+			canManageSettings() ||
+			canViewUsers() ||
+			canManageUsers() ||
+			canViewReports() ||
+			canExportData()
+		) {
+			const settingsItems = [];
+
+			settingsItems.push({
+				name: "Settings",
+				href: "/settings/users",
+				icon: Settings,
+				showUpgradeIcon: updateAvailable,
+			});
+
+			settingsNav.push({
+				section: "Settings",
+				items: settingsItems,
+			});
+		}
+
+		return settingsNav;
+	};
+
 	const navigation = buildNavigation();
+	const settingsNavigation = buildSettingsNavigation();
 
 	const isActive = (path) => location.pathname === path;
 
@@ -223,9 +192,10 @@ const Layout = ({ children }) => {
 		if (path === "/settings") return "Settings";
 		if (path === "/options") return "PatchMon Options";
 		if (path === "/audit-log") return "Audit Log";
-		if (path === "/profile") return "My Profile";
+		if (path === "/settings/profile") return "My Profile";
 		if (path.startsWith("/hosts/")) return "Host Details";
 		if (path.startsWith("/packages/")) return "Package Details";
+		if (path.startsWith("/settings/")) return "Settings";
 
 		return "PatchMon";
 	};
@@ -342,7 +312,7 @@ const Layout = ({ children }) => {
 					</div>
 					<nav className="mt-8 flex-1 space-y-6 px-2">
 						{/* Show message for users with very limited permissions */}
-						{navigation.length === 0 && (
+						{navigation.length === 0 && settingsNavigation.length === 0 && (
 							<div className="px-2 py-4 text-center">
 								<div className="text-sm text-secondary-500 dark:text-secondary-400">
 									<p className="mb-2">Limited access</p>
@@ -394,6 +364,12 @@ const Layout = ({ children }) => {
 															<subItem.icon className="mr-3 h-5 w-5" />
 															<span className="flex items-center gap-2 flex-1">
 																{subItem.name}
+																{subItem.name === "Hosts" &&
+																	stats?.cards?.totalHosts !== undefined && (
+																		<span className="ml-2 inline-flex items-center justify-center px-1.5 py-0.5 text-xs rounded bg-secondary-100 text-secondary-700">
+																			{stats.cards.totalHosts}
+																		</span>
+																	)}
 															</span>
 															<button
 																type="button"
@@ -426,6 +402,12 @@ const Layout = ({ children }) => {
 															<subItem.icon className="mr-3 h-5 w-5" />
 															<span className="flex items-center gap-2">
 																{subItem.name}
+																{subItem.name === "Hosts" &&
+																	stats?.cards?.totalHosts !== undefined && (
+																		<span className="ml-2 inline-flex items-center justify-center px-1.5 py-0.5 text-xs rounded bg-secondary-100 text-secondary-700">
+																			{stats.cards.totalHosts}
+																		</span>
+																	)}
 																{subItem.comingSoon && (
 																	<span className="text-xs bg-secondary-100 text-secondary-600 px-1.5 py-0.5 rounded">
 																		Soon
@@ -435,6 +417,40 @@ const Layout = ({ children }) => {
 														</Link>
 													)}
 												</div>
+											))}
+										</div>
+									</div>
+								);
+							}
+							return null;
+						})}
+
+						{/* Settings Section - Mobile */}
+						{settingsNavigation.map((item) => {
+							if (item.section) {
+								// Settings section (no heading)
+								return (
+									<div key={item.section}>
+										<div className="space-y-1">
+											{item.items.map((subItem) => (
+												<Link
+													key={subItem.name}
+													to={subItem.href}
+													className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
+														isActive(subItem.href)
+															? "bg-primary-100 text-primary-900"
+															: "text-secondary-600 hover:bg-secondary-50 hover:text-secondary-900"
+													}`}
+													onClick={() => setSidebarOpen(false)}
+												>
+													<subItem.icon className="mr-3 h-5 w-5" />
+													<span className="flex items-center gap-2">
+														{subItem.name}
+														{subItem.showUpgradeIcon && (
+															<UpgradeNotificationIcon className="h-3 w-3" />
+														)}
+													</span>
+												</Link>
 											))}
 										</div>
 									</div>
@@ -493,7 +509,7 @@ const Layout = ({ children }) => {
 					<nav className="flex flex-1 flex-col">
 						<ul className="flex flex-1 flex-col gap-y-6">
 							{/* Show message for users with very limited permissions */}
-							{navigation.length === 0 && (
+							{navigation.length === 0 && settingsNavigation.length === 0 && (
 								<li className="px-2 py-4 text-center">
 									<div className="text-sm text-secondary-500 dark:text-secondary-400">
 										<p className="mb-2">Limited access</p>
@@ -558,6 +574,13 @@ const Layout = ({ children }) => {
 																	{!sidebarCollapsed && (
 																		<span className="truncate flex items-center gap-2 flex-1">
 																			{subItem.name}
+																			{subItem.name === "Hosts" &&
+																				stats?.cards?.totalHosts !==
+																					undefined && (
+																					<span className="ml-2 inline-flex items-center justify-center px-1.5 py-0.5 text-xs rounded bg-secondary-100 text-secondary-700">
+																						{stats.cards.totalHosts}
+																					</span>
+																				)}
 																		</span>
 																	)}
 																	{!sidebarCollapsed && (
@@ -609,6 +632,13 @@ const Layout = ({ children }) => {
 																{!sidebarCollapsed && (
 																	<span className="truncate flex items-center gap-2">
 																		{subItem.name}
+																		{subItem.name === "Hosts" &&
+																			stats?.cards?.totalHosts !==
+																				undefined && (
+																				<span className="ml-2 inline-flex items-center justify-center px-1.5 py-0.5 text-xs rounded bg-secondary-100 text-secondary-700">
+																					{stats.cards.totalHosts}
+																				</span>
+																			)}
 																		{subItem.comingSoon && (
 																			<span className="text-xs bg-secondary-100 text-secondary-600 px-1.5 py-0.5 rounded">
 																				Soon
@@ -630,6 +660,59 @@ const Layout = ({ children }) => {
 								return null;
 							})}
 						</ul>
+
+						{/* Settings Section - Bottom of Navigation */}
+						{settingsNavigation.length > 0 && (
+							<ul className="gap-y-6">
+								{settingsNavigation.map((item) => {
+									if (item.section) {
+										// Settings section (no heading)
+										return (
+											<li key={item.section}>
+												<ul
+													className={`space-y-1 ${sidebarCollapsed ? "" : "-mx-2"}`}
+												>
+													{item.items.map((subItem) => (
+														<li key={subItem.name}>
+															<Link
+																to={subItem.href}
+																className={`group flex gap-x-3 rounded-md text-sm leading-6 font-medium transition-all duration-200 ${
+																	isActive(subItem.href)
+																		? "bg-primary-50 dark:bg-primary-600 text-primary-700 dark:text-white"
+																		: "text-secondary-700 dark:text-secondary-200 hover:text-primary-700 dark:hover:text-primary-300 hover:bg-secondary-50 dark:hover:bg-secondary-700"
+																} ${sidebarCollapsed ? "justify-center p-2 relative" : "p-2"}`}
+																title={sidebarCollapsed ? subItem.name : ""}
+															>
+																<div
+																	className={`flex items-center ${sidebarCollapsed ? "justify-center" : ""}`}
+																>
+																	<subItem.icon
+																		className={`h-5 w-5 shrink-0 ${sidebarCollapsed ? "mx-auto" : ""}`}
+																	/>
+																	{sidebarCollapsed &&
+																		subItem.showUpgradeIcon && (
+																			<UpgradeNotificationIcon className="h-3 w-3 absolute -top-1 -right-1" />
+																		)}
+																</div>
+																{!sidebarCollapsed && (
+																	<span className="truncate flex items-center gap-2">
+																		{subItem.name}
+																		{subItem.showUpgradeIcon && (
+																			<UpgradeNotificationIcon className="h-3 w-3" />
+																		)}
+																	</span>
+																)}
+															</Link>
+														</li>
+													))}
+												</ul>
+											</li>
+										);
+									}
+									return null;
+								})}
+							</ul>
+						)}
 					</nav>
 
 					{/* Profile Section - Bottom of Sidebar */}
@@ -637,11 +720,11 @@ const Layout = ({ children }) => {
 						{!sidebarCollapsed ? (
 							<div>
 								{/* User Info with Sign Out - Username is clickable */}
-								<div className="flex items-center justify-between p-2">
+								<div className="flex items-center justify-between -mx-2 py-2">
 									<Link
-										to="/profile"
+										to="/settings/profile"
 										className={`flex-1 min-w-0 rounded-md p-2 transition-all duration-200 ${
-											isActive("/profile")
+											isActive("/settings/profile")
 												? "bg-primary-50 dark:bg-primary-600"
 												: "hover:bg-secondary-50 dark:hover:bg-secondary-700"
 										}`}
@@ -649,15 +732,15 @@ const Layout = ({ children }) => {
 										<div className="flex items-center gap-x-3">
 											<UserCircle
 												className={`h-5 w-5 shrink-0 ${
-													isActive("/profile")
+													isActive("/settings/profile")
 														? "text-primary-700 dark:text-white"
 														: "text-secondary-500 dark:text-secondary-400"
 												}`}
 											/>
-											<div className="flex items-center gap-x-2">
+											<div className="flex flex-col min-w-0">
 												<span
 													className={`text-sm leading-6 font-semibold truncate ${
-														isActive("/profile")
+														isActive("/settings/profile")
 															? "text-primary-700 dark:text-white"
 															: "text-secondary-700 dark:text-secondary-200"
 													}`}
@@ -665,8 +748,14 @@ const Layout = ({ children }) => {
 													{user?.first_name || user?.username}
 												</span>
 												{user?.role === "admin" && (
-													<span className="inline-flex items-center rounded-full bg-primary-100 px-1.5 py-0.5 text-xs font-medium text-primary-800">
-														Admin
+													<span
+														className={`text-xs leading-4 ${
+															isActive("/settings/profile")
+																? "text-primary-600 dark:text-primary-200"
+																: "text-secondary-500 dark:text-secondary-400"
+														}`}
+													>
+														Role: Admin
 													</span>
 												)}
 											</div>
@@ -712,9 +801,9 @@ const Layout = ({ children }) => {
 						) : (
 							<div className="space-y-1">
 								<Link
-									to="/profile"
+									to="/settings/profile"
 									className={`flex items-center justify-center p-2 rounded-md transition-colors ${
-										isActive("/profile")
+										isActive("/settings/profile")
 											? "bg-primary-50 dark:bg-primary-600 text-primary-700 dark:text-white"
 											: "text-secondary-700 dark:text-secondary-200 hover:bg-secondary-50 dark:hover:bg-secondary-700"
 									}`}

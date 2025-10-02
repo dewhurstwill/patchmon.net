@@ -1,3 +1,5 @@
+name: patchmon
+
 services:
   database:
     image: postgres:17-alpine
@@ -5,7 +7,7 @@ services:
     environment:
       POSTGRES_DB: patchmon_db
       POSTGRES_USER: patchmon_user
-      POSTGRES_PASSWORD: INSECURE_REPLACE_ME_PLEASE_INSECURE
+      POSTGRES_PASSWORD: # CREATE A STRONG PASSWORD AND PUT IT HERE
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -15,19 +17,17 @@ services:
       retries: 7
 
   backend:
-    image: ghcr.io/9technologygroup/patchmon-backend:latest
+    image: ghcr.io/patchmon/patchmon-backend:latest
     restart: unless-stopped
+    # See PatchMon Docker README for additional environment variables and configuration instructions
     environment:
       LOG_LEVEL: info
-      DATABASE_URL: postgresql://patchmon_user:INSECURE_REPLACE_ME_PLEASE_INSECURE@database:5432/patchmon_db
-      PM_DB_CONN_MAX_ATTEMPTS: 30
-      PM_DB_CONN_WAIT_INTERVAL: 2
+      DATABASE_URL: postgresql://patchmon_user:REPLACE_YOUR_POSTGRES_PASSWORD_HERE@database:5432/patchmon_db
+      JWT_SECRET: # CREATE A STRONG SECRET AND PUT IT HERE - Generate with 'openssl rand -hex 64'
       SERVER_PROTOCOL: http
       SERVER_HOST: localhost
       SERVER_PORT: 3000
       CORS_ORIGIN: http://localhost:3000
-      RATE_LIMIT_WINDOW_MS: 900000
-      RATE_LIMIT_MAX: 100
     volumes:
       - agent_files:/app/agents
     depends_on:
@@ -35,7 +35,7 @@ services:
         condition: service_healthy
 
   frontend:
-    image: ghcr.io/9technologygroup/patchmon-frontend:latest
+    image: ghcr.io/patchmon/patchmon-frontend:latest
     restart: unless-stopped
     ports:
       - "3000:3000"

@@ -10,8 +10,8 @@ PatchMon is a containerised application that monitors system patches and updates
 
 ## Images
 
-- **Backend**: [ghcr.io/9technologygroup/patchmon-backend:latest](https://github.com/9technologygroup/patchmon.net/pkgs/container/patchmon-backend)
-- **Frontend**: [ghcr.io/9technologygroup/patchmon-frontend:latest](https://github.com/9technologygroup/patchmon.net/pkgs/container/patchmon-frontend)
+- **Backend**: [ghcr.io/patchmon/patchmon-backend:latest](https://github.com/patchmon/patchmon.net/pkgs/container/patchmon-backend)
+- **Frontend**: [ghcr.io/patchmon/patchmon-frontend:latest](https://github.com/patchmon/patchmon.net/pkgs/container/patchmon-frontend)
 
 Version tags are also available (e.g. `1.2.3`) for both of these images.
 
@@ -20,26 +20,37 @@ Version tags are also available (e.g. `1.2.3`) for both of these images.
 ### Production Deployment
 
 1. Download the [Docker Compose file](docker-compose.yml)
-2. Change the default database password in the file:
+2. Set a database password in the file where it says:
    ```yaml
    environment:
-     POSTGRES_PASSWORD: YOUR_SECURE_PASSWORD_HERE
+     POSTGRES_PASSWORD: # CREATE A STRONG PASSWORD AND PUT IT HERE
    ```
-3. Update the corresponding `DATABASE_URL` in the backend service:
+3. Update the corresponding `DATABASE_URL` with your password in the backend service where it says:
    ```yaml
    environment:
-     DATABASE_URL: postgresql://patchmon_user:YOUR_SECURE_PASSWORD_HERE@database:5432/patchmon_db
+     DATABASE_URL: postgresql://patchmon_user:REPLACE_YOUR_POSTGRES_PASSWORD_HERE@database:5432/patchmon_db
    ```
-4. Configure environment variables (see [Configuration](#configuration) section)
-5. Start the application:
+4. Generate a strong JWT secret. You can do this like so:
+   ```bash
+   openssl rand -hex 64
+   ```
+5. Set a JWT secret in the backend service where it says:
+   ```yaml
+   environment:
+     JWT_SECRET: # CREATE A STRONG SECRET AND PUT IT HERE
+   ```
+6. Configure environment variables (see [Configuration](#configuration) section)
+7. Start the application:
    ```bash
    docker compose up -d
    ```
-6. Access the application at `http://localhost:3000`
+8. Access the application at `http://localhost:3000`
 
 ## Updating
 
-To update PatchMon to the latest version:
+By default, the compose file uses the `latest` tag for both backend and frontend images.
+
+This means you can update PatchMon to the latest version as easily as:
 
 ```bash
 docker compose up -d --pull
@@ -52,16 +63,18 @@ This command will:
 
 ### Version-Specific Updates
 
-If you're using specific version tags instead of `latest` in your compose file:
+If you'd like to pin your Docker deployment of PatchMon to a specific version, you can do this in the compose file.
 
-1. Update the image tags in your `docker-compose.yml`. For example:
+When you do this, updating to a new version requires manually updating the image tags in the compose file yourself:
+
+1. Update the image tags in `docker-compose.yml`. For example:
    ```yaml
    services:
      backend:
-       image: ghcr.io/9technologygroup/patchmon-backend:1.2.7  # Update version here
+       image: ghcr.io/patchmon/patchmon-backend:1.2.3  # Update version here
       ...
      frontend:
-       image: ghcr.io/9technologygroup/patchmon-frontend:1.2.7  # Update version here
+       image: ghcr.io/patchmon/patchmon-frontend:1.2.3  # Update version here
       ...
    ```
 
@@ -71,7 +84,7 @@ If you're using specific version tags instead of `latest` in your compose file:
    ```
 
 > [!TIP]
-> Check the [releases page](https://github.com/9technologygroup/patchmon.net/releases) for version-specific changes and migration notes.
+> Check the [releases page](https://github.com/PatchMon/PatchMon/releases) for version-specific changes and migration notes.
 
 ## Configuration
 
@@ -79,31 +92,68 @@ If you're using specific version tags instead of `latest` in your compose file:
 
 #### Database Service
 
-- `POSTGRES_DB`: Database name (default: `patchmon_db`)
-- `POSTGRES_USER`: Database user (default: `patchmon_user`)
-- `POSTGRES_PASSWORD`: Database password - **MUST BE CHANGED!**
+| Variable            | Description       | Default          |
+| ------------------- | ----------------- | ---------------- |
+| `POSTGRES_DB`       | Database name     | `patchmon_db`    |
+| `POSTGRES_USER`     | Database user     | `patchmon_user`  |
+| `POSTGRES_PASSWORD` | Database password | **MUST BE SET!** |
 
 #### Backend Service
 
-- `LOG_LEVEL`: Logging level (`debug`, `info`, `warn`, `error`)
-- `DATABASE_URL`: PostgreSQL connection string
-- `PM_DB_CONN_MAX_ATTEMPTS`: Maximum database connection attempts (default: 30)
-- `PM_DB_CONN_WAIT_INTERVAL`: Wait interval between connection attempts in seconds (default: 2)
-- `SERVER_PROTOCOL`: Frontend server protocol (`http` or `https`)
-- `SERVER_HOST`: Frontend server host (default: `localhost`)
-- `SERVER_PORT`: Frontend server port (default: 3000)
-- `PORT`: Backend API port (default: 3001)
-- `API_VERSION`: API version (default: `v1`)
-- `CORS_ORIGIN`: CORS origin URL
-- `RATE_LIMIT_WINDOW_MS`: Rate limiting window in milliseconds (default: 900000)
-- `RATE_LIMIT_MAX`: Maximum requests per window (default: 100)
-- `ENABLE_HSTS`: Enable HTTP Strict Transport Security (default: true)
-- `TRUST_PROXY`: Trust proxy headers (default: true) - See [Express.js docs](https://expressjs.com/en/guide/behind-proxies.html) for usage.
+##### Database Configuration
+
+| Variable                   | Description                                          | Default                                          |
+| -------------------------- | ---------------------------------------------------- | ------------------------------------------------ |
+| `DATABASE_URL`             | PostgreSQL connection string                         | **MUST BE UPDATED WITH YOUR POSTGRES_PASSWORD!** |
+| `PM_DB_CONN_MAX_ATTEMPTS`  | Maximum database connection attempts                 | `30`                                             |
+| `PM_DB_CONN_WAIT_INTERVAL` | Wait interval between connection attempts in seconds | `2`                                              |
+
+##### Authentication & Security
+
+| Variable                             | Description                                               | Default          |
+| ------------------------------------ | --------------------------------------------------------- | ---------------- |
+| `JWT_SECRET`                         | JWT signing secret - Generate with `openssl rand -hex 64` | **MUST BE SET!** |
+| `JWT_EXPIRES_IN`                     | JWT token expiration time                                 | `1h`             |
+| `JWT_REFRESH_EXPIRES_IN`             | JWT refresh token expiration time                         | `7d`             |
+| `SESSION_INACTIVITY_TIMEOUT_MINUTES` | Session inactivity timeout in minutes                     | `30`             |
+| `DEFAULT_USER_ROLE`                  | Default role for new users                                | `user`           |
+
+##### Server & Network Configuration
+
+| Variable          | Description                                                                                     | Default                 |
+| ----------------- | ----------------------------------------------------------------------------------------------- | ----------------------- |
+| `PORT`            | Backend API port                                                                                | `3001`                  |
+| `SERVER_PROTOCOL` | Frontend server protocol (`http` or `https`)                                                    | `http`                  |
+| `SERVER_HOST`     | Frontend server host                                                                            | `localhost`             |
+| `SERVER_PORT`     | Frontend server port                                                                            | `3000`                  |
+| `CORS_ORIGIN`     | CORS origin URL                                                                                 | `http://localhost:3000` |
+| `ENABLE_HSTS`     | Enable HTTP Strict Transport Security                                                           | `true`                  |
+| `TRUST_PROXY`     | Trust proxy headers - See [Express.js docs](https://expressjs.com/en/guide/behind-proxies.html) | `true`                  |
+
+##### Rate Limiting
+
+| Variable                     | Description                                         | Default  |
+| ---------------------------- | --------------------------------------------------- | -------- |
+| `RATE_LIMIT_WINDOW_MS`       | Rate limiting window in milliseconds                | `900000` |
+| `RATE_LIMIT_MAX`             | Maximum requests per window                         | `5000`   |
+| `AUTH_RATE_LIMIT_WINDOW_MS`  | Authentication rate limiting window in milliseconds | `600000` |
+| `AUTH_RATE_LIMIT_MAX`        | Maximum authentication requests per window          | `500`    |
+| `AGENT_RATE_LIMIT_WINDOW_MS` | Agent API rate limiting window in milliseconds      | `60000`  |
+| `AGENT_RATE_LIMIT_MAX`       | Maximum agent requests per window                   | `1000`   |
+
+##### Logging
+
+| Variable         | Description                                      | Default |
+| ---------------- | ------------------------------------------------ | ------- |
+| `LOG_LEVEL`      | Logging level (`debug`, `info`, `warn`, `error`) | `info`  |
+| `ENABLE_LOGGING` | Enable application logging                       | `true`  |
 
 #### Frontend Service
 
-- `BACKEND_HOST`: Backend service hostname (default: `backend`)
-- `BACKEND_PORT`: Backend service port (default: 3001)
+| Variable       | Description              | Default   |
+| -------------- | ------------------------ | --------- |
+| `BACKEND_HOST` | Backend service hostname | `backend` |
+| `BACKEND_PORT` | Backend service port     | `3001`    |
 
 ### Volumes
 
@@ -129,7 +179,7 @@ For development with live reload and source code mounting:
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/9technologygroup/patchmon.net.git
+   git clone https://github.com/PatchMon/PatchMon.git
    cd patchmon.net
    ```
 
@@ -203,7 +253,7 @@ The development setup exposes additional ports for debugging:
 
 1. **Initial Setup**: Clone repository and start development environment
    ```bash
-   git clone https://github.com/9technologygroup/patchmon.net.git
+   git clone https://github.com/PatchMon/PatchMon.git
    cd patchmon.net
    docker compose -f docker/docker-compose.dev.yml up -d --build
    ```

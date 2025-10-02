@@ -74,6 +74,10 @@ export const adminHostsAPI = {
 		api.patch(`/hosts/${hostId}/friendly-name`, {
 			friendly_name: friendlyName,
 		}),
+	updateNotes: (hostId, notes) =>
+		api.patch(`/hosts/${hostId}/notes`, {
+			notes: notes,
+		}),
 };
 
 // Host Groups API

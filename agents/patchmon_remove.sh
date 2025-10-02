@@ -1,10 +1,15 @@
 #!/bin/bash
 
 # PatchMon Agent Removal Script
-# Usage: curl -ks {PATCHMON_URL}/api/v1/hosts/remove | bash
+# Usage: curl -s {PATCHMON_URL}/api/v1/hosts/remove | bash
 # This script completely removes PatchMon from the system
 
 set -e
+
+# This placeholder will be dynamically replaced by the server when serving this
+# script based on the "ignore SSL self-signed" setting for any curl calls in
+# future (left for consistency with install script).
+CURL_FLAGS=""
 
 # Colors for output
 RED='\033[0;31m'

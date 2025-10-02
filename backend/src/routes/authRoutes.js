@@ -12,6 +12,13 @@ const { v4: uuidv4 } = require("uuid");
 const {
 	createDefaultDashboardPreferences,
 } = require("./dashboardPreferencesRoutes");
+const {
+	create_session,
+	refresh_access_token,
+	revoke_session,
+	revoke_all_user_sessions,
+	get_user_sessions,
+} = require("../utils/session_manager");
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -118,12 +125,16 @@ router.post(
 			// Create default dashboard preferences for the new admin user
 			await createDefaultDashboardPreferences(user.id, "admin");
 
-			// Generate token for immediate login
-			const token = generateToken(user.id);
+			// Create session for immediate login
+			const ip_address = req.ip || req.connection.remoteAddress;
+			const user_agent = req.get("user-agent");
+			const session = await create_session(user.id, ip_address, user_agent);
 
 			res.status(201).json({
 				message: "Admin user created successfully",
-				token,
+				token: session.access_token,
+				refresh_token: session.refresh_token,
+				expires_at: session.expires_at,
 				user: {
 					id: user.id,
 					username: user.username,
@@ -722,12 +733,16 @@ router.post(
 				},
 			});
 
-			// Generate token
-			const token = generateToken(user.id);
+			// Create session with access and refresh tokens
+			const ip_address = req.ip || req.connection.remoteAddress;
+			const user_agent = req.get("user-agent");
+			const session = await create_session(user.id, ip_address, user_agent);
 
 			res.json({
 				message: "Login successful",
-				token,
+				token: session.access_token,
+				refresh_token: session.refresh_token,
+				expires_at: session.expires_at,
 				user: {
 					id: user.id,
 					username: user.username,
@@ -829,12 +844,16 @@ router.post(
 				data: { last_login: new Date() },
 			});
 
-			// Generate token
-			const jwtToken = generateToken(user.id);
+			// Create session with access and refresh tokens
+			const ip_address = req.ip || req.connection.remoteAddress;
+			const user_agent = req.get("user-agent");
+			const session = await create_session(user.id, ip_address, user_agent);
 
 			res.json({
 				message: "Login successful",
-				token: jwtToken,
+				token: session.access_token,
+				refresh_token: session.refresh_token,
+				expires_at: session.expires_at,
 				user: {
 					id: user.id,
 					username: user.username,
@@ -1001,15 +1020,110 @@ router.put(
 	},
 );
 
-// Logout (client-side token removal)
-router.post("/logout", authenticateToken, async (_req, res) => {
+// Logout (revoke current session)
+router.post("/logout", authenticateToken, async (req, res) => {
 	try {
+		// Revoke the current session
+		if (req.session_id) {
+			await revoke_session(req.session_id);
+		}
+
 		res.json({
 			message: "Logout successful",
 		});
 	} catch (error) {
 		console.error("Logout error:", error);
 		res.status(500).json({ error: "Logout failed" });
+	}
+});
+
+// Logout all sessions (revoke all user sessions)
+router.post("/logout-all", authenticateToken, async (req, res) => {
+	try {
+		await revoke_all_user_sessions(req.user.id);
+
+		res.json({
+			message: "All sessions logged out successfully",
+		});
+	} catch (error) {
+		console.error("Logout all error:", error);
+		res.status(500).json({ error: "Logout all failed" });
+	}
+});
+
+// Refresh access token using refresh token
+router.post(
+	"/refresh-token",
+	[body("refresh_token").notEmpty().withMessage("Refresh token is required")],
+	async (req, res) => {
+		try {
+			const errors = validationResult(req);
+			if (!errors.isEmpty()) {
+				return res.status(400).json({ errors: errors.array() });
+			}
+
+			const { refresh_token } = req.body;
+
+			const result = await refresh_access_token(refresh_token);
+
+			if (!result.success) {
+				return res.status(401).json({ error: result.error });
+			}
+
+			res.json({
+				message: "Token refreshed successfully",
+				token: result.access_token,
+				user: {
+					id: result.user.id,
+					username: result.user.username,
+					email: result.user.email,
+					role: result.user.role,
+					is_active: result.user.is_active,
+				},
+			});
+		} catch (error) {
+			console.error("Refresh token error:", error);
+			res.status(500).json({ error: "Token refresh failed" });
+		}
+	},
+);
+
+// Get user's active sessions
+router.get("/sessions", authenticateToken, async (req, res) => {
+	try {
+		const sessions = await get_user_sessions(req.user.id);
+
+		res.json({
+			sessions: sessions,
+		});
+	} catch (error) {
+		console.error("Get sessions error:", error);
+		res.status(500).json({ error: "Failed to fetch sessions" });
+	}
+});
+
+// Revoke a specific session
+router.delete("/sessions/:session_id", authenticateToken, async (req, res) => {
+	try {
+		const { session_id } = req.params;
+
+		// Verify the session belongs to the user
+		const session = await prisma.user_sessions.findUnique({
+			where: { id: session_id },
+		});
+
+		if (!session || session.user_id !== req.user.id) {
+			return res.status(404).json({ error: "Session not found" });
+		}
+
+		await revoke_session(session_id);
+
+		res.json({
+			message: "Session revoked successfully",
+		});
+	} catch (error) {
+		console.error("Revoke session error:", error);
+		res.status(500).json({ error: "Failed to revoke session" });
 	}
 });
 

@@ -45,10 +45,25 @@ router.get("/agent/download", async (req, res) => {
 		}
 
 		// Read file and convert line endings
-		const scriptContent = fs
+		let scriptContent = fs
 			.readFileSync(agentPath, "utf8")
 			.replace(/\r\n/g, "\n")
 			.replace(/\r/g, "\n");
+
+		// Determine curl flags dynamically from settings for consistency
+		let curlFlags = "-s";
+		try {
+			const settings = await prisma.settings.findFirst();
+			if (settings && settings.ignore_ssl_self_signed === true) {
+				curlFlags = "-sk";
+			}
+		} catch (_) {}
+
+		// Inject the curl flags into the script
+		scriptContent = scriptContent.replace(
+			'CURL_FLAGS=""',
+			`CURL_FLAGS="${curlFlags}"`,
+		);
 
 		res.setHeader("Content-Type", "application/x-shellscript");
 		res.setHeader(
@@ -266,12 +281,12 @@ router.post(
 			.withMessage("CPU cores must be a positive integer"),
 		body("ramInstalled")
 			.optional()
-			.isInt({ min: 1 })
-			.withMessage("RAM installed must be a positive integer"),
+			.isFloat({ min: 0.01 })
+			.withMessage("RAM installed must be a positive number"),
 		body("swapSize")
 			.optional()
-			.isInt({ min: 0 })
-			.withMessage("Swap size must be a non-negative integer"),
+			.isFloat({ min: 0 })
+			.withMessage("Swap size must be a non-negative number"),
 		body("diskDetails")
 			.optional()
 			.isArray()
@@ -843,6 +858,7 @@ router.get(
 					auto_update: true,
 					created_at: true,
 					host_group_id: true,
+					notes: true,
 					host_groups: {
 						select: {
 							id: true,
@@ -1101,11 +1117,21 @@ router.get("/install", async (req, res) => {
 			);
 		}
 
-		// Inject the API credentials and server URL into the script as environment variables
+		// Determine curl flags dynamically from settings (ignore self-signed)
+		let curlFlags = "-s";
+		try {
+			const settings = await prisma.settings.findFirst();
+			if (settings && settings.ignore_ssl_self_signed === true) {
+				curlFlags = "-sk";
+			}
+		} catch (_) {}
+
+		// Inject the API credentials, server URL, and curl flags into the script
 		const envVars = `#!/bin/bash
 export PATCHMON_URL="${serverUrl}"
 export API_ID="${host.api_id}"
 export API_KEY="${host.api_key}"
+export CURL_FLAGS="${curlFlags}"
 
 `;
 
@@ -1141,7 +1167,24 @@ router.get("/remove", async (_req, res) => {
 		}
 
 		// Read the script content
-		const script = fs.readFileSync(scriptPath, "utf8");
+		let script = fs.readFileSync(scriptPath, "utf8");
+
+		// Convert line endings
+		script = script.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+
+		// Determine curl flags dynamically from settings for consistency
+		let curlFlags = "-s";
+		try {
+			const settings = await prisma.settings.findFirst();
+			if (settings && settings.ignore_ssl_self_signed === true) {
+				curlFlags = "-sk";
+			}
+		} catch (_) {}
+
+		// Prepend environment for CURL_FLAGS so script can use it if needed
+		const envPrefix = `#!/bin/bash\nexport CURL_FLAGS="${curlFlags}"\n\n`;
+		script = script.replace(/^#!/, "#");
+		script = envPrefix + script;
 
 		// Set appropriate headers for script download
 		res.setHeader("Content-Type", "text/plain");
@@ -1445,6 +1488,80 @@ router.patch(
 		} catch (error) {
 			console.error("Update friendly name error:", error);
 			res.status(500).json({ error: "Failed to update friendly name" });
+		}
+	},
+);
+
+// Update host notes (admin only)
+router.patch(
+	"/:hostId/notes",
+	authenticateToken,
+	requireManageHosts,
+	[
+		body("notes")
+			.optional()
+			.isLength({ max: 1000 })
+			.withMessage("Notes must be less than 1000 characters"),
+	],
+	async (req, res) => {
+		try {
+			const errors = validationResult(req);
+			if (!errors.isEmpty()) {
+				return res.status(400).json({ errors: errors.array() });
+			}
+
+			const { hostId } = req.params;
+			const { notes } = req.body;
+
+			// Check if host exists
+			const existingHost = await prisma.hosts.findUnique({
+				where: { id: hostId },
+			});
+
+			if (!existingHost) {
+				return res.status(404).json({ error: "Host not found" });
+			}
+
+			// Update the notes
+			const updatedHost = await prisma.hosts.update({
+				where: { id: hostId },
+				data: {
+					notes: notes || null,
+					updated_at: new Date(),
+				},
+				select: {
+					id: true,
+					friendly_name: true,
+					hostname: true,
+					ip: true,
+					os_type: true,
+					os_version: true,
+					architecture: true,
+					last_update: true,
+					status: true,
+					host_group_id: true,
+					agent_version: true,
+					auto_update: true,
+					created_at: true,
+					updated_at: true,
+					notes: true,
+					host_groups: {
+						select: {
+							id: true,
+							name: true,
+							color: true,
+						},
+					},
+				},
+			});
+
+			res.json({
+				message: "Notes updated successfully",
+				host: updatedHost,
+			});
+		} catch (error) {
+			console.error("Update notes error:", error);
+			res.status(500).json({ error: "Failed to update notes" });
 		}
 	},
 );

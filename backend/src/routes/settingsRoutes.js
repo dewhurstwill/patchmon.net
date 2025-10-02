@@ -165,19 +165,31 @@ router.put(
 	requireManageSettings,
 	[
 		body("serverProtocol")
+			.optional()
 			.isIn(["http", "https"])
 			.withMessage("Protocol must be http or https"),
 		body("serverHost")
+			.optional()
 			.isLength({ min: 1 })
 			.withMessage("Server host is required"),
 		body("serverPort")
+			.optional()
 			.isInt({ min: 1, max: 65535 })
 			.withMessage("Port must be between 1 and 65535"),
 		body("updateInterval")
+			.optional()
 			.isInt({ min: 5, max: 1440 })
 			.withMessage("Update interval must be between 5 and 1440 minutes"),
-		body("autoUpdate").isBoolean().withMessage("Auto update must be a boolean"),
+		body("autoUpdate")
+			.optional()
+			.isBoolean()
+			.withMessage("Auto update must be a boolean"),
+		body("ignoreSslSelfSigned")
+			.optional()
+			.isBoolean()
+			.withMessage("Ignore SSL self-signed must be a boolean"),
 		body("signupEnabled")
+			.optional()
 			.isBoolean()
 			.withMessage("Signup enabled must be a boolean"),
 		body("defaultUserRole")
@@ -218,6 +230,7 @@ router.put(
 				serverPort,
 				updateInterval,
 				autoUpdate,
+				ignoreSslSelfSigned,
 				signupEnabled,
 				defaultUserRole,
 				githubRepoUrl,
@@ -229,32 +242,43 @@ router.put(
 			const currentSettings = await getSettings();
 			const oldUpdateInterval = currentSettings.update_interval;
 
-			// Update settings using the service
-			const normalizedInterval = normalizeUpdateInterval(updateInterval || 60);
+			// Build update object with only provided fields
+			const updateData = {};
 
-			const updatedSettings = await updateSettings(currentSettings.id, {
-				server_protocol: serverProtocol,
-				server_host: serverHost,
-				server_port: serverPort,
-				update_interval: normalizedInterval,
-				auto_update: autoUpdate || false,
-				signup_enabled: signupEnabled || false,
-				default_user_role:
-					defaultUserRole || process.env.DEFAULT_USER_ROLE || "user",
-				github_repo_url:
-					githubRepoUrl !== undefined
-						? githubRepoUrl
-						: "git@github.com:9technologygroup/patchmon.net.git",
-				repository_type: repositoryType || "public",
-				ssh_key_path: sshKeyPath || null,
-			});
+			if (serverProtocol !== undefined)
+				updateData.server_protocol = serverProtocol;
+			if (serverHost !== undefined) updateData.server_host = serverHost;
+			if (serverPort !== undefined) updateData.server_port = serverPort;
+			if (updateInterval !== undefined) {
+				updateData.update_interval = normalizeUpdateInterval(updateInterval);
+			}
+			if (autoUpdate !== undefined) updateData.auto_update = autoUpdate;
+			if (ignoreSslSelfSigned !== undefined)
+				updateData.ignore_ssl_self_signed = ignoreSslSelfSigned;
+			if (signupEnabled !== undefined)
+				updateData.signup_enabled = signupEnabled;
+			if (defaultUserRole !== undefined)
+				updateData.default_user_role = defaultUserRole;
+			if (githubRepoUrl !== undefined)
+				updateData.github_repo_url = githubRepoUrl;
+			if (repositoryType !== undefined)
+				updateData.repository_type = repositoryType;
+			if (sshKeyPath !== undefined) updateData.ssh_key_path = sshKeyPath;
+
+			const updatedSettings = await updateSettings(
+				currentSettings.id,
+				updateData,
+			);
 
 			console.log("Settings updated successfully:", updatedSettings);
 
 			// If update interval changed, trigger crontab updates on all hosts with auto-update enabled
-			if (oldUpdateInterval !== normalizedInterval) {
+			if (
+				updateInterval !== undefined &&
+				oldUpdateInterval !== updateData.update_interval
+			) {
 				console.log(
-					`Update interval changed from ${oldUpdateInterval} to ${normalizedInterval} minutes. Triggering crontab updates...`,
+					`Update interval changed from ${oldUpdateInterval} to ${updateData.update_interval} minutes. Triggering crontab updates...`,
 				);
 				await triggerCrontabUpdates();
 			}

@@ -1,3 +1,5 @@
+name: patchmon-dev
+
 services:
   database:
     image: postgres:17-alpine
@@ -5,7 +7,7 @@ services:
     environment:
       POSTGRES_DB: patchmon_db
       POSTGRES_USER: patchmon_user
-      POSTGRES_PASSWORD: INSECURE_REPLACE_ME_PLEASE_INSECURE
+      POSTGRES_PASSWORD: 1NS3CU6E_DEV_D8_PASSW0RD
     ports:
       - "5432:5432"
     volumes:
@@ -21,19 +23,17 @@ services:
       context: ..
       dockerfile: docker/backend.Dockerfile
       target: development
+      tags: [patchmon-backend:dev]
     restart: unless-stopped
     environment:
       NODE_ENV: development
       LOG_LEVEL: info
-      DATABASE_URL: postgresql://patchmon_user:INSECURE_REPLACE_ME_PLEASE_INSECURE@database:5432/patchmon_db
-      PM_DB_CONN_MAX_ATTEMPTS: 30
-      PM_DB_CONN_WAIT_INTERVAL: 2
+      DATABASE_URL: postgresql://patchmon_user:1NS3CU6E_DEV_D8_PASSW0RD@database:5432/patchmon_db
+      JWT_SECRET: INS3CURE_DEV_7WT_5ECR3T
       SERVER_PROTOCOL: http
       SERVER_HOST: localhost
       SERVER_PORT: 3000
       CORS_ORIGIN: http://localhost:3000
-      RATE_LIMIT_WINDOW_MS: 900000
-      RATE_LIMIT_MAX: 100
     ports:
       - "3001:3001"
     volumes:
@@ -59,6 +59,7 @@ services:
       context: ..
       dockerfile: docker/frontend.Dockerfile
       target: development
+      tags: [patchmon-frontend:dev]
     restart: unless-stopped
     environment:
       BACKEND_HOST: backend

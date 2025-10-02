@@ -108,6 +108,11 @@ const Settings = () => {
 		queryFn: () => settingsAPI.get().then((res) => res.data),
 	});
 
+	// Helper function to get curl flags based on settings
+	const getCurlFlags = () => {
+		return settings?.ignore_ssl_self_signed ? "-sk" : "-s";
+	};
+
 	// Fetch available roles for default user role dropdown
 	const { data: roles, isLoading: rolesLoading } = useQuery({
 		queryKey: ["rolePermissions"],
@@ -938,13 +943,13 @@ const Settings = () => {
 													</p>
 													<div className="flex items-center gap-2">
 														<div className="bg-red-100 dark:bg-red-800 rounded p-2 font-mono text-xs flex-1">
-															curl -ks {window.location.origin}
+															curl {getCurlFlags()} {window.location.origin}
 															/api/v1/hosts/remove | sudo bash
 														</div>
 														<button
 															type="button"
 															onClick={() => {
-																const command = `curl -ks ${window.location.origin}/api/v1/hosts/remove | sudo bash`;
+																const command = `curl ${getCurlFlags()} ${window.location.origin}/api/v1/hosts/remove | sudo bash`;
 																navigator.clipboard.writeText(command);
 																// You could add a toast notification here
 															}}

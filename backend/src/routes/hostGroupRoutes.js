@@ -205,11 +205,11 @@ router.delete(
 				return res.status(404).json({ error: "Host group not found" });
 			}
 
-			// Check if host group has hosts
+			// If host group has hosts, ungroup them first
 			if (existingGroup._count.hosts > 0) {
-				return res.status(400).json({
-					error:
-						"Cannot delete host group that contains hosts. Please move or remove hosts first.",
+				await prisma.hosts.updateMany({
+					where: { host_group_id: id },
+					data: { host_group_id: null },
 				});
 			}
 

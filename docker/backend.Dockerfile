@@ -59,7 +59,10 @@ ENV NODE_ENV=production \
     ENABLE_LOGGING=true \
     LOG_LEVEL=info \
     PM_LOG_TO_CONSOLE=true \
-    PORT=3001
+    PORT=3001 \
+    JWT_EXPIRES_IN=1h \
+    JWT_REFRESH_EXPIRES_IN=7d \
+    SESSION_INACTIVITY_TIMEOUT_MINUTES=30
 
 RUN apk add --no-cache openssl tini curl
 

@@ -11,6 +11,11 @@ CONFIG_FILE="/etc/patchmon/agent.conf"
 CREDENTIALS_FILE="/etc/patchmon/credentials"
 LOG_FILE="/var/log/patchmon-agent.log"
 
+# This placeholder will be dynamically replaced by the server when serving this
+# script based on the "ignore SSL self-signed" setting. If set to -k, curl will
+# ignore certificate validation. Otherwise, it will be empty for secure default.
+CURL_FLAGS=""
+
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -20,7 +25,10 @@ NC='\033[0m' # No Color
 
 # Logging function
 log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" | tee -a "$LOG_FILE"
+    # Try to write to log file, but don't fail if we can't
+    if [[ -w "$(dirname "$LOG_FILE")" ]] 2>/dev/null; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] $1" >> "$LOG_FILE" 2>/dev/null
+    fi
 }
 
 # Error handling
@@ -30,21 +38,21 @@ error() {
     exit 1
 }
 
-# Info logging
+# Info logging (cleaner output - only stdout, no duplicate logging)
 info() {
-    echo -e "${BLUE}INFO: $1${NC}"
+    echo -e "${BLUE}ℹ️  $1${NC}"
     log "INFO: $1"
 }
 
-# Success logging
+# Success logging (cleaner output - only stdout, no duplicate logging)
 success() {
-    echo -e "${GREEN}SUCCESS: $1${NC}"
+    echo -e "${GREEN}✅ $1${NC}"
     log "SUCCESS: $1"
 }
 
-# Warning logging
+# Warning logging (cleaner output - only stdout, no duplicate logging)
 warning() {
-    echo -e "${YELLOW}WARNING: $1${NC}"
+    echo -e "${YELLOW}⚠️  $1${NC}"
     log "WARNING: $1"
 }
 
@@ -53,6 +61,31 @@ check_root() {
     if [[ $EUID -ne 0 ]]; then
         error "This script must be run as root"
     fi
+}
+
+# Verify system datetime and timezone
+verify_datetime() {
+    info "Verifying system datetime and timezone..."
+    
+    # Get current system time
+    local system_time=$(date)
+    local timezone="Unknown"
+    
+    # Try to get timezone with timeout protection
+    if command -v timedatectl >/dev/null 2>&1; then
+        timezone=$(timedatectl show --property=Timezone --value 2>/dev/null || echo "Unknown")
+    fi
+    
+    # Log datetime info (non-blocking)
+    log "System datetime check - time: $system_time, timezone: $timezone" 2>/dev/null || true
+    
+    # Simple check - just log the info, don't block execution
+    if [[ "$timezone" == "Unknown" ]] || [[ -z "$timezone" ]]; then
+        warning "System timezone not configured: $timezone"
+        log "WARNING: System timezone not configured - timezone: $timezone" 2>/dev/null || true
+    fi
+    
+    return 0
 }
 
 # Create necessary directories
@@ -144,7 +177,7 @@ EOF
 test_credentials() {
     load_credentials
     
-    local response=$(curl -ks -X POST \
+    local response=$(curl $CURL_FLAGS -X POST \
         -H "Content-Type: application/json" \
         -H "X-API-ID: $API_ID" \
         -H "X-API-KEY: $API_KEY" \
@@ -611,16 +644,31 @@ get_yum_packages() {
     fi
     
     # Get upgradable packages
-    local upgradable=$($package_manager check-update 2>/dev/null | grep -v "^$" | grep -v "^Loaded" | grep -v "^Last metadata" | tail -n +2)
+    local upgradable=$($package_manager check-update 2>/dev/null | grep -v "^$" | grep -v "^Loaded" | grep -v "^Last metadata" | grep -v "^Security" | tail -n +2)
     
     while IFS= read -r line; do
+        # Skip empty lines and lines with special characters
+        [[ -z "$line" ]] && continue
+        [[ "$line" =~ ^[[:space:]]*$ ]] && continue
+        
         if [[ "$line" =~ ^([^[:space:]]+)[[:space:]]+([^[:space:]]+)[[:space:]]+([^[:space:]]+) ]]; then
             local package_name="${BASH_REMATCH[1]}"
             local available_version="${BASH_REMATCH[2]}"
             local repo="${BASH_REMATCH[3]}"
             
+            # Sanitize package name and versions (remove any control characters)
+            package_name=$(echo "$package_name" | tr -d '[:cntrl:]' | sed 's/[^a-zA-Z0-9._+-]//g')
+            available_version=$(echo "$available_version" | tr -d '[:cntrl:]' | sed 's/[^a-zA-Z0-9._+-]//g')
+            repo=$(echo "$repo" | tr -d '[:cntrl:]')
+            
+            # Skip if package name is empty after sanitization
+            [[ -z "$package_name" ]] && continue
+            
             # Get current version
-            local current_version=$($package_manager list installed "$package_name" 2>/dev/null | grep "^$package_name" | awk '{print $2}')
+            local current_version=$($package_manager list installed "$package_name" 2>/dev/null | grep "^$package_name" | awk '{print $2}' | tr -d '[:cntrl:]' | sed 's/[^a-zA-Z0-9._+-]//g')
+            
+            # Skip if we couldn't get current version
+            [[ -z "$current_version" ]] && current_version="unknown"
             
             local is_security_update=false
             if echo "$repo" | grep -q "security"; then
@@ -641,9 +689,21 @@ get_yum_packages() {
     local installed=$($package_manager list installed 2>/dev/null | grep -v "^Loaded" | grep -v "^Installed" | head -100)
     
     while IFS= read -r line; do
+        # Skip empty lines
+        [[ -z "$line" ]] && continue
+        [[ "$line" =~ ^[[:space:]]*$ ]] && continue
+        
         if [[ "$line" =~ ^([^[:space:]]+)[[:space:]]+([^[:space:]]+) ]]; then
             local package_name="${BASH_REMATCH[1]}"
             local version="${BASH_REMATCH[2]}"
+            
+            # Sanitize package name and version
+            package_name=$(echo "$package_name" | tr -d '[:cntrl:]' | sed 's/[^a-zA-Z0-9._+-]//g')
+            version=$(echo "$version" | tr -d '[:cntrl:]' | sed 's/[^a-zA-Z0-9._+-]//g')
+            
+            # Skip if package name is empty after sanitization
+            [[ -z "$package_name" ]] && continue
+            [[ -z "$version" ]] && version="unknown"
             
             # Check if this package is not in the upgrade list
             if ! echo "$upgradable" | grep -q "^$package_name "; then
@@ -678,11 +738,21 @@ get_hardware_info() {
     
     # Memory Information
     if command -v free >/dev/null 2>&1; then
-        ram_installed=$(free -g | grep "^Mem:" | awk '{print $2}')
-        swap_size=$(free -g | grep "^Swap:" | awk '{print $2}')
+        # Use free -m to get MB, then convert to GB with decimal precision
+        ram_installed=$(free -m | grep "^Mem:" | awk '{printf "%.2f", $2/1024}')
+        swap_size=$(free -m | grep "^Swap:" | awk '{printf "%.2f", $2/1024}')
     elif [[ -f /proc/meminfo ]]; then
-        ram_installed=$(grep "MemTotal" /proc/meminfo | awk '{print int($2/1024/1024)}')
-        swap_size=$(grep "SwapTotal" /proc/meminfo | awk '{print int($2/1024/1024)}')
+        # Convert KB to GB with decimal precision
+        ram_installed=$(grep "MemTotal" /proc/meminfo | awk '{printf "%.2f", $2/1048576}')
+        swap_size=$(grep "SwapTotal" /proc/meminfo | awk '{printf "%.2f", $2/1048576}')
+    fi
+    
+    # Ensure minimum value of 0.01GB to prevent 0 values
+    if (( $(echo "$ram_installed < 0.01" | bc -l) )); then
+        ram_installed="0.01"
+    fi
+    if (( $(echo "$swap_size < 0" | bc -l) )); then
+        swap_size="0"
     fi
     
     # Disk Information
@@ -740,8 +810,16 @@ get_system_info() {
     # SELinux Status
     if command -v getenforce >/dev/null 2>&1; then
         selinux_status=$(getenforce 2>/dev/null | tr '[:upper:]' '[:lower:]')
+        # Map "enforcing" to "enabled" for server validation
+        if [[ "$selinux_status" == "enforcing" ]]; then
+            selinux_status="enabled"
+        fi
     elif [[ -f /etc/selinux/config ]]; then
         selinux_status=$(grep "^SELINUX=" /etc/selinux/config | cut -d'=' -f2 | tr '[:upper:]' '[:lower:]')
+        # Map "enforcing" to "enabled" for server validation
+        if [[ "$selinux_status" == "enforcing" ]]; then
+            selinux_status="enabled"
+        fi
     else
         selinux_status="disabled"
     fi
@@ -771,19 +849,16 @@ get_system_info() {
 send_update() {
     load_credentials
     
-    info "Collecting package information..."
-    local packages_json=$(get_package_info)
-    
-    info "Collecting repository information..."
-    local repositories_json=$(get_repository_info)
-    
-    info "Collecting hardware information..."
-    local hardware_json=$(get_hardware_info)
-    
-    info "Collecting network information..."
-    local network_json=$(get_network_info)
+    # Verify datetime before proceeding
+    if ! verify_datetime; then
+        warning "Datetime verification failed, but continuing with update..."
+    fi
     
     info "Collecting system information..."
+    local packages_json=$(get_package_info)
+    local repositories_json=$(get_repository_info)
+    local hardware_json=$(get_hardware_info)
+    local network_json=$(get_network_info)
     local system_json=$(get_system_info)
     
     info "Sending update to PatchMon server..."
@@ -809,7 +884,7 @@ EOF
     local payload=$(echo "$base_payload $merged_json" | jq -s '.[0] * .[1]')
     
     
-    local response=$(curl -ks -X POST \
+    local response=$(curl $CURL_FLAGS -X POST \
         -H "Content-Type: application/json" \
         -H "X-API-ID: $API_ID" \
         -H "X-API-KEY: $API_KEY" \
@@ -818,45 +893,35 @@ EOF
     
     if [[ $? -eq 0 ]]; then
         if echo "$response" | grep -q "success"; then
-            success "Update sent successfully"
-            echo "$response" | grep -o '"packagesProcessed":[0-9]*' | cut -d':' -f2 | xargs -I {} info "Processed {} packages"
+            local packages_count=$(echo "$response" | grep -o '"packagesProcessed":[0-9]*' | cut -d':' -f2)
+            success "Update sent successfully (${packages_count} packages processed)"
             
             # Check if auto-update is enabled and check for agent updates locally
             if check_auto_update_enabled; then
-                info "Auto-update is enabled, checking for agent updates..."
+                info "Checking for agent updates..."
                 if check_agent_update_needed; then
-                    info "Agent update available, automatically updating..."
+                    info "Agent update available, updating..."
                     if "$0" update-agent; then
-                        success "PatchMon agent update completed successfully"
+                        success "Agent updated successfully"
                     else
-                        warning "PatchMon agent update failed, but data was sent successfully"
+                        warning "Agent update failed, but data was sent successfully"
                     fi
                 else
                     info "Agent is up to date"
                 fi
             fi
             
-            # Check for crontab update instructions (look specifically in crontabUpdate section)
-            if echo "$response" | grep -q '"crontabUpdate":{'; then
-                local crontab_update_section=$(echo "$response" | grep -o '"crontabUpdate":{[^}]*}')
-                local should_update_crontab=$(echo "$crontab_update_section" | grep -o '"shouldUpdate":true' | cut -d':' -f2)
-                if [[ "$should_update_crontab" == "true" ]]; then
-                    local crontab_message=$(echo "$crontab_update_section" | grep -o '"message":"[^"]*' | cut -d'"' -f4)
-                    local crontab_command=$(echo "$crontab_update_section" | grep -o '"command":"[^"]*' | cut -d'"' -f4)
-                    
-                    if [[ -n "$crontab_message" ]]; then
-                        info "Crontab update detected: $crontab_message"
-                    fi
-                    
-                    if [[ "$crontab_command" == "update-crontab" ]]; then
-                        info "Automatically updating crontab with new interval..."
-                        if "$0" update-crontab; then
-                            success "Crontab updated successfully"
-                        else
-                            warning "Crontab update failed, but data was sent successfully"
-                        fi
-                    fi
-                fi
+            # Automatically check if crontab needs updating based on server settings
+            info "Checking crontab configuration..."
+            "$0" update-crontab
+            local crontab_exit_code=$?
+            if [[ $crontab_exit_code -eq 0 ]]; then
+                success "Crontab updated successfully"
+            elif [[ $crontab_exit_code -eq 2 ]]; then
+                # Already up to date - no additional message needed
+                true
+            else
+                warning "Crontab update failed, but data was sent successfully"
             fi
         else
             error "Update failed: $response"
@@ -870,7 +935,7 @@ EOF
 ping_server() {
     load_credentials
     
-    local response=$(curl -ks -X POST \
+    local response=$(curl $CURL_FLAGS -X POST \
         -H "Content-Type: application/json" \
         -H "X-API-ID: $API_ID" \
         -H "X-API-KEY: $API_KEY" \
@@ -883,7 +948,7 @@ ping_server() {
             info "Connected as host: $hostname"
         fi
         
-        # Check for crontab update trigger
+        # Check for crontab update instructions
         local should_update_crontab=$(echo "$response" | grep -o '"shouldUpdate":true' | cut -d':' -f2)
         if [[ "$should_update_crontab" == "true" ]]; then
             local message=$(echo "$response" | grep -o '"message":"[^"]*' | cut -d'"' -f4)
@@ -894,11 +959,16 @@ ping_server() {
             fi
             
             if [[ "$command" == "update-crontab" ]]; then
-                info "Automatically updating crontab with new interval..."
-                if "$0" update-crontab; then
+                info "Updating crontab with new interval..."
+                "$0" update-crontab
+                local crontab_exit_code=$?
+                if [[ $crontab_exit_code -eq 0 ]]; then
                     success "Crontab updated successfully"
+                elif [[ $crontab_exit_code -eq 2 ]]; then
+                    # Already up to date - no additional message needed
+                    true
                 else
-                    warning "Crontab update failed, but ping was successful"
+                    warning "Crontab update failed, but data was sent successfully"
                 fi
             fi
         fi
@@ -913,7 +983,7 @@ check_version() {
     
     info "Checking for agent updates..."
     
-    local response=$(curl -ks -H "X-API-ID: $API_ID" -H "X-API-KEY: $API_KEY" -X GET "$PATCHMON_SERVER/api/$API_VERSION/hosts/agent/version")
+    local response=$(curl $CURL_FLAGS -H "X-API-ID: $API_ID" -H "X-API-KEY: $API_KEY" -X GET "$PATCHMON_SERVER/api/$API_VERSION/hosts/agent/version")
     
     if [[ $? -eq 0 ]]; then
         local current_version=$(echo "$response" | grep -o '"currentVersion":"[^"]*' | cut -d'"' -f4)
@@ -945,7 +1015,7 @@ check_version() {
 # Check if auto-update is enabled (both globally and for this host)
 check_auto_update_enabled() {
     # Get settings from server using API credentials
-    local response=$(curl -ks -H "X-API-ID: $API_ID" -H "X-API-KEY: $API_KEY" -X GET "$PATCHMON_SERVER/api/$API_VERSION/hosts/settings" 2>/dev/null)
+    local response=$(curl $CURL_FLAGS -H "X-API-ID: $API_ID" -H "X-API-KEY: $API_KEY" -X GET "$PATCHMON_SERVER/api/$API_VERSION/hosts/settings" 2>/dev/null)
     if [[ $? -ne 0 ]]; then
         return 1
     fi
@@ -970,7 +1040,7 @@ check_agent_update_needed() {
     fi
     
     # Get server agent info using API credentials
-    local response=$(curl -ks -H "X-API-ID: $API_ID" -H "X-API-KEY: $API_KEY" -X GET "$PATCHMON_SERVER/api/$API_VERSION/hosts/agent/timestamp" 2>/dev/null)
+    local response=$(curl $CURL_FLAGS -H "X-API-ID: $API_ID" -H "X-API-KEY: $API_KEY" -X GET "$PATCHMON_SERVER/api/$API_VERSION/hosts/agent/timestamp" 2>/dev/null)
     
     if [[ $? -eq 0 ]]; then
         local server_version=$(echo "$response" | grep -o '"version":"[^"]*' | cut -d'"' -f4)
@@ -1007,7 +1077,7 @@ check_agent_update() {
     fi
     
     # Get server agent info using API credentials
-    local response=$(curl -ks -H "X-API-ID: $API_ID" -H "X-API-KEY: $API_KEY" -X GET "$PATCHMON_SERVER/api/$API_VERSION/hosts/agent/timestamp")
+    local response=$(curl $CURL_FLAGS -H "X-API-ID: $API_ID" -H "X-API-KEY: $API_KEY" -X GET "$PATCHMON_SERVER/api/$API_VERSION/hosts/agent/timestamp")
     
     if [[ $? -eq 0 ]]; then
         local server_version=$(echo "$response" | grep -o '"version":"[^"]*' | cut -d'"' -f4)
@@ -1057,7 +1127,7 @@ update_agent() {
     cp "$0" "$backup_file"
     
     # Download new version using API credentials
-    if curl -ks -H "X-API-ID: $API_ID" -H "X-API-KEY: $API_KEY" -o "/tmp/patchmon-agent-new.sh" "$download_url"; then
+    if curl $CURL_FLAGS -H "X-API-ID: $API_ID" -H "X-API-KEY: $API_KEY" -o "/tmp/patchmon-agent-new.sh" "$download_url"; then
         # Verify the downloaded script is valid
         if bash -n "/tmp/patchmon-agent-new.sh" 2>/dev/null; then
             # Replace current script
@@ -1090,7 +1160,7 @@ update_agent() {
 update_crontab() {
     load_credentials
     info "Updating crontab with current policy..."
-    local response=$(curl -ks -H "X-API-ID: $API_ID" -H "X-API-KEY: $API_KEY" -X GET "$PATCHMON_SERVER/api/$API_VERSION/settings/update-interval")
+    local response=$(curl $CURL_FLAGS -H "X-API-ID: $API_ID" -H "X-API-KEY: $API_KEY" -X GET "$PATCHMON_SERVER/api/$API_VERSION/settings/update-interval")
     if [[ $? -eq 0 ]]; then
         local update_interval=$(echo "$response" | grep -o '"updateInterval":[0-9]*' | cut -d':' -f2)
         # Fallback if not found
@@ -1129,7 +1199,7 @@ update_crontab() {
             # Check if crontab needs updating
             if [[ "$current_patchmon_entry" == "$expected_crontab" ]]; then
                 info "Crontab is already up to date (interval: $update_interval minutes)"
-                return 0
+                return 2  # Special return code for "already up to date"
             fi
             
             info "Setting update interval to $update_interval minutes"

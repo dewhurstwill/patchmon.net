@@ -130,6 +130,8 @@ agents/*.log
 test-results/
 playwright-report/
 test-results.xml
+test_*.sh
+test-*.sh
 
 # Package manager lock files (uncomment if you want to ignore them)
 # package-lock.json

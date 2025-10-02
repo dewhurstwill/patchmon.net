@@ -43,6 +43,7 @@ async function createSettingsFromEnvironment() {
 			update_interval: 60,
 			auto_update: false,
 			signup_enabled: false,
+			ignore_ssl_self_signed: false,
 			updated_at: new Date(),
 		},
 	});

@@ -257,6 +257,7 @@ const Hosts = () => {
 		const filter = searchParams.get("filter");
 		const showFiltersParam = searchParams.get("showFilters");
 		const osFilterParam = searchParams.get("osFilter");
+		const groupParam = searchParams.get("group");
 
 		if (filter === "needsUpdates") {
 			setShowFilters(true);
@@ -282,6 +283,12 @@ const Hosts = () => {
 		if (osFilterParam) {
 			setShowFilters(true);
 			setOsFilter(osFilterParam);
+		}
+
+		// Handle group filter parameter
+		if (groupParam) {
+			setShowFilters(true);
+			setGroupFilter(groupParam);
 		}
 
 		// Handle add host action from navigation
@@ -334,8 +341,9 @@ const Hosts = () => {
 			},
 			{ id: "status", label: "Status", visible: true, order: 8 },
 			{ id: "updates", label: "Updates", visible: true, order: 9 },
-			{ id: "last_update", label: "Last Update", visible: true, order: 10 },
-			{ id: "actions", label: "Actions", visible: true, order: 11 },
+			{ id: "notes", label: "Notes", visible: false, order: 10 },
+			{ id: "last_update", label: "Last Update", visible: true, order: 11 },
+			{ id: "actions", label: "Actions", visible: true, order: 12 },
 		];
 
 		const saved = localStorage.getItem("hosts-column-config");
@@ -535,7 +543,8 @@ const Hosts = () => {
 				searchTerm === "" ||
 				host.friendly_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
 				host.ip?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-				host.os_type?.toLowerCase().includes(searchTerm.toLowerCase());
+				host.os_type?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+				host.notes?.toLowerCase().includes(searchTerm.toLowerCase());
 
 			// Group filter
 			const matchesGroup =
@@ -620,6 +629,10 @@ const Hosts = () => {
 				case "last_update":
 					aValue = new Date(a.last_update);
 					bValue = new Date(b.last_update);
+					break;
+				case "notes":
+					aValue = (a.notes || "").toLowerCase();
+					bValue = (b.notes || "").toLowerCase();
 					break;
 				default:
 					aValue = a[sortField];
@@ -868,6 +881,20 @@ const Hosts = () => {
 				return (
 					<div className="text-sm text-secondary-500 dark:text-secondary-300">
 						{formatRelativeTime(host.last_update)}
+					</div>
+				);
+			case "notes":
+				return (
+					<div className="text-sm text-secondary-900 dark:text-white max-w-xs">
+						{host.notes ? (
+							<div className="truncate" title={host.notes}>
+								{host.notes}
+							</div>
+						) : (
+							<span className="text-secondary-400 dark:text-secondary-500 italic">
+								No notes
+							</span>
+						)}
 					</div>
 				);
 			case "actions":
