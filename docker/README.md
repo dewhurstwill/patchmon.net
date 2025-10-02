@@ -6,14 +6,21 @@ PatchMon is a containerised application that monitors system patches and updates
 
 - **Database**: PostgreSQL 17
 - **Backend**: Node.js API server
-- **Frontend**: React application served via Nginx
+- **Frontend**: React application served via NGINX
 
 ## Images
 
-- **Backend**: [ghcr.io/patchmon/patchmon-backend:latest](https://github.com/patchmon/patchmon.net/pkgs/container/patchmon-backend)
-- **Frontend**: [ghcr.io/patchmon/patchmon-frontend:latest](https://github.com/patchmon/patchmon.net/pkgs/container/patchmon-frontend)
+- **Backend**: [ghcr.io/patchmon/patchmon-backend](https://github.com/patchmon/patchmon.net/pkgs/container/patchmon-backend)
+- **Frontend**: [ghcr.io/patchmon/patchmon-frontend](https://github.com/patchmon/patchmon.net/pkgs/container/patchmon-frontend)
 
-Version tags are also available (e.g. `1.2.3`) for both of these images.
+### Tags
+
+- `latest`: The latest stable release of PatchMon
+- `x.y.z`: Full version tags (e.g. `1.2.3`) - Use this for exact version pinning.
+- `x.y`: Minor version tags (e.g. `1.2`) - Use this to get the latest patch release in a minor version series.
+- `x`: Major version tags (e.g. `1`) - Use this to get the latest minor and patch release in a major version series.
+
+These tags are available for both backend and frontend images as they are versioned together.
 
 ## Quick Start
 
