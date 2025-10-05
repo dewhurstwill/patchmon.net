@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	AlertTriangle,
 	ArrowDown,
@@ -7,7 +7,6 @@ import {
 	Check,
 	Columns,
 	Database,
-	Eye,
 	GripVertical,
 	Lock,
 	RefreshCw,
@@ -15,21 +14,24 @@ import {
 	Server,
 	Shield,
 	ShieldCheck,
+	Trash2,
 	Unlock,
-	Users,
 	X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import { repositoryAPI } from "../utils/api";
 
 const Repositories = () => {
+	const queryClient = useQueryClient();
+	const navigate = useNavigate();
 	const [searchTerm, setSearchTerm] = useState("");
 	const [filterType, setFilterType] = useState("all"); // all, secure, insecure
 	const [filterStatus, setFilterStatus] = useState("all"); // all, active, inactive
 	const [sortField, setSortField] = useState("name");
 	const [sortDirection, setSortDirection] = useState("asc");
 	const [showColumnSettings, setShowColumnSettings] = useState(false);
+	const [deleteModalData, setDeleteModalData] = useState(null);
 
 	// Column configuration
 	const [columnConfig, setColumnConfig] = useState(() => {
@@ -78,6 +80,15 @@ const Repositories = () => {
 	const { data: stats } = useQuery({
 		queryKey: ["repository-stats"],
 		queryFn: () => repositoryAPI.getStats().then((res) => res.data),
+	});
+
+	// Delete repository mutation
+	const deleteRepositoryMutation = useMutation({
+		mutationFn: (repositoryId) => repositoryAPI.delete(repositoryId),
+		onSuccess: () => {
+			queryClient.invalidateQueries(["repositories"]);
+			queryClient.invalidateQueries(["repository-stats"]);
+		},
 	});
 
 	// Get visible columns in order
@@ -136,6 +147,32 @@ const Repositories = () => {
 			{ id: "actions", label: "Actions", visible: true, order: 6 },
 		];
 		updateColumnConfig(defaultConfig);
+	};
+
+	const handleDeleteRepository = (repo, e) => {
+		e.preventDefault();
+		e.stopPropagation();
+
+		setDeleteModalData({
+			id: repo.id,
+			name: repo.name,
+			hostCount: repo.hostCount || 0,
+		});
+	};
+
+	const handleRowClick = (repo) => {
+		navigate(`/repositories/${repo.id}`);
+	};
+
+	const confirmDelete = () => {
+		if (deleteModalData) {
+			deleteRepositoryMutation.mutate(deleteModalData.id);
+			setDeleteModalData(null);
+		}
+	};
+
+	const cancelDelete = () => {
+		setDeleteModalData(null);
 	};
 
 	// Filter and sort repositories
@@ -225,6 +262,56 @@ const Repositories = () => {
 
 	return (
 		<div className="h-[calc(100vh-7rem)] flex flex-col overflow-hidden">
+			{/* Delete Confirmation Modal */}
+			{deleteModalData && (
+				<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+					<div className="bg-white dark:bg-secondary-800 rounded-lg p-6 max-w-md w-full mx-4">
+						<div className="flex items-center mb-4">
+							<AlertTriangle className="h-6 w-6 text-red-500 mr-3" />
+							<h3 className="text-lg font-semibold text-secondary-900 dark:text-white">
+								Delete Repository
+							</h3>
+						</div>
+						<div className="mb-6">
+							<p className="text-secondary-700 dark:text-secondary-300 mb-2">
+								Are you sure you want to delete{" "}
+								<strong>"{deleteModalData.name}"</strong>?
+							</p>
+							{deleteModalData.hostCount > 0 && (
+								<p className="text-amber-600 dark:text-amber-400 text-sm">
+									⚠️ This repository is currently assigned to{" "}
+									{deleteModalData.hostCount} host
+									{deleteModalData.hostCount !== 1 ? "s" : ""}.
+								</p>
+							)}
+							<p className="text-red-600 dark:text-red-400 text-sm mt-2">
+								This action cannot be undone.
+							</p>
+						</div>
+						<div className="flex gap-3 justify-end">
+							<button
+								type="button"
+								onClick={cancelDelete}
+								className="px-4 py-2 text-secondary-600 dark:text-secondary-400 hover:text-secondary-800 dark:hover:text-secondary-200 transition-colors"
+								disabled={deleteRepositoryMutation.isPending}
+							>
+								Cancel
+							</button>
+							<button
+								type="button"
+								onClick={confirmDelete}
+								className="px-4 py-2 bg-red-600 text-white rounded-md hover:bg-red-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+								disabled={deleteRepositoryMutation.isPending}
+							>
+								{deleteRepositoryMutation.isPending
+									? "Deleting..."
+									: "Delete Repository"}
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
+
 			{/* Page Header */}
 			<div className="flex items-center justify-between mb-6">
 				<div>
@@ -415,7 +502,8 @@ const Repositories = () => {
 										{filteredAndSortedRepositories.map((repo) => (
 											<tr
 												key={repo.id}
-												className="hover:bg-secondary-50 dark:hover:bg-secondary-700 transition-colors"
+												className="hover:bg-secondary-50 dark:hover:bg-secondary-700 transition-colors cursor-pointer"
+												onClick={() => handleRowClick(repo)}
 											>
 												{visibleColumns.map((column) => (
 													<td
@@ -513,19 +601,23 @@ const Repositories = () => {
 			case "hostCount":
 				return (
 					<div className="flex items-center justify-center gap-1 text-sm text-secondary-900 dark:text-white">
-						<Users className="h-4 w-4" />
-						<span>{repo.host_count}</span>
+						<Server className="h-4 w-4" />
+						<span>{repo.hostCount}</span>
 					</div>
 				);
 			case "actions":
 				return (
-					<Link
-						to={`/repositories/${repo.id}`}
-						className="text-primary-600 hover:text-primary-900 flex items-center gap-1"
-					>
-						View
-						<Eye className="h-3 w-3" />
-					</Link>
+					<div className="flex items-center justify-center">
+						<button
+							type="button"
+							onClick={(e) => handleDeleteRepository(repo, e)}
+							className="text-orange-600 hover:text-red-900 dark:text-orange-600 dark:hover:text-red-400 flex items-center gap-1"
+							disabled={deleteRepositoryMutation.isPending}
+							title="Delete repository"
+						>
+							<Trash2 className="h-4 w-4" />
+						</button>
+					</div>
 				);
 			default:
 				return null;

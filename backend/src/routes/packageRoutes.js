@@ -67,7 +67,9 @@ router.get("/", async (req, res) => {
 					latest_version: true,
 					created_at: true,
 					_count: {
-						host_packages: true,
+						select: {
+							host_packages: true,
+						},
 					},
 				},
 				skip,
@@ -82,7 +84,7 @@ router.get("/", async (req, res) => {
 		// Get additional stats for each package
 		const packagesWithStats = await Promise.all(
 			packages.map(async (pkg) => {
-				const [updatesCount, securityCount, affectedHosts] = await Promise.all([
+				const [updatesCount, securityCount, packageHosts] = await Promise.all([
 					prisma.host_packages.count({
 						where: {
 							package_id: pkg.id,
@@ -117,17 +119,18 @@ router.get("/", async (req, res) => {
 
 				return {
 					...pkg,
-					affectedHostsCount: pkg._count.hostPackages,
-					affectedHosts: affectedHosts.map((hp) => ({
-						hostId: hp.host.id,
-						friendlyName: hp.host.friendly_name,
-						osType: hp.host.os_type,
+					packageHostsCount: pkg._count.host_packages,
+					packageHosts: packageHosts.map((hp) => ({
+						hostId: hp.hosts.id,
+						friendlyName: hp.hosts.friendly_name,
+						osType: hp.hosts.os_type,
 						currentVersion: hp.current_version,
 						availableVersion: hp.available_version,
+						needsUpdate: hp.needs_update,
 						isSecurityUpdate: hp.is_security_update,
 					})),
 					stats: {
-						totalInstalls: pkg._count.hostPackages,
+						totalInstalls: pkg._count.host_packages,
 						updatesNeeded: updatesCount,
 						securityUpdates: securityCount,
 					},
@@ -160,19 +163,19 @@ router.get("/:packageId", async (req, res) => {
 			include: {
 				host_packages: {
 					include: {
-						host: {
+						hosts: {
 							select: {
 								id: true,
 								hostname: true,
 								ip: true,
-								osType: true,
-								osVersion: true,
-								lastUpdate: true,
+								os_type: true,
+								os_version: true,
+								last_update: true,
 							},
 						},
 					},
 					orderBy: {
-						needsUpdate: "desc",
+						needs_update: "desc",
 					},
 				},
 			},
@@ -185,25 +188,25 @@ router.get("/:packageId", async (req, res) => {
 		// Calculate statistics
 		const stats = {
 			totalInstalls: packageData.host_packages.length,
-			updatesNeeded: packageData.host_packages.filter((hp) => hp.needsUpdate)
+			updatesNeeded: packageData.host_packages.filter((hp) => hp.needs_update)
 				.length,
 			securityUpdates: packageData.host_packages.filter(
-				(hp) => hp.needsUpdate && hp.isSecurityUpdate,
+				(hp) => hp.needs_update && hp.is_security_update,
 			).length,
-			upToDate: packageData.host_packages.filter((hp) => !hp.needsUpdate)
+			upToDate: packageData.host_packages.filter((hp) => !hp.needs_update)
 				.length,
 		};
 
 		// Group by version
 		const versionDistribution = packageData.host_packages.reduce((acc, hp) => {
-			const version = hp.currentVersion;
+			const version = hp.current_version;
 			acc[version] = (acc[version] || 0) + 1;
 			return acc;
 		}, {});
 
 		// Group by OS type
 		const osDistribution = packageData.host_packages.reduce((acc, hp) => {
-			const osType = hp.host.osType;
+			const osType = hp.hosts.os_type;
 			acc[osType] = (acc[osType] || 0) + 1;
 			return acc;
 		}, {});
@@ -227,6 +230,111 @@ router.get("/:packageId", async (req, res) => {
 	} catch (error) {
 		console.error("Error fetching package details:", error);
 		res.status(500).json({ error: "Failed to fetch package details" });
+	}
+});
+
+// Get hosts where a package is installed
+router.get("/:packageId/hosts", async (req, res) => {
+	try {
+		const { packageId } = req.params;
+		const {
+			page = 1,
+			limit = 25,
+			search = "",
+			sortBy = "friendly_name",
+			sortOrder = "asc",
+		} = req.query;
+
+		const offset = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+
+		// Build search conditions
+		const searchConditions = search
+			? {
+					OR: [
+						{
+							hosts: {
+								friendly_name: { contains: search, mode: "insensitive" },
+							},
+						},
+						{ hosts: { hostname: { contains: search, mode: "insensitive" } } },
+						{ current_version: { contains: search, mode: "insensitive" } },
+						{ available_version: { contains: search, mode: "insensitive" } },
+					],
+				}
+			: {};
+
+		// Build sort conditions
+		const orderBy = {};
+		if (
+			sortBy === "friendly_name" ||
+			sortBy === "hostname" ||
+			sortBy === "os_type"
+		) {
+			orderBy.hosts = { [sortBy]: sortOrder };
+		} else if (sortBy === "needs_update") {
+			orderBy[sortBy] = sortOrder;
+		} else {
+			orderBy[sortBy] = sortOrder;
+		}
+
+		// Get total count
+		const totalCount = await prisma.host_packages.count({
+			where: {
+				package_id: packageId,
+				...searchConditions,
+			},
+		});
+
+		// Get paginated results
+		const hostPackages = await prisma.host_packages.findMany({
+			where: {
+				package_id: packageId,
+				...searchConditions,
+			},
+			include: {
+				hosts: {
+					select: {
+						id: true,
+						friendly_name: true,
+						hostname: true,
+						os_type: true,
+						os_version: true,
+						last_update: true,
+					},
+				},
+			},
+			orderBy,
+			skip: offset,
+			take: parseInt(limit, 10),
+		});
+
+		// Transform the data for the frontend
+		const hosts = hostPackages.map((hp) => ({
+			hostId: hp.hosts.id,
+			friendlyName: hp.hosts.friendly_name,
+			hostname: hp.hosts.hostname,
+			osType: hp.hosts.os_type,
+			osVersion: hp.hosts.os_version,
+			lastUpdate: hp.hosts.last_update,
+			currentVersion: hp.current_version,
+			availableVersion: hp.available_version,
+			needsUpdate: hp.needs_update,
+			isSecurityUpdate: hp.is_security_update,
+			lastChecked: hp.last_checked,
+		}));
+
+		res.json({
+			hosts,
+			pagination: {
+				page: parseInt(page, 10),
+				limit: parseInt(limit, 10),
+				total: totalCount,
+				pages: Math.ceil(totalCount / parseInt(limit, 10)),
+			},
+		});
+	} catch (error) {
+		console.error("Error fetching package hosts:", error);
+		res.status(500).json({ error: "Failed to fetch package hosts" });
 	}
 });
 

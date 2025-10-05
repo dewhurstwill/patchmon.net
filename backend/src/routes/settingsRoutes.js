@@ -215,6 +215,18 @@ router.put(
 				}
 				return true;
 			}),
+		body("logoDark")
+			.optional()
+			.isLength({ min: 1 })
+			.withMessage("Logo dark path must be a non-empty string"),
+		body("logoLight")
+			.optional()
+			.isLength({ min: 1 })
+			.withMessage("Logo light path must be a non-empty string"),
+		body("favicon")
+			.optional()
+			.isLength({ min: 1 })
+			.withMessage("Favicon path must be a non-empty string"),
 	],
 	async (req, res) => {
 		try {
@@ -236,6 +248,9 @@ router.put(
 				githubRepoUrl,
 				repositoryType,
 				sshKeyPath,
+				logoDark,
+				logoLight,
+				favicon,
 			} = req.body;
 
 			// Get current settings to check for update interval changes
@@ -264,6 +279,9 @@ router.put(
 			if (repositoryType !== undefined)
 				updateData.repository_type = repositoryType;
 			if (sshKeyPath !== undefined) updateData.ssh_key_path = sshKeyPath;
+			if (logoDark !== undefined) updateData.logo_dark = logoDark;
+			if (logoLight !== undefined) updateData.logo_light = logoLight;
+			if (favicon !== undefined) updateData.favicon = favicon;
 
 			const updatedSettings = await updateSettings(
 				currentSettings.id,
@@ -350,5 +368,176 @@ router.get("/auto-update", async (_req, res) => {
 		res.json({ autoUpdate: false });
 	}
 });
+
+// Upload logo files
+router.post(
+	"/logos/upload",
+	authenticateToken,
+	requireManageSettings,
+	async (req, res) => {
+		try {
+			const { logoType, fileContent, fileName } = req.body;
+
+			if (!logoType || !fileContent) {
+				return res.status(400).json({
+					error: "Logo type and file content are required",
+				});
+			}
+
+			if (!["dark", "light", "favicon"].includes(logoType)) {
+				return res.status(400).json({
+					error: "Logo type must be 'dark', 'light', or 'favicon'",
+				});
+			}
+
+			// Validate file content (basic checks)
+			if (typeof fileContent !== "string") {
+				return res.status(400).json({
+					error: "File content must be a base64 string",
+				});
+			}
+
+			const fs = require("node:fs").promises;
+			const path = require("node:path");
+			const _crypto = require("node:crypto");
+
+			// Create assets directory if it doesn't exist
+			// In development: save to public/assets (served by Vite)
+			// In production: save to dist/assets (served by built app)
+			const isDevelopment = process.env.NODE_ENV !== "production";
+			const assetsDir = isDevelopment
+				? path.join(__dirname, "../../../frontend/public/assets")
+				: path.join(__dirname, "../../../frontend/dist/assets");
+			await fs.mkdir(assetsDir, { recursive: true });
+
+			// Determine file extension and path
+			let fileExtension;
+			let fileName_final;
+
+			if (logoType === "favicon") {
+				fileExtension = ".svg";
+				fileName_final = fileName || "logo_square.svg";
+			} else {
+				// Determine extension from file content or use default
+				if (fileContent.startsWith("data:image/png")) {
+					fileExtension = ".png";
+				} else if (fileContent.startsWith("data:image/svg")) {
+					fileExtension = ".svg";
+				} else if (
+					fileContent.startsWith("data:image/jpeg") ||
+					fileContent.startsWith("data:image/jpg")
+				) {
+					fileExtension = ".jpg";
+				} else {
+					fileExtension = ".png"; // Default to PNG
+				}
+				fileName_final = fileName || `logo_${logoType}${fileExtension}`;
+			}
+
+			const filePath = path.join(assetsDir, fileName_final);
+
+			// Handle base64 data URLs
+			let fileBuffer;
+			if (fileContent.startsWith("data:")) {
+				const base64Data = fileContent.split(",")[1];
+				fileBuffer = Buffer.from(base64Data, "base64");
+			} else {
+				// Assume it's already base64
+				fileBuffer = Buffer.from(fileContent, "base64");
+			}
+
+			// Create backup of existing file
+			try {
+				const backupPath = `${filePath}.backup.${Date.now()}`;
+				await fs.copyFile(filePath, backupPath);
+				console.log(`Created backup: ${backupPath}`);
+			} catch (error) {
+				// Ignore if original doesn't exist
+				if (error.code !== "ENOENT") {
+					console.warn("Failed to create backup:", error.message);
+				}
+			}
+
+			// Write new logo file
+			await fs.writeFile(filePath, fileBuffer);
+
+			// Update settings with new logo path
+			const settings = await getSettings();
+			const logoPath = `/assets/${fileName_final}`;
+
+			const updateData = {};
+			if (logoType === "dark") {
+				updateData.logo_dark = logoPath;
+			} else if (logoType === "light") {
+				updateData.logo_light = logoPath;
+			} else if (logoType === "favicon") {
+				updateData.favicon = logoPath;
+			}
+
+			await updateSettings(settings.id, updateData);
+
+			// Get file stats
+			const stats = await fs.stat(filePath);
+
+			res.json({
+				message: `${logoType} logo uploaded successfully`,
+				fileName: fileName_final,
+				path: logoPath,
+				size: stats.size,
+				sizeFormatted: `${(stats.size / 1024).toFixed(1)} KB`,
+			});
+		} catch (error) {
+			console.error("Upload logo error:", error);
+			res.status(500).json({ error: "Failed to upload logo" });
+		}
+	},
+);
+
+// Reset logo to default
+router.post(
+	"/logos/reset",
+	authenticateToken,
+	requireManageSettings,
+	async (req, res) => {
+		try {
+			const { logoType } = req.body;
+
+			if (!logoType) {
+				return res.status(400).json({
+					error: "Logo type is required",
+				});
+			}
+
+			if (!["dark", "light", "favicon"].includes(logoType)) {
+				return res.status(400).json({
+					error: "Logo type must be 'dark', 'light', or 'favicon'",
+				});
+			}
+
+			// Get current settings
+			const settings = await getSettings();
+
+			// Clear the custom logo path to revert to default
+			const updateData = {};
+			if (logoType === "dark") {
+				updateData.logo_dark = null;
+			} else if (logoType === "light") {
+				updateData.logo_light = null;
+			} else if (logoType === "favicon") {
+				updateData.favicon = null;
+			}
+
+			await updateSettings(settings.id, updateData);
+
+			res.json({
+				message: `${logoType} logo reset to default successfully`,
+				logoType,
+			});
+		} catch (error) {
+			console.error("Reset logo error:", error);
+			res.status(500).json({ error: "Failed to reset logo" });
+		}
+	},
+);
 
 module.exports = router;

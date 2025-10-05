@@ -60,13 +60,8 @@ class UpdateScheduler {
 
 			// Get settings
 			const settings = await prisma.settings.findFirst();
-			if (!settings || !settings.githubRepoUrl) {
-				console.log("⚠️ No GitHub repository configured, skipping update check");
-				return;
-			}
-
-			// Extract owner and repo from GitHub URL
-			const repoUrl = settings.githubRepoUrl;
+			const DEFAULT_GITHUB_REPO = "https://github.com/patchMon/patchmon";
+			const repoUrl = settings?.githubRepoUrl || DEFAULT_GITHUB_REPO;
 			let owner, repo;
 
 			if (repoUrl.includes("git@github.com:")) {
@@ -128,9 +123,9 @@ class UpdateScheduler {
 			await prisma.settings.update({
 				where: { id: settings.id },
 				data: {
-					lastUpdateCheck: new Date(),
-					updateAvailable: isUpdateAvailable,
-					latestVersion: latestVersion,
+					last_update_check: new Date(),
+					update_available: isUpdateAvailable,
+					latest_version: latestVersion,
 				},
 			});
 
@@ -147,8 +142,8 @@ class UpdateScheduler {
 					await prisma.settings.update({
 						where: { id: settings.id },
 						data: {
-							lastUpdateCheck: new Date(),
-							updateAvailable: false,
+							last_update_check: new Date(),
+							update_available: false,
 						},
 					});
 				}
@@ -241,6 +236,16 @@ class UpdateScheduler {
 			});
 
 			if (!response.ok) {
+				const errorText = await response.text();
+				if (
+					errorText.includes("rate limit") ||
+					errorText.includes("API rate limit")
+				) {
+					console.log(
+						"⚠️ GitHub API rate limit exceeded, skipping update check",
+					);
+					return null; // Return null instead of throwing error
+				}
 				throw new Error(
 					`GitHub API error: ${response.status} ${response.statusText}`,
 				);

@@ -56,6 +56,28 @@ warning() {
     log "WARNING: $1"
 }
 
+# Get or generate machine ID
+get_machine_id() {
+    # Try standard locations for machine-id
+    if [[ -f /etc/machine-id ]]; then
+        cat /etc/machine-id
+    elif [[ -f /var/lib/dbus/machine-id ]]; then
+        cat /var/lib/dbus/machine-id
+    else
+        # Fallback: generate from hardware UUID or hostname+MAC
+        if command -v dmidecode &> /dev/null; then
+            local uuid=$(dmidecode -s system-uuid 2>/dev/null | tr -d ' -' | tr '[:upper:]' '[:lower:]')
+            if [[ -n "$uuid" && "$uuid" != "notpresent" ]]; then
+                echo "$uuid"
+                return
+            fi
+        fi
+        # Last resort: hash hostname + primary MAC address
+        local primary_mac=$(ip link show | grep -oP '(?<=link/ether\s)[0-9a-f:]+' | head -1 | tr -d ':')
+        echo "$HOSTNAME-$primary_mac" | sha256sum | cut -d' ' -f1 | cut -c1-32
+    fi
+}
+
 # Check if running as root
 check_root() {
     if [[ $EUID -ne 0 ]]; then
@@ -865,6 +887,9 @@ send_update() {
     
     # Merge all JSON objects into one
     local merged_json=$(echo "$hardware_json $network_json $system_json" | jq -s '.[0] * .[1] * .[2]')
+    # Get machine ID
+    local machine_id=$(get_machine_id)
+    
     # Create the base payload and merge with system info
     local base_payload=$(cat <<EOF
 {
@@ -875,7 +900,8 @@ send_update() {
     "hostname": "$HOSTNAME",
     "ip": "$IP_ADDRESS",
     "architecture": "$ARCHITECTURE",
-    "agentVersion": "$AGENT_VERSION"
+    "agentVersion": "$AGENT_VERSION",
+    "machineId": "$machine_id"
 }
 EOF
 )

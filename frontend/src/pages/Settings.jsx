@@ -5,11 +5,13 @@ import {
 	Clock,
 	Code,
 	Download,
+	Image,
 	Plus,
 	Save,
 	Server,
 	Settings as SettingsIcon,
 	Shield,
+	Upload,
 	X,
 } from "lucide-react";
 
@@ -79,6 +81,15 @@ const Settings = () => {
 		error: null,
 	});
 	const [showUploadModal, setShowUploadModal] = useState(false);
+
+	// Logo management state
+	const [logoUploadState, setLogoUploadState] = useState({
+		dark: { uploading: false, error: null },
+		light: { uploading: false, error: null },
+		favicon: { uploading: false, error: null },
+	});
+	const [showLogoUploadModal, setShowLogoUploadModal] = useState(false);
+	const [selectedLogoType, setSelectedLogoType] = useState("dark");
 
 	// Version checking state
 	const [versionInfo, setVersionInfo] = useState({
@@ -189,6 +200,37 @@ const Settings = () => {
 		},
 		onError: (error) => {
 			console.error("Upload agent error:", error);
+		},
+	});
+
+	// Logo upload mutation
+	const uploadLogoMutation = useMutation({
+		mutationFn: ({ logoType, fileContent, fileName }) =>
+			fetch("/api/v1/settings/logos/upload", {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+					Authorization: `Bearer ${localStorage.getItem("token")}`,
+				},
+				body: JSON.stringify({ logoType, fileContent, fileName }),
+			}).then((res) => res.json()),
+		onSuccess: (_data, variables) => {
+			queryClient.invalidateQueries(["settings"]);
+			setLogoUploadState((prev) => ({
+				...prev,
+				[variables.logoType]: { uploading: false, error: null },
+			}));
+			setShowLogoUploadModal(false);
+		},
+		onError: (error, variables) => {
+			console.error("Upload logo error:", error);
+			setLogoUploadState((prev) => ({
+				...prev,
+				[variables.logoType]: {
+					uploading: false,
+					error: error.message || "Failed to upload logo",
+				},
+			}));
 		},
 	});
 
@@ -554,6 +596,181 @@ const Settings = () => {
 									This URL will be used in installation scripts and agent
 									communications.
 								</p>
+							</div>
+
+							{/* Logo Management Section */}
+							<div className="mt-6 pt-6 border-t border-secondary-200 dark:border-secondary-600">
+								<div className="flex items-center mb-4">
+									<Image className="h-5 w-5 text-primary-600 mr-2" />
+									<h3 className="text-lg font-semibold text-secondary-900 dark:text-white">
+										Logo & Branding
+									</h3>
+								</div>
+								<p className="text-sm text-secondary-500 dark:text-secondary-300 mb-4">
+									Customize your PatchMon installation with custom logos and
+									favicon.
+								</p>
+
+								<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+									{/* Dark Logo */}
+									<div className="bg-white dark:bg-secondary-800 rounded-lg p-4 border border-secondary-200 dark:border-secondary-600">
+										<h4 className="text-sm font-medium text-secondary-900 dark:text-white mb-3">
+											Dark Logo
+										</h4>
+										{settings?.logo_dark && (
+											<div className="flex items-center justify-center p-3 bg-secondary-50 dark:bg-secondary-700 rounded-lg mb-3">
+												<img
+													src={settings.logo_dark}
+													alt="Dark Logo"
+													className="max-h-12 max-w-full object-contain"
+													onError={(e) => {
+														e.target.style.display = "none";
+													}}
+												/>
+											</div>
+										)}
+										<p className="text-xs text-secondary-600 dark:text-secondary-400 mb-3 truncate">
+											{settings?.logo_dark
+												? settings.logo_dark.split("/").pop()
+												: "Default"}
+										</p>
+										<button
+											type="button"
+											onClick={() => {
+												setSelectedLogoType("dark");
+												setShowLogoUploadModal(true);
+											}}
+											disabled={logoUploadState.dark.uploading}
+											className="w-full btn-outline flex items-center justify-center gap-2 text-sm py-2"
+										>
+											{logoUploadState.dark.uploading ? (
+												<>
+													<div className="animate-spin rounded-full h-3 w-3 border-b-2 border-current"></div>
+													Uploading...
+												</>
+											) : (
+												<>
+													<Upload className="h-3 w-3" />
+													Upload
+												</>
+											)}
+										</button>
+										{logoUploadState.dark.error && (
+											<p className="text-xs text-red-600 dark:text-red-400 mt-2">
+												{logoUploadState.dark.error}
+											</p>
+										)}
+									</div>
+
+									{/* Light Logo */}
+									<div className="bg-white dark:bg-secondary-800 rounded-lg p-4 border border-secondary-200 dark:border-secondary-600">
+										<h4 className="text-sm font-medium text-secondary-900 dark:text-white mb-3">
+											Light Logo
+										</h4>
+										{settings?.logo_light && (
+											<div className="flex items-center justify-center p-3 bg-secondary-50 dark:bg-secondary-700 rounded-lg mb-3">
+												<img
+													src={settings.logo_light}
+													alt="Light Logo"
+													className="max-h-12 max-w-full object-contain"
+													onError={(e) => {
+														e.target.style.display = "none";
+													}}
+												/>
+											</div>
+										)}
+										<p className="text-xs text-secondary-600 dark:text-secondary-400 mb-3 truncate">
+											{settings?.logo_light
+												? settings.logo_light.split("/").pop()
+												: "Default"}
+										</p>
+										<button
+											type="button"
+											onClick={() => {
+												setSelectedLogoType("light");
+												setShowLogoUploadModal(true);
+											}}
+											disabled={logoUploadState.light.uploading}
+											className="w-full btn-outline flex items-center justify-center gap-2 text-sm py-2"
+										>
+											{logoUploadState.light.uploading ? (
+												<>
+													<div className="animate-spin rounded-full h-3 w-3 border-b-2 border-current"></div>
+													Uploading...
+												</>
+											) : (
+												<>
+													<Upload className="h-3 w-3" />
+													Upload
+												</>
+											)}
+										</button>
+										{logoUploadState.light.error && (
+											<p className="text-xs text-red-600 dark:text-red-400 mt-2">
+												{logoUploadState.light.error}
+											</p>
+										)}
+									</div>
+
+									{/* Favicon */}
+									<div className="bg-white dark:bg-secondary-800 rounded-lg p-4 border border-secondary-200 dark:border-secondary-600">
+										<h4 className="text-sm font-medium text-secondary-900 dark:text-white mb-3">
+											Favicon
+										</h4>
+										{settings?.favicon && (
+											<div className="flex items-center justify-center p-3 bg-secondary-50 dark:bg-secondary-700 rounded-lg mb-3">
+												<img
+													src={settings.favicon}
+													alt="Favicon"
+													className="h-8 w-8 object-contain"
+													onError={(e) => {
+														e.target.style.display = "none";
+													}}
+												/>
+											</div>
+										)}
+										<p className="text-xs text-secondary-600 dark:text-secondary-400 mb-3 truncate">
+											{settings?.favicon
+												? settings.favicon.split("/").pop()
+												: "Default"}
+										</p>
+										<button
+											type="button"
+											onClick={() => {
+												setSelectedLogoType("favicon");
+												setShowLogoUploadModal(true);
+											}}
+											disabled={logoUploadState.favicon.uploading}
+											className="w-full btn-outline flex items-center justify-center gap-2 text-sm py-2"
+										>
+											{logoUploadState.favicon.uploading ? (
+												<>
+													<div className="animate-spin rounded-full h-3 w-3 border-b-2 border-current"></div>
+													Uploading...
+												</>
+											) : (
+												<>
+													<Upload className="h-3 w-3" />
+													Upload
+												</>
+											)}
+										</button>
+										{logoUploadState.favicon.error && (
+											<p className="text-xs text-red-600 dark:text-red-400 mt-2">
+												{logoUploadState.favicon.error}
+											</p>
+										)}
+									</div>
+								</div>
+
+								<div className="mt-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-md">
+									<p className="text-xs text-blue-700 dark:text-blue-300">
+										<strong>Supported formats:</strong> PNG, JPG, SVG.{" "}
+										<strong>Max size:</strong> 5MB.
+										<strong> Recommended sizes:</strong> 200x60px for logos,
+										32x32px for favicon.
+									</p>
+								</div>
 							</div>
 
 							{/* Update Interval */}
@@ -1319,6 +1536,18 @@ const Settings = () => {
 					error={uploadAgentMutation.error}
 				/>
 			)}
+
+			{/* Logo Upload Modal */}
+			{showLogoUploadModal && (
+				<LogoUploadModal
+					isOpen={showLogoUploadModal}
+					onClose={() => setShowLogoUploadModal(false)}
+					onSubmit={uploadLogoMutation.mutate}
+					isLoading={uploadLogoMutation.isPending}
+					error={uploadLogoMutation.error}
+					logoType={selectedLogoType}
+				/>
+			)}
 		</div>
 	);
 };
@@ -1459,6 +1688,183 @@ const AgentUploadModal = ({ isOpen, onClose, onSubmit, isLoading, error }) => {
 							className="btn-primary"
 						>
 							{isLoading ? "Uploading..." : "Replace Script"}
+						</button>
+					</div>
+				</form>
+			</div>
+		</div>
+	);
+};
+
+// Logo Upload Modal Component
+const LogoUploadModal = ({
+	isOpen,
+	onClose,
+	onSubmit,
+	isLoading,
+	error,
+	logoType,
+}) => {
+	const [selectedFile, setSelectedFile] = useState(null);
+	const [previewUrl, setPreviewUrl] = useState(null);
+	const [uploadError, setUploadError] = useState("");
+
+	const handleFileSelect = (e) => {
+		const file = e.target.files[0];
+		if (file) {
+			// Validate file type
+			const allowedTypes = [
+				"image/png",
+				"image/jpeg",
+				"image/jpg",
+				"image/svg+xml",
+			];
+			if (!allowedTypes.includes(file.type)) {
+				setUploadError("Please select a PNG, JPG, or SVG file");
+				return;
+			}
+
+			// Validate file size (5MB limit)
+			if (file.size > 5 * 1024 * 1024) {
+				setUploadError("File size must be less than 5MB");
+				return;
+			}
+
+			setSelectedFile(file);
+			setUploadError("");
+
+			// Create preview URL
+			const url = URL.createObjectURL(file);
+			setPreviewUrl(url);
+		}
+	};
+
+	const handleSubmit = (e) => {
+		e.preventDefault();
+		setUploadError("");
+
+		if (!selectedFile) {
+			setUploadError("Please select a file");
+			return;
+		}
+
+		// Convert file to base64
+		const reader = new FileReader();
+		reader.onload = (event) => {
+			const base64 = event.target.result;
+			onSubmit({
+				logoType,
+				fileContent: base64,
+				fileName: selectedFile.name,
+			});
+		};
+		reader.readAsDataURL(selectedFile);
+	};
+
+	const handleClose = () => {
+		setSelectedFile(null);
+		setPreviewUrl(null);
+		setUploadError("");
+		onClose();
+	};
+
+	if (!isOpen) return null;
+
+	return (
+		<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+			<div className="bg-white dark:bg-secondary-800 rounded-lg shadow-xl max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+				<div className="px-6 py-4 border-b border-secondary-200 dark:border-secondary-600">
+					<div className="flex items-center justify-between">
+						<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
+							Upload{" "}
+							{logoType === "favicon"
+								? "Favicon"
+								: `${logoType.charAt(0).toUpperCase() + logoType.slice(1)} Logo`}
+						</h3>
+						<button
+							type="button"
+							onClick={handleClose}
+							className="text-secondary-400 hover:text-secondary-600 dark:text-secondary-500 dark:hover:text-secondary-300"
+						>
+							<X className="h-5 w-5" />
+						</button>
+					</div>
+				</div>
+
+				<form onSubmit={handleSubmit} className="px-6 py-4">
+					<div className="space-y-4">
+						<div>
+							<label className="block">
+								<span className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-2">
+									Select File
+								</span>
+								<input
+									type="file"
+									accept="image/png,image/jpeg,image/jpg,image/svg+xml"
+									onChange={handleFileSelect}
+									className="block w-full text-sm text-secondary-500 dark:text-secondary-400 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-medium file:bg-primary-50 file:text-primary-700 hover:file:bg-primary-100 dark:file:bg-primary-900 dark:file:text-primary-200"
+								/>
+							</label>
+							<p className="mt-1 text-xs text-secondary-500 dark:text-secondary-400">
+								Supported formats: PNG, JPG, SVG. Max size: 5MB.
+								{logoType === "favicon"
+									? " Recommended: 32x32px SVG."
+									: " Recommended: 200x60px."}
+							</p>
+						</div>
+
+						{previewUrl && (
+							<div>
+								<div className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-2">
+									Preview
+								</div>
+								<div className="flex items-center justify-center p-4 bg-white dark:bg-secondary-800 rounded-lg border border-secondary-200 dark:border-secondary-600">
+									<img
+										src={previewUrl}
+										alt="Preview"
+										className={`object-contain ${
+											logoType === "favicon" ? "h-8 w-8" : "max-h-16 max-w-full"
+										}`}
+									/>
+								</div>
+							</div>
+						)}
+
+						{(uploadError || error) && (
+							<div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-3">
+								<p className="text-sm text-red-800 dark:text-red-200">
+									{uploadError ||
+										error?.response?.data?.error ||
+										error?.message}
+								</p>
+							</div>
+						)}
+
+						<div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-md p-3">
+							<div className="flex">
+								<AlertCircle className="h-4 w-4 text-yellow-600 dark:text-yellow-400 mr-2 mt-0.5" />
+								<div className="text-sm text-yellow-800 dark:text-yellow-200">
+									<p className="font-medium">Important:</p>
+									<ul className="mt-1 list-disc list-inside space-y-1">
+										<li>This will replace the current {logoType} logo</li>
+										<li>A backup will be created automatically</li>
+										<li>The change will be applied immediately</li>
+									</ul>
+								</div>
+							</div>
+						</div>
+					</div>
+
+					<div className="flex justify-end gap-3 mt-6">
+						<button type="button" onClick={handleClose} className="btn-outline">
+							Cancel
+						</button>
+						<button
+							type="submit"
+							disabled={isLoading || !selectedFile}
+							className="btn-primary"
+						>
+							{isLoading ? "Uploading..." : "Upload Logo"}
 						</button>
 					</div>
 				</form>

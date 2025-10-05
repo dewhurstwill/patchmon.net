@@ -172,15 +172,6 @@ router.post(
 			// Generate unique API credentials for this host
 			const { apiId, apiKey } = generateApiCredentials();
 
-			// Check if host already exists
-			const existingHost = await prisma.hosts.findUnique({
-				where: { friendly_name: friendly_name },
-			});
-
-			if (existingHost) {
-				return res.status(409).json({ error: "Host already exists" });
-			}
-
 			// If hostGroupId is provided, verify the group exists
 			if (hostGroupId) {
 				const hostGroup = await prisma.host_groups.findUnique({
@@ -196,6 +187,7 @@ router.post(
 			const host = await prisma.hosts.create({
 				data: {
 					id: uuidv4(),
+					machine_id: `pending-${uuidv4()}`, // Temporary placeholder until agent connects with real machine_id
 					friendly_name: friendly_name,
 					os_type: "unknown", // Will be updated when agent connects
 					os_version: "unknown", // Will be updated when agent connects
@@ -321,6 +313,10 @@ router.post(
 			.optional()
 			.isArray()
 			.withMessage("Load average must be an array"),
+		body("machineId")
+			.optional()
+			.isString()
+			.withMessage("Machine ID must be a string"),
 	],
 	async (req, res) => {
 		try {
@@ -337,6 +333,11 @@ router.post(
 				last_update: new Date(),
 				updated_at: new Date(),
 			};
+
+			// Update machine_id if provided and current one is a placeholder
+			if (req.body.machineId && host.machine_id.startsWith("pending-")) {
+				updateData.machine_id = req.body.machineId;
+			}
 
 			// Basic system info
 			if (req.body.osType) updateData.os_type = req.body.osType;
@@ -1126,12 +1127,16 @@ router.get("/install", async (req, res) => {
 			}
 		} catch (_) {}
 
-		// Inject the API credentials, server URL, and curl flags into the script
+		// Check for --force parameter
+		const forceInstall = req.query.force === "true" || req.query.force === "1";
+
+		// Inject the API credentials, server URL, curl flags, and force flag into the script
 		const envVars = `#!/bin/bash
 export PATCHMON_URL="${serverUrl}"
 export API_ID="${host.api_id}"
 export API_KEY="${host.api_key}"
 export CURL_FLAGS="${curlFlags}"
+export FORCE_INSTALL="${forceInstall ? "true" : "false"}"
 
 `;
 
@@ -1148,6 +1153,48 @@ export CURL_FLAGS="${curlFlags}"
 	} catch (error) {
 		console.error("Installation script error:", error);
 		res.status(500).json({ error: "Failed to serve installation script" });
+	}
+});
+
+// Check if machine_id already exists (requires auth)
+router.post("/check-machine-id", validateApiCredentials, async (req, res) => {
+	try {
+		const { machine_id } = req.body;
+
+		if (!machine_id) {
+			return res.status(400).json({
+				error: "machine_id is required",
+			});
+		}
+
+		// Check if a host with this machine_id exists
+		const existing_host = await prisma.hosts.findUnique({
+			where: { machine_id },
+			select: {
+				id: true,
+				friendly_name: true,
+				machine_id: true,
+				api_id: true,
+				status: true,
+				created_at: true,
+			},
+		});
+
+		if (existing_host) {
+			return res.status(200).json({
+				exists: true,
+				host: existing_host,
+				message: "This machine is already enrolled",
+			});
+		}
+
+		return res.status(200).json({
+			exists: false,
+			message: "Machine not yet enrolled",
+		});
+	} catch (error) {
+		console.error("Error checking machine_id:", error);
+		res.status(500).json({ error: "Failed to check machine_id" });
 	}
 });
 

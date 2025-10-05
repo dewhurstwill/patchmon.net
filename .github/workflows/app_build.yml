@@ -1,11 +1,9 @@
 name: Build on Merge
-
 on:
   push: 
     branches:
       - main
       - dev
-
 jobs:
   deploy:
     runs-on: self-hosted
@@ -15,3 +13,11 @@ jobs:
       
       - name: Run rebuild script
         run: /root/patchmon/platform/scripts/app_build.sh ${{ github.ref_name }}
+  
+  rebuild-pmon:
+    runs-on: self-hosted
+    needs: deploy
+    if: github.ref_name == 'dev'
+    steps:
+      - name: Rebuild pmon
+        run: /root/patchmon/platform/scripts/manage_pmon_auto.sh

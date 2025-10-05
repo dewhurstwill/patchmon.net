@@ -18,10 +18,10 @@ const authenticateToken = async (req, res, next) => {
 		}
 
 		// Verify token
-		const decoded = jwt.verify(
-			token,
-			process.env.JWT_SECRET || "your-secret-key",
-		);
+		if (!process.env.JWT_SECRET) {
+			throw new Error("JWT_SECRET environment variable is required");
+		}
+		const decoded = jwt.verify(token, process.env.JWT_SECRET);
 
 		// Validate session and check inactivity timeout
 		const validation = await validate_session(decoded.sessionId, token);
@@ -85,10 +85,10 @@ const optionalAuth = async (req, _res, next) => {
 		const token = authHeader?.split(" ")[1];
 
 		if (token) {
-			const decoded = jwt.verify(
-				token,
-				process.env.JWT_SECRET || "your-secret-key",
-			);
+			if (!process.env.JWT_SECRET) {
+				throw new Error("JWT_SECRET environment variable is required");
+			}
+			const decoded = jwt.verify(token, process.env.JWT_SECRET);
 			const user = await prisma.users.findUnique({
 				where: { id: decoded.userId },
 				select: {

@@ -4,6 +4,8 @@ import {
 	ArrowDown,
 	ArrowUp,
 	ArrowUpDown,
+	ChevronLeft,
+	ChevronRight,
 	Columns,
 	Eye as EyeIcon,
 	EyeOff as EyeOffIcon,
@@ -17,16 +19,28 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { dashboardAPI } from "../utils/api";
+import { dashboardAPI, packagesAPI } from "../utils/api";
 
 const Packages = () => {
 	const [searchTerm, setSearchTerm] = useState("");
 	const [categoryFilter, setCategoryFilter] = useState("all");
-	const [securityFilter, setSecurityFilter] = useState("all");
+	const [updateStatusFilter, setUpdateStatusFilter] = useState("all-packages");
 	const [hostFilter, setHostFilter] = useState("all");
 	const [sortField, setSortField] = useState("name");
 	const [sortDirection, setSortDirection] = useState("asc");
 	const [showColumnSettings, setShowColumnSettings] = useState(false);
+	const [currentPage, setCurrentPage] = useState(1);
+	const [pageSize, setPageSize] = useState(() => {
+		const saved = localStorage.getItem("packages-page-size");
+		if (saved) {
+			const parsedSize = parseInt(saved, 10);
+			// Validate that the saved page size is one of the allowed values
+			if ([25, 50, 100, 200].includes(parsedSize)) {
+				return parsedSize;
+			}
+		}
+		return 25; // Default fallback
+	});
 	const [searchParams] = useSearchParams();
 	const navigate = useNavigate();
 
@@ -42,8 +56,8 @@ const Packages = () => {
 	const [columnConfig, setColumnConfig] = useState(() => {
 		const defaultConfig = [
 			{ id: "name", label: "Package", visible: true, order: 0 },
-			{ id: "affectedHosts", label: "Affected Hosts", visible: true, order: 1 },
-			{ id: "priority", label: "Priority", visible: true, order: 2 },
+			{ id: "packageHosts", label: "Installed On", visible: true, order: 1 },
+			{ id: "status", label: "Status", visible: true, order: 2 },
 			{ id: "latestVersion", label: "Latest Version", visible: true, order: 3 },
 		];
 
@@ -65,10 +79,10 @@ const Packages = () => {
 		localStorage.setItem("packages-column-config", JSON.stringify(newConfig));
 	};
 
-	// Handle affected hosts click
-	const handleAffectedHostsClick = (pkg) => {
-		const affectedHosts = pkg.affectedHosts || [];
-		const hostIds = affectedHosts.map((host) => host.hostId);
+	// Handle hosts click (view hosts where package is installed)
+	const handlePackageHostsClick = (pkg) => {
+		const packageHosts = pkg.packageHosts || [];
+		const hostIds = packageHosts.map((host) => host.hostId);
 
 		// Create URL with selected hosts and filter
 		const params = new URLSearchParams();
@@ -86,26 +100,42 @@ const Packages = () => {
 			// For outdated packages, we want to show all packages that need updates
 			// This is the default behavior, so we don't need to change filters
 			setCategoryFilter("all");
-			setSecurityFilter("all");
+			setUpdateStatusFilter("needs-updates");
 		} else if (filter === "security") {
 			// For security updates, filter to show only security updates
-			setSecurityFilter("security");
+			setUpdateStatusFilter("security-updates");
 			setCategoryFilter("all");
 		}
 	}, [searchParams]);
 
 	const {
-		data: packages,
+		data: packagesResponse,
 		isLoading,
 		error,
 		refetch,
 		isFetching,
 	} = useQuery({
 		queryKey: ["packages"],
-		queryFn: () => dashboardAPI.getPackages().then((res) => res.data),
+		queryFn: () => packagesAPI.getAll({ limit: 1000 }).then((res) => res.data),
 		staleTime: 5 * 60 * 1000, // Data stays fresh for 5 minutes
 		refetchOnWindowFocus: false, // Don't refetch when window regains focus
 	});
+
+	// Extract packages from the response and normalise the data structure
+	const packages = useMemo(() => {
+		if (!packagesResponse?.packages) return [];
+
+		return packagesResponse.packages.map((pkg) => ({
+			...pkg,
+			// Normalise field names to match the frontend expectations
+			packageHostsCount: pkg.packageHostsCount || pkg.stats?.totalInstalls || 0,
+			latestVersion: pkg.latest_version || pkg.latestVersion || "Unknown",
+			isUpdatable: (pkg.stats?.updatesNeeded || 0) > 0,
+			isSecurityUpdate: (pkg.stats?.securityUpdates || 0) > 0,
+			// Ensure we have hosts array (for packages, this contains all hosts where the package is installed)
+			packageHosts: pkg.packageHosts || [],
+		}));
+	}, [packagesResponse]);
 
 	// Fetch hosts data to get total packages count
 	const { data: hosts } = useQuery({
@@ -128,17 +158,30 @@ const Packages = () => {
 			const matchesCategory =
 				categoryFilter === "all" || pkg.category === categoryFilter;
 
-			const matchesSecurity =
-				securityFilter === "all" ||
-				(securityFilter === "security" && pkg.isSecurityUpdate) ||
-				(securityFilter === "regular" && !pkg.isSecurityUpdate);
+			const matchesUpdateStatus =
+				updateStatusFilter === "all-packages" ||
+				updateStatusFilter === "needs-updates" ||
+				(updateStatusFilter === "security-updates" && pkg.isSecurityUpdate) ||
+				(updateStatusFilter === "regular-updates" && !pkg.isSecurityUpdate);
 
-			const affectedHosts = pkg.affectedHosts || [];
+			// For "all-packages", we don't filter by update status
+			// For other filters, we only show packages that need updates
+			const matchesUpdateNeeded =
+				updateStatusFilter === "all-packages" ||
+				(pkg.stats?.updatesNeeded || 0) > 0;
+
+			const packageHosts = pkg.packageHosts || [];
 			const matchesHost =
 				hostFilter === "all" ||
-				affectedHosts.some((host) => host.hostId === hostFilter);
+				packageHosts.some((host) => host.hostId === hostFilter);
 
-			return matchesSearch && matchesCategory && matchesSecurity && matchesHost;
+			return (
+				matchesSearch &&
+				matchesCategory &&
+				matchesUpdateStatus &&
+				matchesUpdateNeeded &&
+				matchesHost
+			);
 		});
 
 		// Sorting
@@ -154,14 +197,38 @@ const Packages = () => {
 					aValue = a.latestVersion?.toLowerCase() || "";
 					bValue = b.latestVersion?.toLowerCase() || "";
 					break;
-				case "affectedHosts":
-					aValue = a.affectedHostsCount || a.affectedHosts?.length || 0;
-					bValue = b.affectedHostsCount || b.affectedHosts?.length || 0;
+				case "packageHosts":
+					aValue = a.packageHostsCount || a.packageHosts?.length || 0;
+					bValue = b.packageHostsCount || b.packageHosts?.length || 0;
 					break;
-				case "priority":
-					aValue = a.isSecurityUpdate ? 0 : 1; // Security updates first
-					bValue = b.isSecurityUpdate ? 0 : 1;
+				case "status": {
+					// Handle sorting for the three status states: Up to Date, Update Available, Security Update Available
+					const aNeedsUpdates = (a.stats?.updatesNeeded || 0) > 0;
+					const bNeedsUpdates = (b.stats?.updatesNeeded || 0) > 0;
+
+					// Define priority order: Security Update (0) > Regular Update (1) > Up to Date (2)
+					let aPriority, bPriority;
+
+					if (!aNeedsUpdates) {
+						aPriority = 2; // Up to Date
+					} else if (a.isSecurityUpdate) {
+						aPriority = 0; // Security Update
+					} else {
+						aPriority = 1; // Regular Update
+					}
+
+					if (!bNeedsUpdates) {
+						bPriority = 2; // Up to Date
+					} else if (b.isSecurityUpdate) {
+						bPriority = 0; // Security Update
+					} else {
+						bPriority = 1; // Regular Update
+					}
+
+					aValue = aPriority;
+					bValue = bPriority;
 					break;
+				}
 				default:
 					aValue = a.name?.toLowerCase() || "";
 					bValue = b.name?.toLowerCase() || "";
@@ -177,11 +244,32 @@ const Packages = () => {
 		packages,
 		searchTerm,
 		categoryFilter,
-		securityFilter,
+		updateStatusFilter,
 		sortField,
 		sortDirection,
 		hostFilter,
 	]);
+
+	// Calculate pagination
+	const totalPages = Math.ceil(filteredAndSortedPackages.length / pageSize);
+	const startIndex = (currentPage - 1) * pageSize;
+	const endIndex = startIndex + pageSize;
+	const paginatedPackages = filteredAndSortedPackages.slice(
+		startIndex,
+		endIndex,
+	);
+
+	// Reset to first page when filters or page size change
+	// biome-ignore lint/correctness/useExhaustiveDependencies: We want this effect to run when filter values or page size change to reset pagination
+	useEffect(() => {
+		setCurrentPage(1);
+	}, [searchTerm, categoryFilter, updateStatusFilter, hostFilter, pageSize]);
+
+	// Function to handle page size change and save to localStorage
+	const handlePageSizeChange = (newPageSize) => {
+		setPageSize(newPageSize);
+		localStorage.setItem("packages-page-size", newPageSize.toString());
+	};
 
 	// Get visible columns in order
 	const visibleColumns = columnConfig
@@ -231,8 +319,8 @@ const Packages = () => {
 	const resetColumns = () => {
 		const defaultConfig = [
 			{ id: "name", label: "Package", visible: true, order: 0 },
-			{ id: "affectedHosts", label: "Affected Hosts", visible: true, order: 1 },
-			{ id: "priority", label: "Priority", visible: true, order: 2 },
+			{ id: "packageHosts", label: "Installed On", visible: true, order: 1 },
+			{ id: "status", label: "Status", visible: true, order: 2 },
 			{ id: "latestVersion", label: "Latest Version", visible: true, order: 3 },
 		];
 		updateColumnConfig(defaultConfig);
@@ -243,10 +331,14 @@ const Packages = () => {
 		switch (column.id) {
 			case "name":
 				return (
-					<div className="flex items-center">
-						<Package className="h-5 w-5 text-secondary-400 mr-3" />
-						<div>
-							<div className="text-sm font-medium text-secondary-900 dark:text-white">
+					<button
+						type="button"
+						onClick={() => navigate(`/packages/${pkg.id}`)}
+						className="flex items-center text-left hover:bg-secondary-100 dark:hover:bg-secondary-700 rounded p-2 -m-2 transition-colors group w-full"
+					>
+						<Package className="h-5 w-5 text-secondary-400 mr-3 flex-shrink-0" />
+						<div className="flex-1">
+							<div className="text-sm font-medium text-secondary-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400">
 								{pkg.name}
 							</div>
 							{pkg.description && (
@@ -260,33 +352,58 @@ const Packages = () => {
 								</div>
 							)}
 						</div>
-					</div>
+					</button>
 				);
-			case "affectedHosts": {
-				const affectedHostsCount =
-					pkg.affectedHostsCount || pkg.affectedHosts?.length || 0;
+			case "packageHosts": {
+				// Show total number of hosts where this package is installed
+				const installedHostsCount =
+					pkg.packageHostsCount ||
+					pkg.stats?.totalInstalls ||
+					pkg.packageHosts?.length ||
+					0;
+				// For packages that need updates, show how many need updates
+				const hostsNeedingUpdates = pkg.stats?.updatesNeeded || 0;
+
+				const displayText =
+					hostsNeedingUpdates > 0 && hostsNeedingUpdates < installedHostsCount
+						? `${hostsNeedingUpdates}/${installedHostsCount} hosts`
+						: `${installedHostsCount} host${installedHostsCount !== 1 ? "s" : ""}`;
+
+				const titleText =
+					hostsNeedingUpdates > 0 && hostsNeedingUpdates < installedHostsCount
+						? `${hostsNeedingUpdates} of ${installedHostsCount} hosts need updates`
+						: `Installed on ${installedHostsCount} host${installedHostsCount !== 1 ? "s" : ""}`;
+
 				return (
 					<button
 						type="button"
-						onClick={() => handleAffectedHostsClick(pkg)}
+						onClick={() => handlePackageHostsClick(pkg)}
 						className="text-left hover:bg-secondary-100 dark:hover:bg-secondary-700 rounded p-1 -m-1 transition-colors group"
-						title={`Click to view all ${affectedHostsCount} affected hosts`}
+						title={titleText}
 					>
 						<div className="text-sm text-secondary-900 dark:text-white group-hover:text-primary-600 dark:group-hover:text-primary-400">
-							{affectedHostsCount} host{affectedHostsCount !== 1 ? "s" : ""}
+							{displayText}
 						</div>
 					</button>
 				);
 			}
-			case "priority":
+			case "status": {
+				// Check if this package needs updates
+				const needsUpdates = (pkg.stats?.updatesNeeded || 0) > 0;
+
+				if (!needsUpdates) {
+					return <span className="badge-success">Up to Date</span>;
+				}
+
 				return pkg.isSecurityUpdate ? (
-					<span className="badge-danger flex items-center gap-1">
+					<span className="badge-danger">
 						<Shield className="h-3 w-3" />
-						Security Update
+						Security Update Available
 					</span>
 				) : (
-					<span className="badge-warning">Regular Update</span>
+					<span className="badge-warning">Update Available</span>
 				);
+			}
 			case "latestVersion":
 				return (
 					<div
@@ -305,28 +422,30 @@ const Packages = () => {
 	const categories =
 		[...new Set(packages?.map((pkg) => pkg.category).filter(Boolean))] || [];
 
-	// Calculate unique affected hosts
-	const uniqueAffectedHosts = new Set();
+	// Calculate unique package hosts
+	const uniquePackageHosts = new Set();
 	packages?.forEach((pkg) => {
-		const affectedHosts = pkg.affectedHosts || [];
-		affectedHosts.forEach((host) => {
-			uniqueAffectedHosts.add(host.hostId);
-		});
+		// Only count hosts for packages that need updates
+		if ((pkg.stats?.updatesNeeded || 0) > 0) {
+			const packageHosts = pkg.packageHosts || [];
+			packageHosts.forEach((host) => {
+				uniquePackageHosts.add(host.hostId);
+			});
+		}
 	});
-	const uniqueAffectedHostsCount = uniqueAffectedHosts.size;
+	const uniquePackageHostsCount = uniquePackageHosts.size;
 
-	// Calculate total packages across all hosts (including up-to-date ones)
-	const totalPackagesCount =
-		hosts?.reduce((total, host) => {
-			return total + (host.totalPackagesCount || 0);
-		}, 0) || 0;
+	// Calculate total packages available
+	const totalPackagesCount = packages?.length || 0;
 
-	// Calculate outdated packages (packages that need updates)
-	const outdatedPackagesCount = packages?.length || 0;
+	// Calculate outdated packages
+	const outdatedPackagesCount =
+		packages?.filter((pkg) => (pkg.stats?.updatesNeeded || 0) > 0).length || 0;
 
 	// Calculate security updates
 	const securityUpdatesCount =
-		packages?.filter((pkg) => pkg.isSecurityUpdate).length || 0;
+		packages?.filter((pkg) => (pkg.stats?.securityUpdates || 0) > 0).length ||
+		0;
 
 	if (isLoading) {
 		return (
@@ -429,7 +548,7 @@ const Packages = () => {
 								Hosts Pending Updates
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
-								{uniqueAffectedHostsCount}
+								{uniquePackageHostsCount}
 							</p>
 						</div>
 					</div>
@@ -490,16 +609,21 @@ const Packages = () => {
 								</select>
 							</div>
 
-							{/* Security Filter */}
+							{/* Update Status Filter */}
 							<div className="sm:w-48">
 								<select
-									value={securityFilter}
-									onChange={(e) => setSecurityFilter(e.target.value)}
+									value={updateStatusFilter}
+									onChange={(e) => setUpdateStatusFilter(e.target.value)}
 									className="w-full px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md focus:ring-2 focus:ring-primary-500 focus:border-transparent bg-white dark:bg-secondary-800 text-secondary-900 dark:text-white"
 								>
-									<option value="all">All Updates</option>
-									<option value="security">Security Only</option>
-									<option value="regular">Regular Only</option>
+									<option value="all-packages">All Packages</option>
+									<option value="needs-updates">
+										Packages Needing Updates
+									</option>
+									<option value="security-updates">
+										Security Updates Only
+									</option>
+									<option value="regular-updates">Regular Updates Only</option>
 								</select>
 							</div>
 
@@ -539,12 +663,13 @@ const Packages = () => {
 								<Package className="h-12 w-12 text-secondary-400 mx-auto mb-4" />
 								<p className="text-secondary-500 dark:text-secondary-300">
 									{packages?.length === 0
-										? "No packages need updates"
+										? "No packages found"
 										: "No packages match your filters"}
 								</p>
 								{packages?.length === 0 && (
 									<p className="text-sm text-secondary-400 dark:text-secondary-400 mt-2">
-										All packages are up to date across all hosts
+										Packages will appear here once hosts start reporting their
+										installed packages
 									</p>
 								)}
 							</div>
@@ -571,7 +696,7 @@ const Packages = () => {
 										</tr>
 									</thead>
 									<tbody className="bg-white dark:bg-secondary-800 divide-y divide-secondary-200 dark:divide-secondary-600">
-										{filteredAndSortedPackages.map((pkg) => (
+										{paginatedPackages.map((pkg) => (
 											<tr
 												key={pkg.id}
 												className="hover:bg-secondary-50 dark:hover:bg-secondary-700 transition-colors"
@@ -591,6 +716,57 @@ const Packages = () => {
 							</div>
 						)}
 					</div>
+
+					{/* Pagination Controls */}
+					{filteredAndSortedPackages.length > 0 && (
+						<div className="flex items-center justify-between px-6 py-3 bg-white dark:bg-secondary-800 border-t border-secondary-200 dark:border-secondary-600">
+							<div className="flex items-center gap-4">
+								<div className="flex items-center gap-2">
+									<span className="text-sm text-secondary-700 dark:text-secondary-300">
+										Rows per page:
+									</span>
+									<select
+										value={pageSize}
+										onChange={(e) =>
+											handlePageSizeChange(Number(e.target.value))
+										}
+										className="text-sm border border-secondary-300 dark:border-secondary-600 rounded px-2 py-1 bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white"
+									>
+										<option value={25}>25</option>
+										<option value={50}>50</option>
+										<option value={100}>100</option>
+										<option value={200}>200</option>
+									</select>
+								</div>
+								<span className="text-sm text-secondary-700 dark:text-secondary-300">
+									{startIndex + 1}-
+									{Math.min(endIndex, filteredAndSortedPackages.length)} of{" "}
+									{filteredAndSortedPackages.length}
+								</span>
+							</div>
+							<div className="flex items-center gap-2">
+								<button
+									type="button"
+									onClick={() => setCurrentPage(currentPage - 1)}
+									disabled={currentPage === 1}
+									className="p-1 rounded hover:bg-secondary-100 dark:hover:bg-secondary-600 disabled:opacity-50 disabled:cursor-not-allowed"
+								>
+									<ChevronLeft className="h-4 w-4" />
+								</button>
+								<span className="text-sm text-secondary-700 dark:text-secondary-300">
+									Page {currentPage} of {totalPages}
+								</span>
+								<button
+									type="button"
+									onClick={() => setCurrentPage(currentPage + 1)}
+									disabled={currentPage === totalPages}
+									className="p-1 rounded hover:bg-secondary-100 dark:hover:bg-secondary-600 disabled:opacity-50 disabled:cursor-not-allowed"
+								>
+									<ChevronRight className="h-4 w-4" />
+								</button>
+							</div>
+						</div>
+					)}
 				</div>
 			</div>
 

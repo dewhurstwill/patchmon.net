@@ -289,6 +289,77 @@ router.get(
 	},
 );
 
+// Delete a specific repository (admin only)
+router.delete(
+	"/:repositoryId",
+	authenticateToken,
+	requireManageHosts,
+	async (req, res) => {
+		try {
+			const { repositoryId } = req.params;
+
+			// Check if repository exists first
+			const existingRepository = await prisma.repositories.findUnique({
+				where: { id: repositoryId },
+				select: {
+					id: true,
+					name: true,
+					url: true,
+					_count: {
+						select: {
+							host_repositories: true,
+						},
+					},
+				},
+			});
+
+			if (!existingRepository) {
+				return res.status(404).json({
+					error: "Repository not found",
+					details: "The repository may have been deleted or does not exist",
+				});
+			}
+
+			// Delete repository and all related data (cascade will handle host_repositories)
+			await prisma.repositories.delete({
+				where: { id: repositoryId },
+			});
+
+			res.json({
+				message: "Repository deleted successfully",
+				deletedRepository: {
+					id: existingRepository.id,
+					name: existingRepository.name,
+					url: existingRepository.url,
+					hostCount: existingRepository._count.host_repositories,
+				},
+			});
+		} catch (error) {
+			console.error("Repository deletion error:", error);
+
+			// Handle specific Prisma errors
+			if (error.code === "P2025") {
+				return res.status(404).json({
+					error: "Repository not found",
+					details: "The repository may have been deleted or does not exist",
+				});
+			}
+
+			if (error.code === "P2003") {
+				return res.status(400).json({
+					error: "Cannot delete repository due to foreign key constraints",
+					details: "The repository has related data that prevents deletion",
+				});
+			}
+
+			res.status(500).json({
+				error: "Failed to delete repository",
+				details: error.message || "An unexpected error occurred",
+			});
+		}
+	},
+);
+
 // Cleanup orphaned repositories (admin only)
 router.delete(
 	"/cleanup/orphaned",

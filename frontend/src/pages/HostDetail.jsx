@@ -45,6 +45,7 @@ const HostDetail = () => {
 	const [showDeleteModal, setShowDeleteModal] = useState(false);
 	const [showAllUpdates, setShowAllUpdates] = useState(false);
 	const [activeTab, setActiveTab] = useState("host");
+	const [_forceInstall, _setForceInstall] = useState(false);
 
 	const {
 		data: host,
@@ -387,6 +388,17 @@ const HostDetail = () => {
 											</div>
 										)}
 
+										{host.machine_id && (
+											<div>
+												<p className="text-xs text-secondary-500 dark:text-secondary-300 mb-1.5">
+													Machine ID
+												</p>
+												<p className="font-medium text-secondary-900 dark:text-white font-mono text-sm break-all">
+													{host.machine_id}
+												</p>
+											</div>
+										)}
+
 										<div>
 											<p className="text-xs text-secondary-500 dark:text-secondary-300 mb-1.5">
 												Host Group
@@ -455,11 +467,23 @@ const HostDetail = () => {
 
 							{/* Network Information */}
 							{activeTab === "network" &&
-								(host.gateway_ip ||
+								(host.ip ||
+									host.gateway_ip ||
 									host.dns_servers ||
 									host.network_interfaces) && (
 									<div className="space-y-4">
 										<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+											{host.ip && (
+												<div>
+													<p className="text-xs text-secondary-500 dark:text-secondary-300">
+														IP Address
+													</p>
+													<p className="font-medium text-secondary-900 dark:text-white font-mono text-sm">
+														{host.ip}
+													</p>
+												</div>
+											)}
+
 											{host.gateway_ip && (
 												<div>
 													<p className="text-xs text-secondary-500 dark:text-secondary-300">
@@ -791,6 +815,7 @@ const HostDetail = () => {
 
 							{activeTab === "network" &&
 								!(
+									host.ip ||
 									host.gateway_ip ||
 									host.dns_servers ||
 									host.network_interfaces
@@ -1059,6 +1084,7 @@ const HostDetail = () => {
 const CredentialsModal = ({ host, isOpen, onClose }) => {
 	const [showApiKey, setShowApiKey] = useState(false);
 	const [activeTab, setActiveTab] = useState("quick-install");
+	const [forceInstall, setForceInstall] = useState(false);
 	const apiIdInputId = useId();
 	const apiKeyInputId = useId();
 
@@ -1078,6 +1104,12 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 	// Helper function to get curl flags based on settings
 	const getCurlFlags = () => {
 		return settings?.ignore_ssl_self_signed ? "-sk" : "-s";
+	};
+
+	// Helper function to build installation URL with optional force flag
+	const getInstallUrl = () => {
+		const baseUrl = `${serverUrl}/api/v1/hosts/install`;
+		return forceInstall ? `${baseUrl}?force=true` : baseUrl;
 	};
 
 	const copyToClipboard = async (text) => {
@@ -1173,10 +1205,30 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 								Copy and run this command on the target host to securely install
 								and configure the PatchMon agent:
 							</p>
+
+							{/* Force Install Toggle */}
+							<div className="mb-3">
+								<label className="flex items-center gap-2 text-sm">
+									<input
+										type="checkbox"
+										checked={forceInstall}
+										onChange={(e) => setForceInstall(e.target.checked)}
+										className="rounded border-secondary-300 dark:border-secondary-600 text-primary-600 focus:ring-primary-500 dark:focus:ring-primary-400 dark:bg-secondary-700"
+									/>
+									<span className="text-primary-800 dark:text-primary-200">
+										Force install (bypass broken packages)
+									</span>
+								</label>
+								<p className="text-xs text-primary-600 dark:text-primary-400 mt-1">
+									Enable this if the target host has broken packages
+									(CloudPanel, WHM, etc.) that block apt-get operations
+								</p>
+							</div>
+
 							<div className="flex items-center gap-2">
 								<input
 									type="text"
-									value={`curl ${getCurlFlags()} ${serverUrl}/api/v1/hosts/install -H "X-API-ID: ${host.api_id}" -H "X-API-KEY: ${host.api_key}" | bash`}
+									value={`curl ${getCurlFlags()} ${getInstallUrl()} -H "X-API-ID: ${host.api_id}" -H "X-API-KEY: ${host.api_key}" | bash`}
 									readOnly
 									className="flex-1 px-3 py-2 border border-primary-300 dark:border-primary-600 rounded-md bg-white dark:bg-secondary-800 text-sm font-mono text-secondary-900 dark:text-white"
 								/>
@@ -1184,7 +1236,7 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 									type="button"
 									onClick={() =>
 										copyToClipboard(
-											`curl ${getCurlFlags()} ${serverUrl}/api/v1/hosts/install -H "X-API-ID: ${host.api_id}" -H "X-API-KEY: ${host.api_key}" | bash`,
+											`curl ${getCurlFlags()} ${getInstallUrl()} -H "X-API-ID: ${host.api_id}" -H "X-API-KEY: ${host.api_key}" | bash`,
 										)
 									}
 									className="btn-primary flex items-center gap-1"

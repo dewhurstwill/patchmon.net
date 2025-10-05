@@ -4,6 +4,7 @@ import {
 	ChevronRight,
 	Code,
 	Folder,
+	Image,
 	RefreshCw,
 	Settings,
 	Shield,
@@ -129,6 +130,11 @@ const SettingsLayout = ({ children }) => {
 						name: "URL Config",
 						href: "/settings/server-url",
 						icon: Wrench,
+					},
+					{
+						name: "Branding",
+						href: "/settings/branding",
+						icon: Image,
 					},
 					{
 						name: "Server Version",

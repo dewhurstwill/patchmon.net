@@ -185,6 +185,7 @@ router.get("/hosts", authenticateToken, requireViewHosts, async (_req, res) => {
 			// Show all hosts regardless of status
 			select: {
 				id: true,
+				machine_id: true,
 				friendly_name: true,
 				hostname: true,
 				ip: true,

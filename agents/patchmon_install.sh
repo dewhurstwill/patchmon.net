@@ -109,14 +109,39 @@ cleanup_old_files() {
 # Run cleanup at start
 cleanup_old_files
 
+# Generate or retrieve machine ID
+get_machine_id() {
+    # Try multiple sources for machine ID
+    if [[ -f /etc/machine-id ]]; then
+        cat /etc/machine-id
+    elif [[ -f /var/lib/dbus/machine-id ]]; then
+        cat /var/lib/dbus/machine-id
+    else
+        # Fallback: generate from hardware info (less ideal but works)
+        echo "patchmon-$(cat /sys/class/dmi/id/product_uuid 2>/dev/null || cat /proc/sys/kernel/random/uuid)"
+    fi
+}
+
 # Parse arguments from environment (passed via HTTP headers)
 if [[ -z "$PATCHMON_URL" ]] || [[ -z "$API_ID" ]] || [[ -z "$API_KEY" ]]; then
     error "Missing required parameters. This script should be called via the PatchMon web interface."
 fi
 
+# Check if --force flag is set (for bypassing broken packages)
+FORCE_INSTALL="${FORCE_INSTALL:-false}"
+if [[ "$*" == *"--force"* ]] || [[ "$FORCE_INSTALL" == "true" ]]; then
+    FORCE_INSTALL="true"
+    warning "⚠️  Force mode enabled - will bypass broken packages"
+fi
+
+# Get unique machine ID for this host
+MACHINE_ID=$(get_machine_id)
+export MACHINE_ID
+
 info "🚀 Starting PatchMon Agent Installation..."
 info "📋 Server: $PATCHMON_URL"
 info "🔑 API ID: ${API_ID:0:16}..."
+info "🆔 Machine ID: ${MACHINE_ID:0:16}..."
 
 # Display diagnostic information
 echo ""
@@ -131,16 +156,88 @@ echo ""
 info "📦 Installing required dependencies..."
 echo ""
 
+# Function to check if a command exists
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# Function to install packages with error handling
+install_apt_packages() {
+    local packages=("$@")
+    local missing_packages=()
+    
+    # Check which packages are missing
+    for pkg in "${packages[@]}"; do
+        if ! command_exists "$pkg"; then
+            missing_packages+=("$pkg")
+        fi
+    done
+    
+    if [ ${#missing_packages[@]} -eq 0 ]; then
+        success "All required packages are already installed"
+        return 0
+    fi
+    
+    info "Need to install: ${missing_packages[*]}"
+    
+    # Build apt-get command based on force mode
+    local apt_cmd="apt-get install ${missing_packages[*]} -y"
+    
+    if [[ "$FORCE_INSTALL" == "true" ]]; then
+        info "Using force mode - bypassing broken packages..."
+        apt_cmd="$apt_cmd -o APT::Get::Fix-Broken=false -o DPkg::Options::=\"--force-confold\" -o DPkg::Options::=\"--force-confdef\""
+    fi
+    
+    # Try to install packages
+    if eval "$apt_cmd" 2>&1 | tee /tmp/patchmon_apt_install.log; then
+        success "Packages installed successfully"
+        return 0
+    else
+        warning "Package installation encountered issues, checking if required tools are available..."
+        
+        # Verify critical dependencies are actually available
+        local all_ok=true
+        for pkg in "${packages[@]}"; do
+            if ! command_exists "$pkg"; then
+                if [[ "$FORCE_INSTALL" == "true" ]]; then
+                    error "Critical dependency '$pkg' is not available even with --force. Please install manually."
+                else
+                    error "Critical dependency '$pkg' is not available. Try again with --force flag or install manually: apt-get install $pkg"
+                fi
+                all_ok=false
+            fi
+        done
+        
+        if $all_ok; then
+            success "All required tools are available despite installation warnings"
+            return 0
+        else
+            return 1
+        fi
+    fi
+}
+
 # Detect package manager and install jq and curl
 if command -v apt-get >/dev/null 2>&1; then
     # Debian/Ubuntu
     info "Detected apt-get (Debian/Ubuntu)"
     echo ""
+    
+    # Check for broken packages
+    if dpkg -l | grep -q "^iH\|^iF" 2>/dev/null; then
+        if [[ "$FORCE_INSTALL" == "true" ]]; then
+            warning "Detected broken packages on system - force mode will work around them"
+        else
+            warning "⚠️  Broken packages detected on system"
+            warning "If installation fails, retry with: curl -s {URL}/api/v1/hosts/install --force -H ..."
+        fi
+    fi
+    
     info "Updating package lists..."
-    apt-get update
+    apt-get update || true
     echo ""
     info "Installing jq, curl, and bc..."
-    apt-get install jq curl bc -y
+    install_apt_packages jq curl bc
 elif command -v yum >/dev/null 2>&1; then
     # CentOS/RHEL 7
     info "Detected yum (CentOS/RHEL 7)"
@@ -261,6 +358,33 @@ if [[ -f "/var/log/patchmon-agent.log" ]]; then
 fi
 
 # Step 4: Test the configuration
+# Check if this machine is already enrolled
+info "🔍 Checking if machine is already enrolled..."
+existing_check=$(curl $CURL_FLAGS -s -X POST \
+    -H "X-API-ID: $API_ID" \
+    -H "X-API-KEY: $API_KEY" \
+    -H "Content-Type: application/json" \
+    -d "{\"machine_id\": \"$MACHINE_ID\"}" \
+    "$PATCHMON_URL/api/v1/hosts/check-machine-id" \
+    -w "\n%{http_code}" 2>&1)
+
+http_code=$(echo "$existing_check" | tail -n 1)
+response_body=$(echo "$existing_check" | sed '$d')
+
+if [[ "$http_code" == "200" ]]; then
+    already_enrolled=$(echo "$response_body" | jq -r '.exists' 2>/dev/null || echo "false")
+    if [[ "$already_enrolled" == "true" ]]; then
+        warning "⚠️  This machine is already enrolled in PatchMon"
+        info "Machine ID: $MACHINE_ID"
+        info "Existing host: $(echo "$response_body" | jq -r '.host.friendly_name' 2>/dev/null)"
+        info ""
+        info "The agent will be reinstalled/updated with existing credentials."
+        echo ""
+    else
+        success "✅ Machine not yet enrolled - proceeding with installation"
+    fi
+fi
+
 info "🧪 Testing API credentials and connectivity..."
 if /usr/local/bin/patchmon-agent.sh test; then
     success "✅ TEST: API credentials are valid and server is reachable"

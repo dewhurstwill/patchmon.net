@@ -60,6 +60,8 @@ const {
 const repositoryRoutes = require("./routes/repositoryRoutes");
 const versionRoutes = require("./routes/versionRoutes");
 const tfaRoutes = require("./routes/tfaRoutes");
+const searchRoutes = require("./routes/searchRoutes");
+const autoEnrollmentRoutes = require("./routes/autoEnrollmentRoutes");
 const updateScheduler = require("./services/updateScheduler");
 const { initSettings } = require("./services/settingsService");
 const { cleanup_expired_sessions } = require("./utils/session_manager");
@@ -414,6 +416,12 @@ app.use(`/api/${apiVersion}/dashboard-preferences`, dashboardPreferencesRoutes);
 app.use(`/api/${apiVersion}/repositories`, repositoryRoutes);
 app.use(`/api/${apiVersion}/version`, versionRoutes);
 app.use(`/api/${apiVersion}/tfa`, tfaRoutes);
+app.use(`/api/${apiVersion}/search`, searchRoutes);
+app.use(
+	`/api/${apiVersion}/auto-enrollment`,
+	authLimiter,
+	autoEnrollmentRoutes,
+);
 
 // Error handling middleware
 app.use((err, _req, res, _next) => {

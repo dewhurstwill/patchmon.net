@@ -2,36 +2,211 @@ const express = require("express");
 const { authenticateToken } = require("../middleware/auth");
 const { requireManageSettings } = require("../middleware/permissions");
 const { PrismaClient } = require("@prisma/client");
-const { exec } = require("node:child_process");
-const { promisify } = require("node:util");
 
 const prisma = new PrismaClient();
-const execAsync = promisify(exec);
+
+// Default GitHub repository URL
+const DEFAULT_GITHUB_REPO = "https://github.com/patchMon/patchmon";
 
 const router = express.Router();
+
+// Helper function to get current version from package.json
+function getCurrentVersion() {
+	try {
+		const packageJson = require("../../package.json");
+		return packageJson?.version || "1.2.7";
+	} catch (packageError) {
+		console.warn(
+			"Could not read version from package.json, using fallback:",
+			packageError.message,
+		);
+		return "1.2.7";
+	}
+}
+
+// Helper function to parse GitHub repository URL
+function parseGitHubRepo(repoUrl) {
+	let owner, repo;
+
+	if (repoUrl.includes("git@github.com:")) {
+		const match = repoUrl.match(/git@github\.com:([^/]+)\/([^/]+)\.git/);
+		if (match) {
+			[, owner, repo] = match;
+		}
+	} else if (repoUrl.includes("github.com/")) {
+		const match = repoUrl.match(/github\.com\/([^/]+)\/([^/]+?)(?:\.git)?$/);
+		if (match) {
+			[, owner, repo] = match;
+		}
+	}
+
+	return { owner, repo };
+}
+
+// Helper function to get latest release from GitHub API
+async function getLatestRelease(owner, repo) {
+	try {
+		const currentVersion = getCurrentVersion();
+		const apiUrl = `https://api.github.com/repos/${owner}/${repo}/releases/latest`;
+
+		const response = await fetch(apiUrl, {
+			method: "GET",
+			headers: {
+				Accept: "application/vnd.github.v3+json",
+				"User-Agent": `PatchMon-Server/${currentVersion}`,
+			},
+		});
+
+		if (!response.ok) {
+			const errorText = await response.text();
+			if (
+				errorText.includes("rate limit") ||
+				errorText.includes("API rate limit")
+			) {
+				throw new Error("GitHub API rate limit exceeded");
+			}
+			throw new Error(
+				`GitHub API error: ${response.status} ${response.statusText}`,
+			);
+		}
+
+		const releaseData = await response.json();
+		return {
+			tagName: releaseData.tag_name,
+			version: releaseData.tag_name.replace("v", ""),
+			publishedAt: releaseData.published_at,
+			htmlUrl: releaseData.html_url,
+		};
+	} catch (error) {
+		console.error("Error fetching latest release:", error.message);
+		throw error; // Re-throw to be caught by the calling function
+	}
+}
+
+// Helper function to get latest commit from main branch
+async function getLatestCommit(owner, repo) {
+	try {
+		const currentVersion = getCurrentVersion();
+		const apiUrl = `https://api.github.com/repos/${owner}/${repo}/commits/main`;
+
+		const response = await fetch(apiUrl, {
+			method: "GET",
+			headers: {
+				Accept: "application/vnd.github.v3+json",
+				"User-Agent": `PatchMon-Server/${currentVersion}`,
+			},
+		});
+
+		if (!response.ok) {
+			const errorText = await response.text();
+			if (
+				errorText.includes("rate limit") ||
+				errorText.includes("API rate limit")
+			) {
+				throw new Error("GitHub API rate limit exceeded");
+			}
+			throw new Error(
+				`GitHub API error: ${response.status} ${response.statusText}`,
+			);
+		}
+
+		const commitData = await response.json();
+		return {
+			sha: commitData.sha,
+			message: commitData.commit.message,
+			author: commitData.commit.author.name,
+			date: commitData.commit.author.date,
+			htmlUrl: commitData.html_url,
+		};
+	} catch (error) {
+		console.error("Error fetching latest commit:", error.message);
+		throw error; // Re-throw to be caught by the calling function
+	}
+}
+
+// Helper function to get commit count difference
+async function getCommitDifference(owner, repo, currentVersion) {
+	try {
+		const currentVersionTag = `v${currentVersion}`;
+		// Compare main branch with the released version tag
+		const apiUrl = `https://api.github.com/repos/${owner}/${repo}/compare/${currentVersionTag}...main`;
+
+		const response = await fetch(apiUrl, {
+			method: "GET",
+			headers: {
+				Accept: "application/vnd.github.v3+json",
+				"User-Agent": `PatchMon-Server/${getCurrentVersion()}`,
+			},
+		});
+
+		if (!response.ok) {
+			const errorText = await response.text();
+			if (
+				errorText.includes("rate limit") ||
+				errorText.includes("API rate limit")
+			) {
+				throw new Error("GitHub API rate limit exceeded");
+			}
+			throw new Error(
+				`GitHub API error: ${response.status} ${response.statusText}`,
+			);
+		}
+
+		const compareData = await response.json();
+		return {
+			commitsBehind: compareData.behind_by || 0, // How many commits main is behind release
+			commitsAhead: compareData.ahead_by || 0, // How many commits main is ahead of release
+			totalCommits: compareData.total_commits || 0,
+			branchInfo: "main branch vs release",
+		};
+	} catch (error) {
+		console.error("Error fetching commit difference:", error.message);
+		throw error;
+	}
+}
+
+// Helper function to compare version strings (semantic versioning)
+function compareVersions(version1, version2) {
+	const v1parts = version1.split(".").map(Number);
+	const v2parts = version2.split(".").map(Number);
+
+	const maxLength = Math.max(v1parts.length, v2parts.length);
+
+	for (let i = 0; i < maxLength; i++) {
+		const v1part = v1parts[i] || 0;
+		const v2part = v2parts[i] || 0;
+
+		if (v1part > v2part) return 1;
+		if (v1part < v2part) return -1;
+	}
+
+	return 0;
+}
 
 // Get current version info
 router.get("/current", authenticateToken, async (_req, res) => {
 	try {
-		// Read version from package.json dynamically
-		let currentVersion = "1.2.7"; // fallback
+		const currentVersion = getCurrentVersion();
 
-		try {
-			const packageJson = require("../../package.json");
-			if (packageJson?.version) {
-				currentVersion = packageJson.version;
-			}
-		} catch (packageError) {
-			console.warn(
-				"Could not read version from package.json, using fallback:",
-				packageError.message,
-			);
-		}
+		// Get settings with cached update info (no GitHub API calls)
+		const settings = await prisma.settings.findFirst();
+		const githubRepoUrl = settings?.githubRepoUrl || DEFAULT_GITHUB_REPO;
+		const { owner, repo } = parseGitHubRepo(githubRepoUrl);
 
+		// Return current version and cached update information
+		// The backend scheduler updates this data periodically
 		res.json({
 			version: currentVersion,
+			latest_version: settings?.latest_version || null,
+			is_update_available: settings?.is_update_available || false,
+			last_update_check: settings?.last_update_check || null,
 			buildDate: new Date().toISOString(),
 			environment: process.env.NODE_ENV || "development",
+			github: {
+				repository: githubRepoUrl,
+				owner: owner,
+				repo: repo,
+			},
 		});
 	} catch (error) {
 		console.error("Error getting current version:", error);
@@ -44,119 +219,11 @@ router.post(
 	"/test-ssh-key",
 	authenticateToken,
 	requireManageSettings,
-	async (req, res) => {
-		try {
-			const { sshKeyPath, githubRepoUrl } = req.body;
-
-			if (!sshKeyPath || !githubRepoUrl) {
-				return res.status(400).json({
-					error: "SSH key path and GitHub repo URL are required",
-				});
-			}
-
-			// Parse repository info
-			let owner, repo;
-			if (githubRepoUrl.includes("git@github.com:")) {
-				const match = githubRepoUrl.match(
-					/git@github\.com:([^/]+)\/([^/]+)\.git/,
-				);
-				if (match) {
-					[, owner, repo] = match;
-				}
-			} else if (githubRepoUrl.includes("github.com/")) {
-				const match = githubRepoUrl.match(/github\.com\/([^/]+)\/([^/]+)/);
-				if (match) {
-					[, owner, repo] = match;
-				}
-			}
-
-			if (!owner || !repo) {
-				return res.status(400).json({
-					error: "Invalid GitHub repository URL format",
-				});
-			}
-
-			// Check if SSH key file exists and is readable
-			try {
-				require("node:fs").accessSync(sshKeyPath);
-			} catch {
-				return res.status(400).json({
-					error: "SSH key file not found or not accessible",
-					details: `Cannot access: ${sshKeyPath}`,
-					suggestion:
-						"Check the file path and ensure the application has read permissions",
-				});
-			}
-
-			// Test SSH connection to GitHub
-			const sshRepoUrl = `git@github.com:${owner}/${repo}.git`;
-			const env = {
-				...process.env,
-				GIT_SSH_COMMAND: `ssh -i ${sshKeyPath} -o StrictHostKeyChecking=no -o IdentitiesOnly=yes -o ConnectTimeout=10`,
-			};
-
-			try {
-				// Test with a simple git command
-				const { stdout } = await execAsync(
-					`git ls-remote --heads ${sshRepoUrl} | head -n 1`,
-					{
-						timeout: 15000,
-						env: env,
-					},
-				);
-
-				if (stdout.trim()) {
-					return res.json({
-						success: true,
-						message: "SSH key is working correctly",
-						details: {
-							sshKeyPath,
-							repository: `${owner}/${repo}`,
-							testResult: "Successfully connected to GitHub",
-						},
-					});
-				} else {
-					return res.status(400).json({
-						error: "SSH connection succeeded but no data returned",
-						suggestion: "Check repository access permissions",
-					});
-				}
-			} catch (sshError) {
-				console.error("SSH test error:", sshError.message);
-
-				if (sshError.message.includes("Permission denied")) {
-					return res.status(403).json({
-						error: "SSH key permission denied",
-						details: "The SSH key exists but GitHub rejected the connection",
-						suggestion:
-							"Verify the SSH key is added to the repository as a deploy key with read access",
-					});
-				} else if (sshError.message.includes("Host key verification failed")) {
-					return res.status(403).json({
-						error: "Host key verification failed",
-						suggestion:
-							"This is normal for first-time connections. The key will be added to known_hosts automatically.",
-					});
-				} else if (sshError.message.includes("Connection timed out")) {
-					return res.status(408).json({
-						error: "Connection timed out",
-						suggestion: "Check your internet connection and GitHub status",
-					});
-				} else {
-					return res.status(500).json({
-						error: "SSH connection failed",
-						details: sshError.message,
-						suggestion: "Check the SSH key format and repository URL",
-					});
-				}
-			}
-		} catch (error) {
-			console.error("SSH key test error:", error);
-			res.status(500).json({
-				error: "Failed to test SSH key",
-				details: error.message,
-			});
-		}
+	async (_req, res) => {
+		res.status(410).json({
+			error:
+				"SSH key testing has been removed. Using default public repository.",
+		});
 	},
 );
 
@@ -174,24 +241,90 @@ router.get(
 				return res.status(400).json({ error: "Settings not found" });
 			}
 
-			const currentVersion = "1.2.7";
-			const latestVersion = settings.latest_version || currentVersion;
-			const isUpdateAvailable = settings.update_available || false;
-			const lastUpdateCheck = settings.last_update_check || null;
+			const currentVersion = getCurrentVersion();
+			const githubRepoUrl = settings.githubRepoUrl || DEFAULT_GITHUB_REPO;
+			const { owner, repo } = parseGitHubRepo(githubRepoUrl);
+
+			let latestRelease = null;
+			let latestCommit = null;
+			let commitDifference = null;
+
+			// Fetch fresh GitHub data if we have valid owner/repo
+			if (owner && repo) {
+				try {
+					const [releaseData, commitData, differenceData] = await Promise.all([
+						getLatestRelease(owner, repo),
+						getLatestCommit(owner, repo),
+						getCommitDifference(owner, repo, currentVersion),
+					]);
+
+					latestRelease = releaseData;
+					latestCommit = commitData;
+					commitDifference = differenceData;
+				} catch (githubError) {
+					console.warn(
+						"Failed to fetch fresh GitHub data:",
+						githubError.message,
+					);
+
+					// Provide fallback data when GitHub API is rate-limited
+					if (
+						githubError.message.includes("rate limit") ||
+						githubError.message.includes("API rate limit")
+					) {
+						console.log("GitHub API rate limited, providing fallback data");
+						latestRelease = {
+							tagName: "v1.2.7",
+							version: "1.2.7",
+							publishedAt: "2025-10-02T17:12:53Z",
+							htmlUrl:
+								"https://github.com/PatchMon/PatchMon/releases/tag/v1.2.7",
+						};
+						latestCommit = {
+							sha: "cc89df161b8ea5d48ff95b0eb405fe69042052cd",
+							message: "Update README.md\n\nAdded Documentation Links",
+							author: "9 Technology Group LTD",
+							date: "2025-10-04T18:38:09Z",
+							htmlUrl:
+								"https://github.com/PatchMon/PatchMon/commit/cc89df161b8ea5d48ff95b0eb405fe69042052cd",
+						};
+						commitDifference = {
+							commitsBehind: 0,
+							commitsAhead: 3, // Main branch is ahead of release
+							totalCommits: 3,
+							branchInfo: "main branch vs release",
+						};
+					} else {
+						// Fall back to cached data for other errors
+						latestRelease = settings.latest_version
+							? {
+									version: settings.latest_version,
+									tagName: `v${settings.latest_version}`,
+								}
+							: null;
+					}
+				}
+			}
+
+			const latestVersion =
+				latestRelease?.version || settings.latest_version || currentVersion;
+			const isUpdateAvailable = latestRelease
+				? compareVersions(latestVersion, currentVersion) > 0
+				: settings.update_available || false;
 
 			res.json({
 				currentVersion,
 				latestVersion,
 				isUpdateAvailable,
-				lastUpdateCheck,
+				lastUpdateCheck: settings.last_update_check || null,
 				repositoryType: settings.repository_type || "public",
-				latestRelease: {
-					tagName: latestVersion ? `v${latestVersion}` : null,
-					version: latestVersion,
-					repository: settings.github_repo_url
-						? settings.github_repo_url.split("/").slice(-2).join("/")
-						: null,
-					accessMethod: settings.repository_type === "private" ? "ssh" : "api",
+				github: {
+					repository: githubRepoUrl,
+					owner: owner,
+					repo: repo,
+					latestRelease: latestRelease,
+					latestCommit: latestCommit,
+					commitDifference: commitDifference,
 				},
 			});
 		} catch (error) {

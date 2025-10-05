@@ -132,6 +132,7 @@ export const repositoryAPI = {
 	getByHost: (hostId) => api.get(`/repositories/host/${hostId}`),
 	update: (repositoryId, data) =>
 		api.put(`/repositories/${repositoryId}`, data),
+	delete: (repositoryId) => api.delete(`/repositories/${repositoryId}`),
 	toggleHostRepository: (hostId, repositoryId, isEnabled) =>
 		api.patch(`/repositories/host/${hostId}/repository/${repositoryId}`, {
 			isEnabled,
@@ -257,6 +258,11 @@ export const formatRelativeTime = (date) => {
 	if (hours > 0) return `${hours} hour${hours > 1 ? "s" : ""} ago`;
 	if (minutes > 0) return `${minutes} minute${minutes > 1 ? "s" : ""} ago`;
 	return `${seconds} second${seconds > 1 ? "s" : ""} ago`;
+};
+
+// Search API
+export const searchAPI = {
+	global: (query) => api.get("/search", { params: { q: query } }),
 };
 
 export default api;
