@@ -19,6 +19,7 @@ PatchMon is a containerised application that monitors system patches and updates
 - `x.y.z`: Full version tags (e.g. `1.2.3`) - Use this for exact version pinning.
 - `x.y`: Minor version tags (e.g. `1.2`) - Use this to get the latest patch release in a minor version series.
 - `x`: Major version tags (e.g. `1`) - Use this to get the latest minor and patch release in a major version series.
+- `edge`: The latest development build with the most recent features and fixes. This tag may often be unstable and is intended only for testing and development purposes.
 
 These tags are available for both backend and frontend images as they are versioned together.
 
