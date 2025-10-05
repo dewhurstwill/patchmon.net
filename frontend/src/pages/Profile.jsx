@@ -18,7 +18,7 @@ import {
 	User,
 } from "lucide-react";
 
-import { useId, useState } from "react";
+import { useEffect, useId, useState } from "react";
 
 import { useAuth } from "../contexts/AuthContext";
 import { useTheme } from "../contexts/ThemeContext";
@@ -44,6 +44,18 @@ const Profile = () => {
 		first_name: user?.first_name || "",
 		last_name: user?.last_name || "",
 	});
+
+	// Update profileData when user data changes
+	useEffect(() => {
+		if (user) {
+			setProfileData({
+				username: user.username || "",
+				email: user.email || "",
+				first_name: user.first_name || "",
+				last_name: user.last_name || "",
+			});
+		}
+	}, [user]);
 
 	const [passwordData, setPasswordData] = useState({
 		currentPassword: "",

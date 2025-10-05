@@ -176,6 +176,8 @@ router.get(
 					id: true,
 					username: true,
 					email: true,
+					first_name: true,
+					last_name: true,
 					role: true,
 					is_active: true,
 					last_login: true,
@@ -314,6 +316,14 @@ router.put(
 			.isLength({ min: 3 })
 			.withMessage("Username must be at least 3 characters"),
 		body("email").optional().isEmail().withMessage("Valid email is required"),
+		body("first_name")
+			.optional()
+			.isLength({ min: 1 })
+			.withMessage("First name must be at least 1 character"),
+		body("last_name")
+			.optional()
+			.isLength({ min: 1 })
+			.withMessage("Last name must be at least 1 character"),
 		body("role")
 			.optional()
 			.custom(async (value) => {
@@ -326,10 +336,10 @@ router.put(
 				}
 				return true;
 			}),
-		body("isActive")
+		body("is_active")
 			.optional()
 			.isBoolean()
-			.withMessage("isActive must be a boolean"),
+			.withMessage("is_active must be a boolean"),
 	],
 	async (req, res) => {
 		try {
@@ -340,13 +350,16 @@ router.put(
 				return res.status(400).json({ errors: errors.array() });
 			}
 
-			const { username, email, role, isActive } = req.body;
+			const { username, email, first_name, last_name, role, is_active } =
+				req.body;
 			const updateData = {};
 
 			if (username) updateData.username = username;
 			if (email) updateData.email = email;
+			if (first_name !== undefined) updateData.first_name = first_name || null;
+			if (last_name !== undefined) updateData.last_name = last_name || null;
 			if (role) updateData.role = role;
-			if (typeof isActive === "boolean") updateData.is_active = isActive;
+			if (typeof is_active === "boolean") updateData.is_active = is_active;
 
 			// Check if user exists
 			const existingUser = await prisma.users.findUnique({
@@ -381,7 +394,7 @@ router.put(
 			}
 
 			// Prevent deactivating the last admin
-			if (isActive === false && existingUser.role === "admin") {
+			if (is_active === false && existingUser.role === "admin") {
 				const adminCount = await prisma.users.count({
 					where: {
 						role: "admin",
@@ -404,6 +417,8 @@ router.put(
 					id: true,
 					username: true,
 					email: true,
+					first_name: true,
+					last_name: true,
 					role: true,
 					is_active: true,
 					last_login: true,
