@@ -71,6 +71,13 @@ jspm_packages/
 .cache/
 public
 
+# Exception: Allow frontend/public/assets for logo files
+!frontend/public/
+!frontend/public/assets/
+!frontend/public/assets/*.png
+!frontend/public/assets/*.svg
+!frontend/public/assets/*.jpg
+
 # Storybook build outputs
 .out
 .storybook-out
