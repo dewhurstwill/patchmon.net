@@ -708,7 +708,7 @@ get_yum_packages() {
     done <<< "$upgradable"
     
     # Get some installed packages that are up to date
-    local installed=$($package_manager list installed 2>/dev/null | grep -v "^Loaded" | grep -v "^Installed" | head -100)
+    local installed=$($package_manager list installed 2>/dev/null | grep -v "^Loaded" | grep -v "^Installed")
     
     while IFS= read -r line; do
         # Skip empty lines
