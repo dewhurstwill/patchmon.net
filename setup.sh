@@ -793,9 +793,13 @@ create_env_files() {
     cat > backend/.env << EOF
 # Database Configuration
 DATABASE_URL="postgresql://$DB_USER:$DB_PASS@localhost:5432/$DB_NAME"
+PM_DB_CONN_MAX_ATTEMPTS=30
+PM_DB_CONN_WAIT_INTERVAL=2
 
 # JWT Configuration
 JWT_SECRET="$JWT_SECRET"
+JWT_EXPIRES_IN=1h
+JWT_REFRESH_EXPIRES_IN=7d
 
 # Server Configuration
 PORT=$BACKEND_PORT
@@ -807,6 +811,12 @@ API_VERSION=v1
 # CORS Configuration
 CORS_ORIGIN="$SERVER_PROTOCOL_SEL://$FQDN"
 
+# Session Configuration
+SESSION_INACTIVITY_TIMEOUT_MINUTES=30
+
+# User Configuration
+DEFAULT_USER_ROLE=user
+
 # Rate Limiting (times in milliseconds)
 RATE_LIMIT_WINDOW_MS=900000
 RATE_LIMIT_MAX=5000
@@ -817,6 +827,7 @@ AGENT_RATE_LIMIT_MAX=1000
 
 # Logging
 LOG_LEVEL=info
+ENABLE_LOGGING=true
 EOF
 
     # Frontend .env
