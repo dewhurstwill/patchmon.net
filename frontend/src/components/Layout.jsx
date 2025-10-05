@@ -25,6 +25,7 @@ import {
 	X,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { FaYoutube } from "react-icons/fa";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useUpdateNotification } from "../contexts/UpdateNotificationContext";
@@ -875,13 +876,14 @@ const Layout = ({ children }) => {
 						</div>
 
 						{/* Global Search Bar */}
-						<div className="hidden md:flex items-center max-w-sm">
+						<div className="flex items-center max-w-sm">
 							<GlobalSearch />
 						</div>
 
 						<div className="flex flex-1 items-center gap-x-4 lg:gap-x-6 justify-end">
 							{/* External Links */}
-							<div className="flex items-center gap-2">
+							<div className="hidden md:flex items-center gap-2">
+								{/* 1) GitHub */}
 								<a
 									href="https://github.com/PatchMon/PatchMon"
 									target="_blank"
@@ -896,6 +898,7 @@ const Layout = ({ children }) => {
 										</div>
 									)}
 								</a>
+								{/* 2) Roadmap */}
 								<a
 									href="https://github.com/orgs/PatchMon/projects/2/views/1"
 									target="_blank"
@@ -905,15 +908,7 @@ const Layout = ({ children }) => {
 								>
 									<Route className="h-5 w-5" />
 								</a>
-								<a
-									href="https://patchmon.net/discord"
-									target="_blank"
-									rel="noopener noreferrer"
-									className="flex items-center justify-center w-10 h-10 bg-gray-50 dark:bg-gray-800 text-secondary-600 dark:text-secondary-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors shadow-sm"
-									title="Discord"
-								>
-									<DiscordIcon className="h-5 w-5" />
-								</a>
+								{/* 3) Docs */}
 								<a
 									href="https://docs.patchmon.net"
 									target="_blank"
@@ -923,6 +918,17 @@ const Layout = ({ children }) => {
 								>
 									<BookOpen className="h-5 w-5" />
 								</a>
+								{/* 4) Discord */}
+								<a
+									href="https://patchmon.net/discord"
+									target="_blank"
+									rel="noopener noreferrer"
+									className="flex items-center justify-center w-10 h-10 bg-gray-50 dark:bg-gray-800 text-secondary-600 dark:text-secondary-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors shadow-sm"
+									title="Discord"
+								>
+									<DiscordIcon className="h-5 w-5" />
+								</a>
+								{/* 5) Email */}
 								<a
 									href="mailto:support@patchmon.net"
 									className="flex items-center justify-center w-10 h-10 bg-gray-50 dark:bg-gray-800 text-secondary-600 dark:text-secondary-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors shadow-sm"
@@ -930,6 +936,17 @@ const Layout = ({ children }) => {
 								>
 									<Mail className="h-5 w-5" />
 								</a>
+								{/* 6) YouTube */}
+								<a
+									href="https://youtube.com/@patchmonTV"
+									target="_blank"
+									rel="noopener noreferrer"
+									className="flex items-center justify-center w-10 h-10 bg-gray-50 dark:bg-gray-800 text-secondary-600 dark:text-secondary-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors shadow-sm"
+									title="YouTube Channel"
+								>
+									<FaYoutube className="h-5 w-5" />
+								</a>
+								{/* 7) Web */}
 								<a
 									href="https://patchmon.net"
 									target="_blank"

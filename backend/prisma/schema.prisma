@@ -207,15 +207,22 @@ model user_sessions {
   access_token_hash String?
   ip_address        String?
   user_agent        String?
+  device_fingerprint String?
   last_activity     DateTime @default(now())
   expires_at        DateTime
   created_at        DateTime @default(now())
   is_revoked        Boolean  @default(false)
+  tfa_remember_me   Boolean  @default(false)
+  tfa_bypass_until  DateTime?
+  login_count       Int      @default(1)
+  last_login_ip     String?
   users             users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@index([user_id])
   @@index([refresh_token])
   @@index([expires_at])
+  @@index([tfa_bypass_until])
+  @@index([device_fingerprint])
 }
 
 model auto_enrollment_tokens {

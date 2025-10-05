@@ -22,6 +22,7 @@ const Login = () => {
 	const emailId = useId();
 	const passwordId = useId();
 	const tokenId = useId();
+	const rememberMeId = useId();
 	const { login, setAuthState } = useAuth();
 	const [isSignupMode, setIsSignupMode] = useState(false);
 	const [formData, setFormData] = useState({
@@ -33,6 +34,7 @@ const Login = () => {
 	});
 	const [tfaData, setTfaData] = useState({
 		token: "",
+		remember_me: false,
 	});
 	const [showPassword, setShowPassword] = useState(false);
 	const [isLoading, setIsLoading] = useState(false);
@@ -127,7 +129,11 @@ const Login = () => {
 		setError("");
 
 		try {
-			const response = await authAPI.verifyTfa(tfaUsername, tfaData.token);
+			const response = await authAPI.verifyTfa(
+				tfaUsername,
+				tfaData.token,
+				tfaData.remember_me,
+			);
 
 			if (response.data?.token) {
 				// Update AuthContext with the new authentication state
@@ -158,9 +164,11 @@ const Login = () => {
 	};
 
 	const handleTfaInputChange = (e) => {
+		const { name, value, type, checked } = e.target;
 		setTfaData({
 			...tfaData,
-			[e.target.name]: e.target.value.replace(/\D/g, "").slice(0, 6),
+			[name]:
+				type === "checkbox" ? checked : value.replace(/\D/g, "").slice(0, 6),
 		});
 		// Clear error when user starts typing
 		if (error) {
@@ -170,7 +178,7 @@ const Login = () => {
 
 	const handleBackToLogin = () => {
 		setRequiresTfa(false);
-		setTfaData({ token: "" });
+		setTfaData({ token: "", remember_me: false });
 		setError("");
 	};
 
@@ -434,6 +442,23 @@ const Login = () => {
 									maxLength="6"
 								/>
 							</div>
+						</div>
+
+						<div className="flex items-center">
+							<input
+								id={rememberMeId}
+								name="remember_me"
+								type="checkbox"
+								checked={tfaData.remember_me}
+								onChange={handleTfaInputChange}
+								className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-secondary-300 rounded"
+							/>
+							<label
+								htmlFor={rememberMeId}
+								className="ml-2 block text-sm text-secondary-700"
+							>
+								Remember me on this computer (skip TFA for 30 days)
+							</label>
 						</div>
 
 						{error && (
