@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
-import { createContext, useContext, useMemo, useState } from "react";
+import { createContext, useContext, useState } from "react";
 import { isAuthReady } from "../constants/authPhases";
-import { settingsAPI, versionAPI } from "../utils/api";
+import { settingsAPI } from "../utils/api";
 import { useAuth } from "./AuthContext";
 
 const UpdateNotificationContext = createContext();
@@ -21,6 +21,7 @@ export const UpdateNotificationProvider = ({ children }) => {
 	const { authPhase, isAuthenticated } = useAuth();
 
 	// Ensure settings are loaded - but only after auth is fully ready
+	// This reads cached update info from backend (updated by scheduler)
 	const { data: settings, isLoading: settingsLoading } = useQuery({
 		queryKey: ["settings"],
 		queryFn: () => settingsAPI.get().then((res) => res.data),
@@ -29,31 +30,20 @@ export const UpdateNotificationProvider = ({ children }) => {
 		enabled: isAuthReady(authPhase, isAuthenticated()),
 	});
 
-	// Memoize the enabled condition to prevent unnecessary re-evaluations
-	const isQueryEnabled = useMemo(() => {
-		return (
-			isAuthReady(authPhase, isAuthenticated()) &&
-			!!settings &&
-			!settingsLoading
-		);
-	}, [authPhase, isAuthenticated, settings, settingsLoading]);
+	// Read cached update information from settings (no GitHub API calls)
+	// The backend scheduler updates this data periodically
+	const updateAvailable = settings?.is_update_available && !dismissed;
+	const updateInfo = settings
+		? {
+				isUpdateAvailable: settings.is_update_available,
+				latestVersion: settings.latest_version,
+				currentVersion: settings.current_version,
+				last_update_check: settings.last_update_check,
+			}
+		: null;
 
-	// Query for update information
-	const {
-		data: updateData,
-		isLoading,
-		error,
-	} = useQuery({
-		queryKey: ["updateCheck"],
-		queryFn: () => versionAPI.checkUpdates().then((res) => res.data),
-		staleTime: 10 * 60 * 1000, // Data stays fresh for 10 minutes
-		refetchOnWindowFocus: false, // Don't refetch when window regains focus
-		retry: 1,
-		enabled: isQueryEnabled,
-	});
-
-	const updateAvailable = updateData?.isUpdateAvailable && !dismissed;
-	const updateInfo = updateData;
+	const isLoading = settingsLoading;
+	const error = null;
 
 	const dismissNotification = () => {
 		setDismissed(true);

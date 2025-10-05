@@ -188,72 +188,24 @@ router.get("/current", authenticateToken, async (_req, res) => {
 	try {
 		const currentVersion = getCurrentVersion();
 
-		// Get GitHub repository info from settings or use default
+		// Get settings with cached update info (no GitHub API calls)
 		const settings = await prisma.settings.findFirst();
 		const githubRepoUrl = settings?.githubRepoUrl || DEFAULT_GITHUB_REPO;
 		const { owner, repo } = parseGitHubRepo(githubRepoUrl);
 
-		let latestRelease = null;
-		let latestCommit = null;
-		let commitDifference = null;
-
-		// Fetch GitHub data if we have valid owner/repo
-		if (owner && repo) {
-			try {
-				// Fetch latest release, latest commit, and commit difference in parallel
-				const [releaseData, commitData, differenceData] = await Promise.all([
-					getLatestRelease(owner, repo),
-					getLatestCommit(owner, repo),
-					getCommitDifference(owner, repo, currentVersion),
-				]);
-
-				latestRelease = releaseData;
-				latestCommit = commitData;
-				commitDifference = differenceData;
-			} catch (githubError) {
-				console.warn("Failed to fetch GitHub data:", githubError.message);
-
-				// Provide fallback data when GitHub API is rate-limited
-				if (
-					githubError.message.includes("rate limit") ||
-					githubError.message.includes("API rate limit")
-				) {
-					console.log("GitHub API rate limited, providing fallback data");
-					latestRelease = {
-						tagName: "v1.2.7",
-						version: "1.2.7",
-						publishedAt: "2025-10-02T17:12:53Z",
-						htmlUrl: "https://github.com/PatchMon/PatchMon/releases/tag/v1.2.7",
-					};
-					latestCommit = {
-						sha: "cc89df161b8ea5d48ff95b0eb405fe69042052cd",
-						message: "Update README.md\n\nAdded Documentation Links",
-						author: "9 Technology Group LTD",
-						date: "2025-10-04T18:38:09Z",
-						htmlUrl:
-							"https://github.com/PatchMon/PatchMon/commit/cc89df161b8ea5d48ff95b0eb405fe69042052cd",
-					};
-					commitDifference = {
-						commitsBehind: 0,
-						commitsAhead: 3, // Main branch is ahead of release
-						totalCommits: 3,
-						branchInfo: "main branch vs release",
-					};
-				}
-			}
-		}
-
+		// Return current version and cached update information
+		// The backend scheduler updates this data periodically
 		res.json({
 			version: currentVersion,
+			latest_version: settings?.latest_version || null,
+			is_update_available: settings?.is_update_available || false,
+			last_update_check: settings?.last_update_check || null,
 			buildDate: new Date().toISOString(),
 			environment: process.env.NODE_ENV || "development",
 			github: {
 				repository: githubRepoUrl,
 				owner: owner,
 				repo: repo,
-				latestRelease: latestRelease,
-				latestCommit: latestCommit,
-				commitDifference: commitDifference,
 			},
 		});
 	} catch (error) {

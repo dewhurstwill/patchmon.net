@@ -1,6 +1,7 @@
 import { Route, Routes } from "react-router-dom";
 import FirstTimeAdminSetup from "./components/FirstTimeAdminSetup";
 import Layout from "./components/Layout";
+import LogoProvider from "./components/LogoProvider";
 import ProtectedRoute from "./components/ProtectedRoute";
 import SettingsLayout from "./components/SettingsLayout";
 import { isAuthPhase } from "./constants/authPhases";
@@ -291,6 +292,16 @@ function AppRoutes() {
 				}
 			/>
 			<Route
+				path="/settings/branding"
+				element={
+					<ProtectedRoute requirePermission="can_manage_settings">
+						<Layout>
+							<SettingsServerConfig />
+						</Layout>
+					</ProtectedRoute>
+				}
+			/>
+			<Route
 				path="/settings/agent-version"
 				element={
 					<ProtectedRoute requirePermission="can_manage_settings">
@@ -329,7 +340,9 @@ function App() {
 		<ThemeProvider>
 			<AuthProvider>
 				<UpdateNotificationProvider>
-					<AppRoutes />
+					<LogoProvider>
+						<AppRoutes />
+					</LogoProvider>
 				</UpdateNotificationProvider>
 			</AuthProvider>
 		</ThemeProvider>

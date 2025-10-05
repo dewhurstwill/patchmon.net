@@ -164,6 +164,9 @@ model settings {
   signup_enabled    Boolean   @default(false)
   default_user_role String    @default("user")
   ignore_ssl_self_signed Boolean @default(false)
+  logo_dark         String?   @default("/assets/logo_dark.png")
+  logo_light        String?   @default("/assets/logo_light.png")
+  favicon           String?   @default("/assets/logo_square.svg")
 }
 
 model update_history {

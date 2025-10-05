@@ -48,31 +48,36 @@ const VersionUpdateTab = () => {
 		}
 	}, []);
 
-	// Load current version on component mount
+	// Load current version and automatically check for updates on component mount
 	useEffect(() => {
-		const loadCurrentVersion = async () => {
+		const loadAndCheckUpdates = async () => {
 			try {
+				// First, get current version info
 				const response = await versionAPI.getCurrent();
 				const data = response.data;
+				setVersionInfo({
+					currentVersion: data.version,
+					latestVersion: data.latest_version || null,
+					isUpdateAvailable: data.is_update_available || false,
+					last_update_check: data.last_update_check || null,
+					github: data.github,
+					checking: false,
+					error: null,
+				});
+
+				// Then automatically trigger a fresh update check
+				await checkForUpdates();
+			} catch (error) {
+				console.error("Error loading version info:", error);
 				setVersionInfo((prev) => ({
 					...prev,
-					currentVersion: data.version,
-					github: data.github,
+					error: "Failed to load version information",
 				}));
-			} catch (error) {
-				console.error("Error loading current version:", error);
 			}
 		};
 
-		// Load current version and immediately check for updates
-		const loadAndCheckUpdates = async () => {
-			await loadCurrentVersion();
-			// Automatically trigger update check when component loads
-			await checkForUpdates();
-		};
-
 		loadAndCheckUpdates();
-	}, [checkForUpdates]); // Include checkForUpdates dependency
+	}, [checkForUpdates]); // Run when component mounts
 
 	return (
 		<div className="space-y-6">

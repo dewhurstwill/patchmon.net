@@ -250,7 +250,7 @@ const GlobalSearch = () => {
 									<div className="sticky top-0 z-10 bg-secondary-50 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-secondary-500 dark:bg-secondary-700 dark:text-secondary-400">
 										Hosts
 									</div>
-									{results.hosts.map((host, idx) => {
+									{results.hosts.map((host, _idx) => {
 										const display = getResultDisplay(host);
 										const globalIdx = navigableResults.findIndex(
 											(r) => r.id === host.id && r.type === "host",
@@ -291,7 +291,7 @@ const GlobalSearch = () => {
 									<div className="sticky top-0 z-10 bg-secondary-50 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-secondary-500 dark:bg-secondary-700 dark:text-secondary-400">
 										Packages
 									</div>
-									{results.packages.map((pkg, idx) => {
+									{results.packages.map((pkg, _idx) => {
 										const display = getResultDisplay(pkg);
 										const globalIdx = navigableResults.findIndex(
 											(r) => r.id === pkg.id && r.type === "package",
@@ -338,7 +338,7 @@ const GlobalSearch = () => {
 									<div className="sticky top-0 z-10 bg-secondary-50 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-secondary-500 dark:bg-secondary-700 dark:text-secondary-400">
 										Repositories
 									</div>
-									{results.repositories.map((repo, idx) => {
+									{results.repositories.map((repo, _idx) => {
 										const display = getResultDisplay(repo);
 										const globalIdx = navigableResults.findIndex(
 											(r) => r.id === repo.id && r.type === "repository",
@@ -379,7 +379,7 @@ const GlobalSearch = () => {
 									<div className="sticky top-0 z-10 bg-secondary-50 px-3 py-1.5 text-xs font-semibold uppercase tracking-wider text-secondary-500 dark:bg-secondary-700 dark:text-secondary-400">
 										Users
 									</div>
-									{results.users.map((user, idx) => {
+									{results.users.map((user, _idx) => {
 										const display = getResultDisplay(user);
 										const globalIdx = navigableResults.findIndex(
 											(r) => r.id === user.id && r.type === "user",

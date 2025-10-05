@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import {
 	Activity,
 	BarChart3,
+	BookOpen,
 	ChevronLeft,
 	ChevronRight,
 	Clock,
@@ -13,13 +14,12 @@ import {
 	LogOut,
 	Mail,
 	Menu,
-	MessageCircle,
 	Package,
 	Plus,
 	RefreshCw,
+	Route,
 	Server,
 	Settings,
-	Shield,
 	Star,
 	UserCircle,
 	X,
@@ -29,7 +29,9 @@ import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
 import { useUpdateNotification } from "../contexts/UpdateNotificationContext";
 import { dashboardAPI, versionAPI } from "../utils/api";
+import DiscordIcon from "./DiscordIcon";
 import GlobalSearch from "./GlobalSearch";
+import Logo from "./Logo";
 import UpgradeNotificationIcon from "./UpgradeNotificationIcon";
 
 const Layout = ({ children }) => {
@@ -293,7 +295,7 @@ const Layout = ({ children }) => {
 					onClick={() => setSidebarOpen(false)}
 					aria-label="Close sidebar"
 				/>
-				<div className="relative flex w-full max-w-xs flex-col bg-white pb-4 pt-5 shadow-xl">
+				<div className="relative flex w-full max-w-[280px] flex-col bg-white pb-4 pt-5 shadow-xl">
 					<div className="absolute right-0 top-0 -mr-12 pt-2">
 						<button
 							type="button"
@@ -303,13 +305,10 @@ const Layout = ({ children }) => {
 							<X className="h-6 w-6 text-white" />
 						</button>
 					</div>
-					<div className="flex flex-shrink-0 items-center px-4">
-						<div className="flex items-center">
-							<Shield className="h-8 w-8 text-primary-600" />
-							<h1 className="ml-2 text-xl font-bold text-secondary-900 dark:text-white">
-								PatchMon
-							</h1>
-						</div>
+					<div className="flex flex-shrink-0 items-center justify-center px-4">
+						<Link to="/" className="flex items-center">
+							<Logo className="h-10 w-auto" alt="PatchMon Logo" />
+						</Link>
 					</div>
 					<nav className="mt-8 flex-1 space-y-6 px-2">
 						{/* Show message for users with very limited permissions */}
@@ -345,7 +344,7 @@ const Layout = ({ children }) => {
 								// Section with items
 								return (
 									<div key={item.section}>
-										<h3 className="text-xs font-semibold text-secondary-500 uppercase tracking-wider mb-2 px-2">
+										<h3 className="text-xs font-semibold text-secondary-500 uppercase tracking-wider mb-2">
 											{item.section}
 										</h3>
 										<div className="space-y-1">
@@ -465,8 +464,8 @@ const Layout = ({ children }) => {
 
 			{/* Desktop sidebar */}
 			<div
-				className={`hidden lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:flex-col transition-all duration-300 ${
-					sidebarCollapsed ? "lg:w-16" : "lg:w-64"
+				className={`hidden lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:flex-col transition-all duration-300 relative ${
+					sidebarCollapsed ? "lg:w-16" : "lg:w-56"
 				} bg-white dark:bg-secondary-800`}
 			>
 				<div
@@ -475,38 +474,37 @@ const Layout = ({ children }) => {
 					}`}
 				>
 					<div
-						className={`flex h-16 shrink-0 items-center border-b border-secondary-200 ${
-							sidebarCollapsed ? "justify-center" : "justify-between"
+						className={`flex h-16 shrink-0 items-center border-b border-secondary-200 dark:border-secondary-600 ${
+							sidebarCollapsed ? "justify-center" : "justify-center"
 						}`}
 					>
 						{sidebarCollapsed ? (
-							<button
-								type="button"
-								onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-								className="flex items-center justify-center w-8 h-8 rounded-md hover:bg-secondary-100 transition-colors"
-								title="Expand sidebar"
-							>
-								<ChevronRight className="h-5 w-5 text-secondary-700 dark:text-white" />
-							</button>
+							<Link to="/" className="flex items-center">
+								<img
+									src="/assets/favicon.svg"
+									alt="PatchMon"
+									className="h-12 w-12 object-contain"
+								/>
+							</Link>
 						) : (
-							<>
-								<div className="flex items-center">
-									<Shield className="h-8 w-8 text-primary-600" />
-									<h1 className="ml-2 text-xl font-bold text-secondary-900 dark:text-white">
-										PatchMon
-									</h1>
-								</div>
-								<button
-									type="button"
-									onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-									className="flex items-center justify-center w-8 h-8 rounded-md hover:bg-secondary-100 transition-colors"
-									title="Collapse sidebar"
-								>
-									<ChevronLeft className="h-5 w-5 text-secondary-700 dark:text-white" />
-								</button>
-							</>
+							<Link to="/" className="flex items-center">
+								<Logo className="h-10 w-auto" alt="PatchMon Logo" />
+							</Link>
 						)}
 					</div>
+					{/* Collapse/Expand button on border */}
+					<button
+						type="button"
+						onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+						className="absolute top-5 -right-3 z-10 flex items-center justify-center w-6 h-6 rounded-full bg-white dark:bg-secondary-800 border border-secondary-300 dark:border-secondary-600 shadow-md hover:bg-secondary-50 dark:hover:bg-secondary-700 transition-colors"
+						title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+					>
+						{sidebarCollapsed ? (
+							<ChevronRight className="h-4 w-4 text-secondary-700 dark:text-white" />
+						) : (
+							<ChevronLeft className="h-4 w-4 text-secondary-700 dark:text-white" />
+						)}
+					</button>
 					<nav className="flex flex-1 flex-col">
 						<ul className="flex flex-1 flex-col gap-y-6">
 							{/* Show message for users with very limited permissions */}
@@ -524,7 +522,10 @@ const Layout = ({ children }) => {
 								if (item.name) {
 									// Single item (Dashboard)
 									return (
-										<li key={item.name}>
+										<li
+											key={item.name}
+											className={sidebarCollapsed ? "" : "-mx-2"}
+										>
 											<Link
 												to={item.href}
 												className={`group flex gap-x-3 rounded-md text-sm leading-6 font-semibold transition-all duration-200 ${
@@ -548,7 +549,7 @@ const Layout = ({ children }) => {
 									return (
 										<li key={item.section}>
 											{!sidebarCollapsed && (
-												<h3 className="text-xs font-semibold text-secondary-500 dark:text-secondary-300 uppercase tracking-wider mb-2 px-2">
+												<h3 className="text-xs font-semibold text-secondary-500 dark:text-secondary-300 uppercase tracking-wider mb-2">
 													{item.section}
 												</h3>
 											)}
@@ -850,7 +851,7 @@ const Layout = ({ children }) => {
 			{/* Main content */}
 			<div
 				className={`flex flex-col min-h-screen transition-all duration-300 ${
-					sidebarCollapsed ? "lg:pl-16" : "lg:pl-64"
+					sidebarCollapsed ? "lg:pl-16" : "lg:pl-56"
 				}`}
 			>
 				{/* Top bar */}
@@ -896,13 +897,31 @@ const Layout = ({ children }) => {
 									)}
 								</a>
 								<a
+									href="https://github.com/orgs/PatchMon/projects/2/views/1"
+									target="_blank"
+									rel="noopener noreferrer"
+									className="flex items-center justify-center w-10 h-10 bg-gray-50 dark:bg-gray-800 text-secondary-600 dark:text-secondary-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors shadow-sm"
+									title="Roadmap"
+								>
+									<Route className="h-5 w-5" />
+								</a>
+								<a
 									href="https://patchmon.net/discord"
 									target="_blank"
 									rel="noopener noreferrer"
 									className="flex items-center justify-center w-10 h-10 bg-gray-50 dark:bg-gray-800 text-secondary-600 dark:text-secondary-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors shadow-sm"
 									title="Discord"
 								>
-									<MessageCircle className="h-5 w-5" />
+									<DiscordIcon className="h-5 w-5" />
+								</a>
+								<a
+									href="https://docs.patchmon.net"
+									target="_blank"
+									rel="noopener noreferrer"
+									className="flex items-center justify-center w-10 h-10 bg-gray-50 dark:bg-gray-800 text-secondary-600 dark:text-secondary-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors shadow-sm"
+									title="Documentation"
+								>
+									<BookOpen className="h-5 w-5" />
 								</a>
 								<a
 									href="mailto:support@patchmon.net"

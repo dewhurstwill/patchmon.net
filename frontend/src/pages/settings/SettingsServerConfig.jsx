@@ -1,7 +1,8 @@
-import { Code, Server } from "lucide-react";
+import { Code, Image, Server } from "lucide-react";
 import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import SettingsLayout from "../../components/SettingsLayout";
+import BrandingTab from "../../components/settings/BrandingTab";
 import ProtocolUrlTab from "../../components/settings/ProtocolUrlTab";
 import VersionUpdateTab from "../../components/settings/VersionUpdateTab";
 
@@ -12,6 +13,7 @@ const SettingsServerConfig = () => {
 		// Set initial tab based on current route
 		if (location.pathname === "/settings/server-version") return "version";
 		if (location.pathname === "/settings/server-url") return "protocol";
+		if (location.pathname === "/settings/branding") return "branding";
 		if (location.pathname === "/settings/server-config/version")
 			return "version";
 		return "protocol";
@@ -23,6 +25,8 @@ const SettingsServerConfig = () => {
 			setActiveTab("version");
 		} else if (location.pathname === "/settings/server-url") {
 			setActiveTab("protocol");
+		} else if (location.pathname === "/settings/branding") {
+			setActiveTab("branding");
 		} else if (location.pathname === "/settings/server-config/version") {
 			setActiveTab("version");
 		} else if (location.pathname === "/settings/server-config") {
@@ -38,6 +42,12 @@ const SettingsServerConfig = () => {
 			href: "/settings/server-url",
 		},
 		{
+			id: "branding",
+			name: "Branding",
+			icon: Image,
+			href: "/settings/branding",
+		},
+		{
 			id: "version",
 			name: "Server Version",
 			icon: Code,
@@ -49,6 +59,8 @@ const SettingsServerConfig = () => {
 		switch (activeTab) {
 			case "protocol":
 				return <ProtocolUrlTab />;
+			case "branding":
+				return <BrandingTab />;
 			case "version":
 				return <VersionUpdateTab />;
 			default:
