@@ -64,7 +64,11 @@ jobs:
           context: .
           file: docker/${{ matrix.image }}.Dockerfile
           platforms: linux/amd64,linux/arm64
-          push: ${{ github.event_name != 'workflow_dispatch' || inputs.push == 'true' }}
+          # Push if:
+          # - Event is not workflow_dispatch OR input 'push' is true
+          # AND
+          # - Event is not pull_request OR the PR is from the same repository (to avoid pushing from forks)
+          push: ${{ (github.event_name != 'workflow_dispatch' || inputs.push == 'true') && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository) }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha,scope=${{ matrix.image }}
