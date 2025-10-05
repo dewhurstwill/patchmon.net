@@ -2,8 +2,14 @@
 
 [![Website](https://img.shields.io/badge/Website-patchmon.net-blue?style=for-the-badge)](https://patchmon.net)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-blue?style=for-the-badge&logo=discord)](https://patchmon.net/discord)
+<<<<<<< HEAD
 [![GitHub](https://img.shields.io/badge/GitHub-Repository-black?style=for-the-badge&logo=github)](https://github.com/PatchMon/PatchMon)
 [![Roadmap](https://img.shields.io/badge/Roadmap-View%20Progress-green?style=for-the-badge&logo=github)](https://github.com/orgs/PatchMon/projects/2)
+=======
+[![GitHub](https://img.shields.io/badge/GitHub-Repository-black?style=for-the-badge&logo=github)](https://github.com/9technologygroup/patchmon.net)
+[![Roadmap](https://img.shields.io/badge/Roadmap-View%20Progress-green?style=for-the-badge&logo=github)](https://github.com/users/9technologygroup/projects/1)
+[![Documentation](https://img.shields.io/badge/Documentation-docs.patchmon.net-blue?style=for-the-badge&logo=book)](https://docs.patchmon.net/)
+>>>>>>> cc89df161b8ea5d48ff95b0eb405fe69042052cd
 ---
 
 ## Please STAR this repo :D
@@ -267,8 +273,8 @@ Thank you to all our contributors who help make PatchMon better every day!
 
 - **Website**: [patchmon.net](https://patchmon.net)
 - **Discord**: [https://patchmon.net/discord](https://patchmon.net/discord)
-- **Roadmap**: [GitHub Projects](https://github.com/orgs/PatchMon/projects/2)
-- **Documentation**: [Coming Soon]
+- **Roadmap**: [GitHub Projects](https://github.com/users/9technologygroup/projects/1)
+- **Documentation**: [https://docs.patchmon.net](https://docs.patchmon.net)
 - **Support**: support@patchmon.net
 
 ---
