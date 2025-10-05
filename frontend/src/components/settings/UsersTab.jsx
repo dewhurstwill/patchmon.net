@@ -92,7 +92,12 @@ const UsersTab = () => {
 	};
 
 	const handleEditUser = (user) => {
-		setEditingUser(user);
+		// Reset editingUser first to force re-render with fresh data
+		setEditingUser(null);
+		// Use setTimeout to ensure the modal re-initializes with fresh data
+		setTimeout(() => {
+			setEditingUser(user);
+		}, 0);
 	};
 
 	const handleResetPassword = (user) => {
@@ -314,7 +319,9 @@ const UsersTab = () => {
 					user={editingUser}
 					isOpen={!!editingUser}
 					onClose={() => setEditingUser(null)}
-					onUserUpdated={() => updateUserMutation.mutate()}
+					onUserUpdated={() => {
+						queryClient.invalidateQueries(["users"]);
+					}}
 					roles={roles}
 				/>
 			)}
@@ -352,11 +359,29 @@ const AddUserModal = ({ isOpen, onClose, onUserCreated, roles }) => {
 	});
 	const [isLoading, setIsLoading] = useState(false);
 	const [error, setError] = useState("");
+	const [success, setSuccess] = useState(false);
+
+	// Reset form when modal is closed
+	useEffect(() => {
+		if (!isOpen) {
+			setFormData({
+				username: "",
+				email: "",
+				password: "",
+				first_name: "",
+				last_name: "",
+				role: "user",
+			});
+			setError("");
+			setSuccess(false);
+		}
+	}, [isOpen]);
 
 	const handleSubmit = async (e) => {
 		e.preventDefault();
 		setIsLoading(true);
 		setError("");
+		setSuccess(false);
 
 		try {
 			// Only send role if roles are available from API
@@ -364,12 +389,19 @@ const AddUserModal = ({ isOpen, onClose, onUserCreated, roles }) => {
 				username: formData.username,
 				email: formData.email,
 				password: formData.password,
+				first_name: formData.first_name,
+				last_name: formData.last_name,
 			};
 			if (roles && Array.isArray(roles) && roles.length > 0) {
 				payload.role = formData.role;
 			}
 			await adminUsersAPI.create(payload);
+			setSuccess(true);
 			onUserCreated();
+			// Auto-close after 1.5 seconds
+			setTimeout(() => {
+				onClose();
+			}, 1500);
 		} catch (err) {
 			setError(err.response?.data?.error || "Failed to create user");
 		} finally {
@@ -517,6 +549,17 @@ const AddUserModal = ({ isOpen, onClose, onUserCreated, roles }) => {
 						</select>
 					</div>
 
+					{success && (
+						<div className="bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700 rounded-md p-3">
+							<div className="flex items-center">
+								<CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 mr-2" />
+								<p className="text-sm text-green-700 dark:text-green-300">
+									User created successfully!
+								</p>
+							</div>
+						</div>
+					)}
+
 					{error && (
 						<div className="bg-danger-50 dark:bg-danger-900 border border-danger-200 dark:border-danger-700 rounded-md p-3">
 							<p className="text-sm text-danger-700 dark:text-danger-300">
@@ -566,15 +609,44 @@ const EditUserModal = ({ user, isOpen, onClose, onUserUpdated, roles }) => {
 	});
 	const [isLoading, setIsLoading] = useState(false);
 	const [error, setError] = useState("");
+	const [success, setSuccess] = useState(false);
+
+	// Update formData when user prop changes or modal opens
+	useEffect(() => {
+		if (user && isOpen) {
+			setFormData({
+				username: user.username || "",
+				email: user.email || "",
+				first_name: user.first_name || "",
+				last_name: user.last_name || "",
+				role: user.role || "user",
+				is_active: user.is_active ?? true,
+			});
+		}
+	}, [user, isOpen]);
+
+	// Reset error and success when modal closes
+	useEffect(() => {
+		if (!isOpen) {
+			setError("");
+			setSuccess(false);
+		}
+	}, [isOpen]);
 
 	const handleSubmit = async (e) => {
 		e.preventDefault();
 		setIsLoading(true);
 		setError("");
+		setSuccess(false);
 
 		try {
 			await adminUsersAPI.update(user.id, formData);
+			setSuccess(true);
 			onUserUpdated();
+			// Auto-close after 1.5 seconds
+			setTimeout(() => {
+				onClose();
+			}, 1500);
 		} catch (err) {
 			setError(err.response?.data?.error || "Failed to update user");
 		} finally {
@@ -717,6 +789,17 @@ const EditUserModal = ({ user, isOpen, onClose, onUserUpdated, roles }) => {
 							Active user
 						</label>
 					</div>
+
+					{success && (
+						<div className="bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700 rounded-md p-3">
+							<div className="flex items-center">
+								<CheckCircle className="h-4 w-4 text-green-600 dark:text-green-400 mr-2" />
+								<p className="text-sm text-green-700 dark:text-green-300">
+									User updated successfully!
+								</p>
+							</div>
+						</div>
+					)}
 
 					{error && (
 						<div className="bg-danger-50 dark:bg-danger-900 border border-danger-200 dark:border-danger-700 rounded-md p-3">

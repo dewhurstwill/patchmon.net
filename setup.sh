@@ -254,7 +254,7 @@ check_prerequisites() {
 }
 
 select_branch() {
-    print_info "Fetching available branches from GitHub repository..."
+    print_info "Fetching available releases from GitHub repository..."
     
     # Create temporary directory for git operations
     TEMP_DIR="/tmp/patchmon_branches_$$"
@@ -263,84 +263,88 @@ select_branch() {
     
     # Try to clone the repository normally
     if git clone "$DEFAULT_GITHUB_REPO" . 2>/dev/null; then
-        # Get list of remote branches and trim whitespace
-        branches=$(git branch -r | grep -v HEAD | sed 's/origin\///' | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//' | sort -u)
+        # Get list of tags sorted by version (semantic versioning)
+        # Using git tag with version sorting
+        tags=$(git tag -l --sort=-v:refname 2>/dev/null | head -3)
         
-        if [ -n "$branches" ]; then
-            print_info "Available branches with details:"
+        if [ -n "$tags" ]; then
+            print_info "Available releases and branches:"
             echo ""
             
-            # Get branch information
-            branch_count=1
-            while IFS= read -r branch; do
-                if [ -n "$branch" ]; then
-                    # Get last commit date for this branch
-                    last_commit=$(git log -1 --format="%ci" "origin/$branch" 2>/dev/null || echo "Unknown")
-                    
-                    # Get release tag associated with this branch (if any)
-                    release_tag=$(git describe --tags --exact-match "origin/$branch" 2>/dev/null || echo "")
+            # Display last 3 release tags
+            option_count=1
+            declare -A options_map
+            
+            while IFS= read -r tag; do
+                if [ -n "$tag" ]; then
+                    # Get tag date and commit info
+                    tag_date=$(git log -1 --format="%ci" "$tag" 2>/dev/null || echo "Unknown")
                     
                     # Format the date
-                    if [ "$last_commit" != "Unknown" ]; then
-                        formatted_date=$(date -d "$last_commit" "+%Y-%m-%d %H:%M" 2>/dev/null || echo "$last_commit")
+                    if [ "$tag_date" != "Unknown" ]; then
+                        formatted_date=$(date -d "$tag_date" "+%Y-%m-%d %H:%M" 2>/dev/null || echo "$tag_date")
                     else
                         formatted_date="Unknown"
                     fi
                     
-                    # Display branch info
-                    printf "%2d. %-20s" "$branch_count" "$branch"
-                    printf " (Last commit: %s)" "$formatted_date"
-                    
-                    if [ -n "$release_tag" ]; then
-                        printf " [Release: %s]" "$release_tag"
+                    # Mark the first one as latest
+                    if [ $option_count -eq 1 ]; then
+                        printf "%2d. %-20s (Latest Release - %s)\n" "$option_count" "$tag" "$formatted_date"
+                    else
+                        printf "%2d. %-20s (Release - %s)\n" "$option_count" "$tag" "$formatted_date"
                     fi
                     
-                    echo ""
-                    branch_count=$((branch_count + 1))
+                    # Store the tag for later selection
+                    options_map[$option_count]="$tag"
+                    option_count=$((option_count + 1))
                 fi
-            done <<< "$branches"
+            done <<< "$tags"
+            
+            # Add main branch as an option
+            main_commit=$(git log -1 --format="%ci" "origin/main" 2>/dev/null || echo "Unknown")
+            if [ "$main_commit" != "Unknown" ]; then
+                formatted_main_date=$(date -d "$main_commit" "+%Y-%m-%d %H:%M" 2>/dev/null || echo "$main_commit")
+            else
+                formatted_main_date="Unknown"
+            fi
+            printf "%2d. %-20s (Development Branch - %s)\n" "$option_count" "main" "$formatted_main_date"
+            options_map[$option_count]="main"
             
             echo ""
             
-            # Determine default selection: prefer 'main' if present
-            main_index=$(echo "$branches" | nl -w1 -s':' | awk -F':' '$2=="main"{print $1}' | head -1)
-            if [ -z "$main_index" ]; then
-                main_index=1
-            fi
+            # Default to option 1 (latest release tag)
+            default_option=1
             
             while true; do
-                read_input "Select branch number" BRANCH_NUMBER "$main_index"
+                read_input "Select version/branch number" SELECTION_NUMBER "$default_option"
                 
-                if [[ "$BRANCH_NUMBER" =~ ^[0-9]+$ ]]; then
-                    selected_branch=$(echo "$branches" | sed -n "${BRANCH_NUMBER}p" | sed 's/^[[:space:]]*//' | sed 's/[[:space:]]*$//')
-                    if [ -n "$selected_branch" ]; then
-                        DEPLOYMENT_BRANCH="$selected_branch"
+                if [[ "$SELECTION_NUMBER" =~ ^[0-9]+$ ]]; then
+                    selected_option="${options_map[$SELECTION_NUMBER]}"
+                    if [ -n "$selected_option" ]; then
+                        DEPLOYMENT_BRANCH="$selected_option"
                         
-                        # Show additional info for selected branch
-                        last_commit=$(git log -1 --format="%ci" "origin/$selected_branch" 2>/dev/null || echo "Unknown")
-                        release_tag=$(git describe --tags --exact-match "origin/$selected_branch" 2>/dev/null || echo "")
-                        
-                        if [ "$last_commit" != "Unknown" ]; then
-                            formatted_date=$(date -d "$last_commit" "+%Y-%m-%d %H:%M" 2>/dev/null || echo "$last_commit")
+                        # Show confirmation
+                        if [ "$selected_option" = "main" ]; then
+                            print_status "Selected branch: main (latest development code)"
+                            print_info "Last commit: $formatted_main_date"
                         else
-                            formatted_date="Unknown"
-                        fi
-                        
-                        print_status "Selected branch: $DEPLOYMENT_BRANCH"
-                        print_info "Last commit: $formatted_date"
-                        if [ -n "$release_tag" ]; then
-                            print_info "Release tag: $release_tag"
+                            print_status "Selected release: $selected_option"
+                            tag_date=$(git log -1 --format="%ci" "$selected_option" 2>/dev/null || echo "Unknown")
+                            if [ "$tag_date" != "Unknown" ]; then
+                                formatted_date=$(date -d "$tag_date" "+%Y-%m-%d %H:%M" 2>/dev/null || echo "$tag_date")
+                                print_info "Release date: $formatted_date"
+                            fi
                         fi
                         break
                     else
-                        print_error "Invalid branch number. Please try again."
+                        print_error "Invalid selection number. Please try again."
                     fi
                 else
                     print_error "Please enter a valid number."
                 fi
             done
         else
-            print_warning "No branches found, using default: main"
+            print_warning "No release tags found, using default: main"
             DEPLOYMENT_BRANCH="main"
         fi
     else
@@ -789,9 +793,13 @@ create_env_files() {
     cat > backend/.env << EOF
 # Database Configuration
 DATABASE_URL="postgresql://$DB_USER:$DB_PASS@localhost:5432/$DB_NAME"
+PM_DB_CONN_MAX_ATTEMPTS=30
+PM_DB_CONN_WAIT_INTERVAL=2
 
 # JWT Configuration
 JWT_SECRET="$JWT_SECRET"
+JWT_EXPIRES_IN=1h
+JWT_REFRESH_EXPIRES_IN=7d
 
 # Server Configuration
 PORT=$BACKEND_PORT
@@ -803,6 +811,12 @@ API_VERSION=v1
 # CORS Configuration
 CORS_ORIGIN="$SERVER_PROTOCOL_SEL://$FQDN"
 
+# Session Configuration
+SESSION_INACTIVITY_TIMEOUT_MINUTES=30
+
+# User Configuration
+DEFAULT_USER_ROLE=user
+
 # Rate Limiting (times in milliseconds)
 RATE_LIMIT_WINDOW_MS=900000
 RATE_LIMIT_MAX=5000
@@ -813,6 +827,7 @@ AGENT_RATE_LIMIT_MAX=1000
 
 # Logging
 LOG_LEVEL=info
+ENABLE_LOGGING=true
 EOF
 
     # Frontend .env
