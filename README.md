@@ -2,14 +2,10 @@
 
 [![Website](https://img.shields.io/badge/Website-patchmon.net-blue?style=for-the-badge)](https://patchmon.net)
 [![Discord](https://img.shields.io/badge/Discord-Join%20Server-blue?style=for-the-badge&logo=discord)](https://patchmon.net/discord)
-<<<<<<< HEAD
-[![GitHub](https://img.shields.io/badge/GitHub-Repository-black?style=for-the-badge&logo=github)](https://github.com/PatchMon/PatchMon)
-[![Roadmap](https://img.shields.io/badge/Roadmap-View%20Progress-green?style=for-the-badge&logo=github)](https://github.com/orgs/PatchMon/projects/2)
-=======
 [![GitHub](https://img.shields.io/badge/GitHub-Repository-black?style=for-the-badge&logo=github)](https://github.com/9technologygroup/patchmon.net)
 [![Roadmap](https://img.shields.io/badge/Roadmap-View%20Progress-green?style=for-the-badge&logo=github)](https://github.com/users/9technologygroup/projects/1)
 [![Documentation](https://img.shields.io/badge/Documentation-docs.patchmon.net-blue?style=for-the-badge&logo=book)](https://docs.patchmon.net/)
->>>>>>> cc89df161b8ea5d48ff95b0eb405fe69042052cd
+
 ---
 
 ## Please STAR this repo :D
@@ -131,18 +127,18 @@ After installation:
 - Database: PostgreSQL
 - System service: systemd-managed backend
 
-```
-+----------------------+    HTTPS    +--------------------+    HTTP    +------------------------+    TCP    +---------------+
-|  End Users (Browser) | --------->  |       nginx        | --------> | Backend (Node/Express) | ------> |  PostgreSQL   |
-|  Admin UI / Frontend |            | serve FE, proxy API|           |  /api, auth, Prisma    |         |   Database    |
-+----------------------+            +--------------------+           +------------------------+         +---------------+
+```mermaid
+flowchart LR
+    A[End Users / Browser<br>Admin UI / Frontend] -- HTTPS --> B[nginx<br>serve FE, proxy API]
+    B -- HTTP --> C["Backend<br>(Node/Express)<br>/api, auth, Prisma"]
+    C -- TCP --> D[PostgreSQL<br>Database]
 
-Agents (Outbound Only)
-+---------------------------+    HTTPS    +------------------------+
-|  Agents on your servers   | ----------> | Backend API (/api/v1)  |
-+---------------------------+             +------------------------+
-
+    E["Agents on your servers (Outbound Only)"] -- HTTPS --> F["Backend API<br>(/api/v1)"]
 ```
+Operational
+- systemd manages backend service
+- certbot/nginx for TLS (public)
+- setup.sh bootstraps OS, app, DB, config
 
 ## Support
 
