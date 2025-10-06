@@ -8,8 +8,8 @@ log() {
     echo "[$(date +'%Y-%m-%d %H:%M:%S')] $*" >&2
 }
 
-# Copy files from agents_backup to agents if agents directory is empty
-if [ -d "/app/agents" ] && [ -z "$(ls -A /app/agents 2>/dev/null)" ]; then
+# Copy files from agents_backup to agents if agents directory is empty and no .sh files are present
+if [ -d "/app/agents" ] && [ -z "$(find /app/agents -maxdepth 1 -type f -name '*.sh' | head -n 1)" ]; then
     if [ -d "/app/agents_backup" ]; then
         log "Agents directory is empty, copying from backup..."
         cp -r /app/agents_backup/* /app/agents/
