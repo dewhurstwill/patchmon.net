@@ -144,8 +144,8 @@ const Dashboard = () => {
 			// Map priority names to filter parameters
 			if (priorityName.toLowerCase().includes("security")) {
 				navigate("/packages?filter=security", { replace: true });
-			} else if (priorityName.toLowerCase().includes("outdated")) {
-				navigate("/packages?filter=outdated", { replace: true });
+			} else if (priorityName.toLowerCase().includes("regular")) {
+				navigate("/packages?filter=regular", { replace: true });
 			}
 		}
 	};
@@ -718,19 +718,9 @@ const Dashboard = () => {
 
 			case "packagePriority":
 				return (
-					<button
-						type="button"
-						className="card p-6 cursor-pointer hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow duration-200 w-full text-left"
-						onClick={handlePackagePriorityClick}
-						onKeyDown={(e) => {
-							if (e.key === "Enter" || e.key === " ") {
-								e.preventDefault();
-								handlePackagePriorityClick();
-							}
-						}}
-					>
+					<div className="card p-6 w-full">
 						<h3 className="text-lg font-medium text-secondary-900 dark:text-white mb-4">
-							Package Priority
+							Outdated Packages by Priority
 						</h3>
 						<div className="h-64 w-full flex items-center justify-center">
 							<div className="w-full h-full max-w-sm">
@@ -740,7 +730,7 @@ const Dashboard = () => {
 								/>
 							</div>
 						</div>
-					</button>
+					</div>
 				);
 
 			case "quickStats": {

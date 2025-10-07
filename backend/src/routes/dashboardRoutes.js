@@ -145,9 +145,13 @@ router.get(
 			];
 
 			// Package update priority distribution
+			const regularUpdates = Math.max(
+				0,
+				totalOutdatedPackages - securityUpdates,
+			);
 			const packageUpdateDistribution = [
 				{ name: "Security", count: securityUpdates },
-				{ name: "Regular", count: totalOutdatedPackages - securityUpdates },
+				{ name: "Regular", count: regularUpdates },
 			];
 
 			res.json({

@@ -105,6 +105,10 @@ const Packages = () => {
 			// For security updates, filter to show only security updates
 			setUpdateStatusFilter("security-updates");
 			setCategoryFilter("all");
+		} else if (filter === "regular") {
+			// For regular (non-security) updates
+			setUpdateStatusFilter("regular-updates");
+			setCategoryFilter("all");
 		}
 	}, [searchParams]);
 
