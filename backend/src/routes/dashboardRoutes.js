@@ -347,8 +347,8 @@ router.get(
 		try {
 			const { hostId } = req.params;
 
-			const limit = parseInt(req.query.limit) || 10;
-			const offset = parseInt(req.query.offset) || 0;
+			const limit = parseInt(req.query.limit, 10) || 10;
+			const offset = parseInt(req.query.offset, 10) || 0;
 
 			const [host, totalHistoryCount] = await Promise.all([
 				prisma.hosts.findUnique({
@@ -483,7 +483,7 @@ router.get(
 	async (req, res) => {
 		try {
 			const { days = 30, hostId } = req.query;
-			const daysInt = parseInt(days);
+			const daysInt = parseInt(days, 10);
 
 			// Calculate date range
 			const endDate = new Date();
