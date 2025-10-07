@@ -15,6 +15,7 @@ import Login from "./pages/Login";
 import PackageDetail from "./pages/PackageDetail";
 import Packages from "./pages/Packages";
 import Profile from "./pages/Profile";
+import Queue from "./pages/Queue";
 import Repositories from "./pages/Repositories";
 import RepositoryDetail from "./pages/RepositoryDetail";
 import AlertChannels from "./pages/settings/AlertChannels";
@@ -111,6 +112,16 @@ function AppRoutes() {
 					<ProtectedRoute requirePermission="can_view_hosts">
 						<Layout>
 							<RepositoryDetail />
+						</Layout>
+					</ProtectedRoute>
+				}
+			/>
+			<Route
+				path="/queue"
+				element={
+					<ProtectedRoute requirePermission="can_view_hosts">
+						<Layout>
+							<Queue />
 						</Layout>
 					</ProtectedRoute>
 				}

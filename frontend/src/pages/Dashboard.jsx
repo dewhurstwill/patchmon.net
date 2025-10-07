@@ -6,6 +6,8 @@ import {
 	Chart as ChartJS,
 	Legend,
 	LinearScale,
+	LineElement,
+	PointElement,
 	Title,
 	Tooltip,
 } from "chart.js";
@@ -23,7 +25,7 @@ import {
 	WifiOff,
 } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Bar, Doughnut, Pie } from "react-chartjs-2";
+import { Bar, Doughnut, Line, Pie } from "react-chartjs-2";
 import { useNavigate } from "react-router-dom";
 import DashboardSettingsModal from "../components/DashboardSettingsModal";
 import { useAuth } from "../contexts/AuthContext";
@@ -43,12 +45,16 @@ ChartJS.register(
 	CategoryScale,
 	LinearScale,
 	BarElement,
+	LineElement,
+	PointElement,
 	Title,
 );
 
 const Dashboard = () => {
 	const [showSettingsModal, setShowSettingsModal] = useState(false);
 	const [cardPreferences, setCardPreferences] = useState([]);
+	const [packageTrendsPeriod, setPackageTrendsPeriod] = useState("1"); // days
+	const [packageTrendsHost, setPackageTrendsHost] = useState("all"); // host filter
 	const navigate = useNavigate();
 	const { isDark } = useTheme();
 	const { user } = useAuth();
@@ -91,7 +97,7 @@ const Dashboard = () => {
 		navigate("/repositories");
 	};
 
-	const handleOSDistributionClick = () => {
+	const _handleOSDistributionClick = () => {
 		navigate("/hosts?showFilters=true", { replace: true });
 	};
 
@@ -99,7 +105,7 @@ const Dashboard = () => {
 		navigate("/hosts?filter=needsUpdates", { replace: true });
 	};
 
-	const handlePackagePriorityClick = () => {
+	const _handlePackagePriorityClick = () => {
 		navigate("/packages?filter=security");
 	};
 
@@ -187,6 +193,26 @@ const Dashboard = () => {
 		queryFn: () => dashboardAPI.getStats().then((res) => res.data),
 		staleTime: 5 * 60 * 1000, // Data stays fresh for 5 minutes
 		refetchOnWindowFocus: false, // Don't refetch when window regains focus
+	});
+
+	// Package trends data query
+	const {
+		data: packageTrendsData,
+		isLoading: packageTrendsLoading,
+		error: _packageTrendsError,
+	} = useQuery({
+		queryKey: ["packageTrends", packageTrendsPeriod, packageTrendsHost],
+		queryFn: () => {
+			const params = {
+				days: packageTrendsPeriod,
+			};
+			if (packageTrendsHost !== "all") {
+				params.hostId = packageTrendsHost;
+			}
+			return dashboardAPI.getPackageTrends(params).then((res) => res.data);
+		},
+		staleTime: 5 * 60 * 1000, // 5 minutes
+		refetchOnWindowFocus: false,
 	});
 
 	// Fetch recent users (permission protected server-side)
@@ -299,6 +325,8 @@ const Dashboard = () => {
 			].includes(cardId)
 		) {
 			return "charts";
+		} else if (["packageTrends"].includes(cardId)) {
+			return "charts";
 		} else if (["erroredHosts", "quickStats"].includes(cardId)) {
 			return "fullwidth";
 		}
@@ -311,6 +339,8 @@ const Dashboard = () => {
 			case "stats":
 				return "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4";
 			case "charts":
+				return "grid grid-cols-1 lg:grid-cols-3 gap-6";
+			case "widecharts":
 				return "grid grid-cols-1 lg:grid-cols-3 gap-6";
 			case "fullwidth":
 				return "space-y-6";
@@ -733,6 +763,71 @@ const Dashboard = () => {
 					</div>
 				);
 
+			case "packageTrends":
+				return (
+					<div className="card p-6 w-full">
+						<div className="flex items-center justify-between mb-4">
+							<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
+								Package Trends Over Time
+							</h3>
+							<div className="flex items-center gap-3">
+								{/* Period Selector */}
+								<select
+									value={packageTrendsPeriod}
+									onChange={(e) => setPackageTrendsPeriod(e.target.value)}
+									className="px-3 py-1.5 text-sm border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-secondary-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+								>
+									<option value="1">Last 24 hours</option>
+									<option value="7">Last 7 days</option>
+									<option value="30">Last 30 days</option>
+									<option value="90">Last 90 days</option>
+									<option value="180">Last 6 months</option>
+									<option value="365">Last year</option>
+								</select>
+
+								{/* Host Selector */}
+								<select
+									value={packageTrendsHost}
+									onChange={(e) => setPackageTrendsHost(e.target.value)}
+									className="px-3 py-1.5 text-sm border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-secondary-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+								>
+									<option value="all">All Hosts</option>
+									{packageTrendsData?.hosts?.length > 0 ? (
+										packageTrendsData.hosts.map((host) => (
+											<option key={host.id} value={host.id}>
+												{host.friendly_name || host.hostname}
+											</option>
+										))
+									) : (
+										<option disabled>
+											{packageTrendsLoading
+												? "Loading hosts..."
+												: "No hosts available"}
+										</option>
+									)}
+								</select>
+							</div>
+						</div>
+
+						<div className="h-64 w-full">
+							{packageTrendsLoading ? (
+								<div className="flex items-center justify-center h-full">
+									<RefreshCw className="h-8 w-8 animate-spin text-primary-600" />
+								</div>
+							) : packageTrendsData?.chartData ? (
+								<Line
+									data={packageTrendsData.chartData}
+									options={packageTrendsChartOptions}
+								/>
+							) : (
+								<div className="flex items-center justify-center h-full text-secondary-500 dark:text-secondary-400">
+									No data available
+								</div>
+							)}
+						</div>
+					</div>
+				);
+
 			case "quickStats": {
 				// Calculate dynamic stats
 				const updatePercentage =
@@ -1028,6 +1123,119 @@ const Dashboard = () => {
 		onClick: handlePackagePriorityChartClick,
 	};
 
+	const packageTrendsChartOptions = {
+		responsive: true,
+		maintainAspectRatio: false,
+		plugins: {
+			legend: {
+				position: "top",
+				labels: {
+					color: isDark ? "#ffffff" : "#374151",
+					font: {
+						size: 12,
+					},
+					padding: 20,
+					usePointStyle: true,
+					pointStyle: "circle",
+				},
+			},
+			tooltip: {
+				mode: "index",
+				intersect: false,
+				backgroundColor: isDark ? "#374151" : "#ffffff",
+				titleColor: isDark ? "#ffffff" : "#374151",
+				bodyColor: isDark ? "#ffffff" : "#374151",
+				borderColor: isDark ? "#4B5563" : "#E5E7EB",
+				borderWidth: 1,
+				callbacks: {
+					title: (context) => {
+						const label = context[0].label;
+						// Format hourly labels (e.g., "2025-10-07T14" -> "Oct 7, 2:00 PM")
+						if (label.includes("T")) {
+							const date = new Date(`${label}:00:00`);
+							return date.toLocaleDateString("en-US", {
+								month: "short",
+								day: "numeric",
+								hour: "numeric",
+								minute: "2-digit",
+								hour12: true,
+							});
+						}
+						// Format daily labels (e.g., "2025-10-07" -> "Oct 7")
+						const date = new Date(label);
+						return date.toLocaleDateString("en-US", {
+							month: "short",
+							day: "numeric",
+						});
+					},
+				},
+			},
+		},
+		scales: {
+			x: {
+				display: true,
+				title: {
+					display: true,
+					text: packageTrendsPeriod === "1" ? "Time (Hours)" : "Date",
+					color: isDark ? "#ffffff" : "#374151",
+				},
+				ticks: {
+					color: isDark ? "#ffffff" : "#374151",
+					font: {
+						size: 11,
+					},
+					callback: function (value, _index, _ticks) {
+						const label = this.getLabelForValue(value);
+						// Format hourly labels (e.g., "2025-10-07T14" -> "2 PM")
+						if (label.includes("T")) {
+							const hour = label.split("T")[1];
+							const hourNum = parseInt(hour, 10);
+							return hourNum === 0
+								? "12 AM"
+								: hourNum < 12
+									? `${hourNum} AM`
+									: hourNum === 12
+										? "12 PM"
+										: `${hourNum - 12} PM`;
+						}
+						// Format daily labels (e.g., "2025-10-07" -> "Oct 7")
+						const date = new Date(label);
+						return date.toLocaleDateString("en-US", {
+							month: "short",
+							day: "numeric",
+						});
+					},
+				},
+				grid: {
+					color: isDark ? "#374151" : "#E5E7EB",
+				},
+			},
+			y: {
+				display: true,
+				title: {
+					display: true,
+					text: "Number of Packages",
+					color: isDark ? "#ffffff" : "#374151",
+				},
+				ticks: {
+					color: isDark ? "#ffffff" : "#374151",
+					font: {
+						size: 11,
+					},
+					beginAtZero: true,
+				},
+				grid: {
+					color: isDark ? "#374151" : "#E5E7EB",
+				},
+			},
+		},
+		interaction: {
+			mode: "nearest",
+			axis: "x",
+			intersect: false,
+		},
+	};
+
 	const barChartOptions = {
 		responsive: true,
 		indexAxis: "y", // Make the chart horizontal
@@ -1206,7 +1414,12 @@ const Dashboard = () => {
 								className={getGroupClassName(group.type)}
 							>
 								{group.cards.map((card, cardIndex) => (
-									<div key={`card-${card.cardId}-${groupIndex}-${cardIndex}`}>
+									<div
+										key={`card-${card.cardId}-${groupIndex}-${cardIndex}`}
+										className={
+											card.cardId === "packageTrends" ? "lg:col-span-2" : ""
+										}
+									>
 										{renderCard(card.cardId)}
 									</div>
 								))}

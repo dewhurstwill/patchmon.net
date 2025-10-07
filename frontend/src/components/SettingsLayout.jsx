@@ -82,6 +82,7 @@ const SettingsLayout = ({ children }) => {
 						name: "Alert Channels",
 						href: "/settings/alert-channels",
 						icon: Bell,
+						comingSoon: true,
 					},
 					{
 						name: "Notifications",
@@ -118,7 +119,6 @@ const SettingsLayout = ({ children }) => {
 						name: "Integrations",
 						href: "/settings/integrations",
 						icon: Wrench,
-						comingSoon: true,
 					},
 				],
 			});
