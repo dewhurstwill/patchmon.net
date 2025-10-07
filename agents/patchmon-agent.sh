@@ -637,7 +637,7 @@ get_apt_packages() {
     done <<< "$upgradable_sim"
     
     # Get installed packages that are up to date
-    local installed=$(dpkg-query -W -f='${Package} ${Version}\n' | head -100)
+    local installed=$(dpkg-query -W -f='${Package} ${Version}\n')
     
     while IFS=' ' read -r package_name version; do
         if [[ -n "$package_name" && -n "$version" ]]; then
