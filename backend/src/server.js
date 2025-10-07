@@ -674,11 +674,16 @@ async function getPermissionBasedPreferences(userRole) {
 			requiredPermission: "can_view_packages",
 			order: 13,
 		},
-		{ cardId: "recentUsers", requiredPermission: "can_view_users", order: 14 },
+		{
+			cardId: "packageTrends",
+			requiredPermission: "can_view_packages",
+			order: 14,
+		},
+		{ cardId: "recentUsers", requiredPermission: "can_view_users", order: 15 },
 		{
 			cardId: "quickStats",
 			requiredPermission: "can_view_dashboard",
-			order: 15,
+			order: 16,
 		},
 	];
 

@@ -17,11 +17,64 @@ const {
 	refresh_access_token,
 	revoke_session,
 	revoke_all_user_sessions,
-	get_user_sessions,
 } = require("../utils/session_manager");
 
 const router = express.Router();
 const prisma = new PrismaClient();
+
+/**
+ * Parse user agent string to extract browser and OS info
+ */
+function parse_user_agent(user_agent) {
+	if (!user_agent)
+		return { browser: "Unknown", os: "Unknown", device: "Unknown" };
+
+	const ua = user_agent.toLowerCase();
+
+	// Browser detection
+	let browser = "Unknown";
+	if (ua.includes("chrome") && !ua.includes("edg")) browser = "Chrome";
+	else if (ua.includes("firefox")) browser = "Firefox";
+	else if (ua.includes("safari") && !ua.includes("chrome")) browser = "Safari";
+	else if (ua.includes("edg")) browser = "Edge";
+	else if (ua.includes("opera")) browser = "Opera";
+
+	// OS detection
+	let os = "Unknown";
+	if (ua.includes("windows")) os = "Windows";
+	else if (ua.includes("macintosh") || ua.includes("mac os")) os = "macOS";
+	else if (ua.includes("linux")) os = "Linux";
+	else if (ua.includes("android")) os = "Android";
+	else if (ua.includes("iphone") || ua.includes("ipad")) os = "iOS";
+
+	// Device type
+	let device = "Desktop";
+	if (ua.includes("mobile")) device = "Mobile";
+	else if (ua.includes("tablet") || ua.includes("ipad")) device = "Tablet";
+
+	return { browser, os, device };
+}
+
+/**
+ * Get basic location info from IP (simplified - in production you'd use a service)
+ */
+function get_location_from_ip(ip) {
+	if (!ip) return { country: "Unknown", city: "Unknown" };
+
+	// For localhost/private IPs
+	if (
+		ip === "127.0.0.1" ||
+		ip === "::1" ||
+		ip.startsWith("192.168.") ||
+		ip.startsWith("10.")
+	) {
+		return { country: "Local", city: "Local Network" };
+	}
+
+	// In a real implementation, you'd use a service like MaxMind GeoIP2
+	// For now, return unknown for external IPs
+	return { country: "Unknown", city: "Unknown" };
+}
 
 // Check if any admin users exist (for first-time setup)
 router.get("/check-admin-users", async (_req, res) => {
@@ -765,6 +818,8 @@ router.post(
 					id: user.id,
 					username: user.username,
 					email: user.email,
+					first_name: user.first_name,
+					last_name: user.last_name,
 					role: user.role,
 					is_active: user.is_active,
 					last_login: user.last_login,
@@ -788,6 +843,10 @@ router.post(
 			.isLength({ min: 6, max: 6 })
 			.withMessage("Token must be 6 digits"),
 		body("token").isNumeric().withMessage("Token must contain only numbers"),
+		body("remember_me")
+			.optional()
+			.isBoolean()
+			.withMessage("Remember me must be a boolean"),
 	],
 	async (req, res) => {
 		try {
@@ -796,7 +855,7 @@ router.post(
 				return res.status(400).json({ errors: errors.array() });
 			}
 
-			const { username, token } = req.body;
+			const { username, token, remember_me = false } = req.body;
 
 			// Find user
 			const user = await prisma.users.findFirst({
@@ -865,13 +924,20 @@ router.post(
 			// Create session with access and refresh tokens
 			const ip_address = req.ip || req.connection.remoteAddress;
 			const user_agent = req.get("user-agent");
-			const session = await create_session(user.id, ip_address, user_agent);
+			const session = await create_session(
+				user.id,
+				ip_address,
+				user_agent,
+				remember_me,
+				req,
+			);
 
 			res.json({
 				message: "Login successful",
 				token: session.access_token,
 				refresh_token: session.refresh_token,
 				expires_at: session.expires_at,
+				tfa_bypass_until: session.tfa_bypass_until,
 				user: {
 					id: user.id,
 					username: user.username,
@@ -1109,10 +1175,43 @@ router.post(
 // Get user's active sessions
 router.get("/sessions", authenticateToken, async (req, res) => {
 	try {
-		const sessions = await get_user_sessions(req.user.id);
+		const sessions = await prisma.user_sessions.findMany({
+			where: {
+				user_id: req.user.id,
+				is_revoked: false,
+				expires_at: { gt: new Date() },
+			},
+			select: {
+				id: true,
+				ip_address: true,
+				user_agent: true,
+				device_fingerprint: true,
+				last_activity: true,
+				created_at: true,
+				expires_at: true,
+				tfa_remember_me: true,
+				tfa_bypass_until: true,
+				login_count: true,
+				last_login_ip: true,
+			},
+			orderBy: { last_activity: "desc" },
+		});
+
+		// Enhance sessions with device info
+		const enhanced_sessions = sessions.map((session) => {
+			const is_current_session = session.id === req.session_id;
+			const device_info = parse_user_agent(session.user_agent);
+
+			return {
+				...session,
+				is_current_session,
+				device_info,
+				location_info: get_location_from_ip(session.ip_address),
+			};
+		});
 
 		res.json({
-			sessions: sessions,
+			sessions: enhanced_sessions,
 		});
 	} catch (error) {
 		console.error("Get sessions error:", error);
@@ -1134,6 +1233,11 @@ router.delete("/sessions/:session_id", authenticateToken, async (req, res) => {
 			return res.status(404).json({ error: "Session not found" });
 		}
 
+		// Don't allow revoking the current session
+		if (session_id === req.session_id) {
+			return res.status(400).json({ error: "Cannot revoke current session" });
+		}
+
 		await revoke_session(session_id);
 
 		res.json({
@@ -1142,6 +1246,27 @@ router.delete("/sessions/:session_id", authenticateToken, async (req, res) => {
 	} catch (error) {
 		console.error("Revoke session error:", error);
 		res.status(500).json({ error: "Failed to revoke session" });
+	}
+});
+
+// Revoke all sessions except current one
+router.delete("/sessions", authenticateToken, async (req, res) => {
+	try {
+		// Revoke all sessions except the current one
+		await prisma.user_sessions.updateMany({
+			where: {
+				user_id: req.user.id,
+				id: { not: req.session_id },
+			},
+			data: { is_revoked: true },
+		});
+
+		res.json({
+			message: "All other sessions revoked successfully",
+		});
+	} catch (error) {
+		console.error("Revoke all sessions error:", error);
+		res.status(500).json({ error: "Failed to revoke sessions" });
 	}
 });
 

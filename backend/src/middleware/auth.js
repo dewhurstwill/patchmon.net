@@ -3,6 +3,7 @@ const { PrismaClient } = require("@prisma/client");
 const {
 	validate_session,
 	update_session_activity,
+	is_tfa_bypassed,
 } = require("../utils/session_manager");
 
 const prisma = new PrismaClient();
@@ -46,6 +47,9 @@ const authenticateToken = async (req, res, next) => {
 		// Update session activity timestamp
 		await update_session_activity(decoded.sessionId);
 
+		// Check if TFA is bypassed for this session
+		const tfa_bypassed = await is_tfa_bypassed(decoded.sessionId);
+
 		// Update last login (only on successful authentication)
 		await prisma.users.update({
 			where: { id: validation.user.id },
@@ -57,6 +61,7 @@ const authenticateToken = async (req, res, next) => {
 
 		req.user = validation.user;
 		req.session_id = decoded.sessionId;
+		req.tfa_bypassed = tfa_bypassed;
 		next();
 	} catch (error) {
 		if (error.name === "JsonWebTokenError") {
@@ -114,8 +119,33 @@ const optionalAuth = async (req, _res, next) => {
 	}
 };
 
+// Middleware to check if TFA is required for sensitive operations
+const requireTfaIfEnabled = async (req, res, next) => {
+	try {
+		// Check if user has TFA enabled
+		const user = await prisma.users.findUnique({
+			where: { id: req.user.id },
+			select: { tfa_enabled: true },
+		});
+
+		// If TFA is enabled and not bypassed, require TFA verification
+		if (user?.tfa_enabled && !req.tfa_bypassed) {
+			return res.status(403).json({
+				error: "Two-factor authentication required for this operation",
+				requires_tfa: true,
+			});
+		}
+
+		next();
+	} catch (error) {
+		console.error("TFA requirement check error:", error);
+		return res.status(500).json({ error: "Authentication check failed" });
+	}
+};
+
 module.exports = {
 	authenticateToken,
 	requireAdmin,
 	optionalAuth,
+	requireTfaIfEnabled,
 };

@@ -15,6 +15,16 @@ if (!process.env.JWT_SECRET) {
 const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || "1h";
 const JWT_REFRESH_EXPIRES_IN = process.env.JWT_REFRESH_EXPIRES_IN || "7d";
+const TFA_REMEMBER_ME_EXPIRES_IN =
+	process.env.TFA_REMEMBER_ME_EXPIRES_IN || "30d";
+const TFA_MAX_REMEMBER_SESSIONS = parseInt(
+	process.env.TFA_MAX_REMEMBER_SESSIONS || "5",
+	10,
+);
+const TFA_SUSPICIOUS_ACTIVITY_THRESHOLD = parseInt(
+	process.env.TFA_SUSPICIOUS_ACTIVITY_THRESHOLD || "3",
+	10,
+);
 const INACTIVITY_TIMEOUT_MINUTES = parseInt(
 	process.env.SESSION_INACTIVITY_TIMEOUT_MINUTES || "30",
 	10,
@@ -71,15 +81,135 @@ function parse_expiration(expiration_string) {
 }
 
 /**
+ * Generate device fingerprint from request data
+ */
+function generate_device_fingerprint(req) {
+	const components = [
+		req.get("user-agent") || "",
+		req.get("accept-language") || "",
+		req.get("accept-encoding") || "",
+		req.ip || "",
+	];
+
+	// Create a simple hash of device characteristics
+	const fingerprint = crypto
+		.createHash("sha256")
+		.update(components.join("|"))
+		.digest("hex")
+		.substring(0, 32); // Use first 32 chars for storage efficiency
+
+	return fingerprint;
+}
+
+/**
+ * Check for suspicious activity patterns
+ */
+async function check_suspicious_activity(
+	user_id,
+	_ip_address,
+	_device_fingerprint,
+) {
+	try {
+		// Check for multiple sessions from different IPs in short time
+		const recent_sessions = await prisma.user_sessions.findMany({
+			where: {
+				user_id: user_id,
+				created_at: {
+					gte: new Date(Date.now() - 24 * 60 * 60 * 1000), // Last 24 hours
+				},
+				is_revoked: false,
+			},
+			select: {
+				ip_address: true,
+				device_fingerprint: true,
+				created_at: true,
+			},
+		});
+
+		// Count unique IPs and devices
+		const unique_ips = new Set(recent_sessions.map((s) => s.ip_address));
+		const unique_devices = new Set(
+			recent_sessions.map((s) => s.device_fingerprint),
+		);
+
+		// Flag as suspicious if more than threshold different IPs or devices in 24h
+		if (
+			unique_ips.size > TFA_SUSPICIOUS_ACTIVITY_THRESHOLD ||
+			unique_devices.size > TFA_SUSPICIOUS_ACTIVITY_THRESHOLD
+		) {
+			console.warn(
+				`Suspicious activity detected for user ${user_id}: ${unique_ips.size} IPs, ${unique_devices.size} devices`,
+			);
+			return true;
+		}
+
+		return false;
+	} catch (error) {
+		console.error("Error checking suspicious activity:", error);
+		return false;
+	}
+}
+
+/**
  * Create a new session for user
  */
-async function create_session(user_id, ip_address, user_agent) {
+async function create_session(
+	user_id,
+	ip_address,
+	user_agent,
+	remember_me = false,
+	req = null,
+) {
 	try {
 		const session_id = crypto.randomUUID();
 		const refresh_token = generate_refresh_token();
 		const access_token = generate_access_token(user_id, session_id);
 
-		const expires_at = parse_expiration(JWT_REFRESH_EXPIRES_IN);
+		// Generate device fingerprint if request is available
+		const device_fingerprint = req ? generate_device_fingerprint(req) : null;
+
+		// Check for suspicious activity
+		if (device_fingerprint) {
+			const is_suspicious = await check_suspicious_activity(
+				user_id,
+				ip_address,
+				device_fingerprint,
+			);
+			if (is_suspicious) {
+				console.warn(
+					`Suspicious activity detected for user ${user_id}, session creation may be restricted`,
+				);
+			}
+		}
+
+		// Check session limits for remember me
+		if (remember_me) {
+			const existing_remember_sessions = await prisma.user_sessions.count({
+				where: {
+					user_id: user_id,
+					tfa_remember_me: true,
+					is_revoked: false,
+					expires_at: { gt: new Date() },
+				},
+			});
+
+			// Limit remember me sessions per user
+			if (existing_remember_sessions >= TFA_MAX_REMEMBER_SESSIONS) {
+				throw new Error(
+					"Maximum number of remembered devices reached. Please revoke an existing session first.",
+				);
+			}
+		}
+
+		// Use longer expiration for remember me sessions
+		const expires_at = remember_me
+			? parse_expiration(TFA_REMEMBER_ME_EXPIRES_IN)
+			: parse_expiration(JWT_REFRESH_EXPIRES_IN);
+
+		// Calculate TFA bypass until date for remember me sessions
+		const tfa_bypass_until = remember_me
+			? parse_expiration(TFA_REMEMBER_ME_EXPIRES_IN)
+			: null;
 
 		// Store session in database
 		await prisma.user_sessions.create({
@@ -90,8 +220,13 @@ async function create_session(user_id, ip_address, user_agent) {
 				access_token_hash: hash_token(access_token),
 				ip_address: ip_address || null,
 				user_agent: user_agent || null,
+				device_fingerprint: device_fingerprint,
+				last_login_ip: ip_address || null,
 				last_activity: new Date(),
 				expires_at: expires_at,
+				tfa_remember_me: remember_me,
+				tfa_bypass_until: tfa_bypass_until,
+				login_count: 1,
 			},
 		});
 
@@ -100,6 +235,7 @@ async function create_session(user_id, ip_address, user_agent) {
 			access_token,
 			refresh_token,
 			expires_at,
+			tfa_bypass_until,
 		};
 	} catch (error) {
 		console.error("Error creating session:", error);
@@ -299,12 +435,50 @@ async function get_user_sessions(user_id) {
 				last_activity: true,
 				created_at: true,
 				expires_at: true,
+				tfa_remember_me: true,
+				tfa_bypass_until: true,
 			},
 			orderBy: { last_activity: "desc" },
 		});
 	} catch (error) {
 		console.error("Error getting user sessions:", error);
 		return [];
+	}
+}
+
+/**
+ * Check if TFA is bypassed for a session
+ */
+async function is_tfa_bypassed(session_id) {
+	try {
+		const session = await prisma.user_sessions.findUnique({
+			where: { id: session_id },
+			select: {
+				tfa_remember_me: true,
+				tfa_bypass_until: true,
+				is_revoked: true,
+				expires_at: true,
+			},
+		});
+
+		if (!session) {
+			return false;
+		}
+
+		// Check if session is still valid
+		if (session.is_revoked || new Date() > session.expires_at) {
+			return false;
+		}
+
+		// Check if TFA is bypassed and still within bypass period
+		if (session.tfa_remember_me && session.tfa_bypass_until) {
+			return new Date() < session.tfa_bypass_until;
+		}
+
+		return false;
+	} catch (error) {
+		console.error("Error checking TFA bypass:", error);
+		return false;
 	}
 }
 
@@ -317,6 +491,9 @@ module.exports = {
 	revoke_all_user_sessions,
 	cleanup_expired_sessions,
 	get_user_sessions,
+	is_tfa_bypassed,
+	generate_device_fingerprint,
+	check_suspicious_activity,
 	generate_access_token,
 	INACTIVITY_TIMEOUT_MINUTES,
 };

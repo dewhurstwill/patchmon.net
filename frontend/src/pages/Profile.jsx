@@ -2,12 +2,16 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	AlertCircle,
 	CheckCircle,
+	Clock,
 	Copy,
 	Download,
 	Eye,
 	EyeOff,
 	Key,
+	LogOut,
 	Mail,
+	MapPin,
+	Monitor,
 	Moon,
 	RefreshCw,
 	Save,
@@ -153,6 +157,7 @@ const Profile = () => {
 		{ id: "profile", name: "Profile Information", icon: User },
 		{ id: "password", name: "Change Password", icon: Key },
 		{ id: "tfa", name: "Multi-Factor Authentication", icon: Smartphone },
+		{ id: "sessions", name: "Active Sessions", icon: Monitor },
 	];
 
 	return (
@@ -533,6 +538,9 @@ const Profile = () => {
 
 					{/* Multi-Factor Authentication Tab */}
 					{activeTab === "tfa" && <TfaTab />}
+
+					{/* Sessions Tab */}
+					{activeTab === "sessions" && <SessionsTab />}
 				</div>
 			</div>
 		</div>
@@ -1066,6 +1074,258 @@ const TfaTab = () => {
 							</div>
 						</form>
 					</div>
+				</div>
+			)}
+		</div>
+	);
+};
+
+// Sessions Tab Component
+const SessionsTab = () => {
+	const _queryClient = useQueryClient();
+	const [_isLoading, _setIsLoading] = useState(false);
+	const [message, setMessage] = useState({ type: "", text: "" });
+
+	// Fetch user sessions
+	const {
+		data: sessionsData,
+		isLoading: sessionsLoading,
+		refetch,
+	} = useQuery({
+		queryKey: ["user-sessions"],
+		queryFn: async () => {
+			const response = await fetch("/api/v1/auth/sessions", {
+				headers: {
+					Authorization: `Bearer ${localStorage.getItem("token")}`,
+				},
+			});
+			if (!response.ok) throw new Error("Failed to fetch sessions");
+			return response.json();
+		},
+	});
+
+	// Revoke individual session mutation
+	const revokeSessionMutation = useMutation({
+		mutationFn: async (sessionId) => {
+			const response = await fetch(`/api/v1/auth/sessions/${sessionId}`, {
+				method: "DELETE",
+				headers: {
+					Authorization: `Bearer ${localStorage.getItem("token")}`,
+				},
+			});
+			if (!response.ok) throw new Error("Failed to revoke session");
+			return response.json();
+		},
+		onSuccess: () => {
+			setMessage({ type: "success", text: "Session revoked successfully" });
+			refetch();
+		},
+		onError: (error) => {
+			setMessage({ type: "error", text: error.message });
+		},
+	});
+
+	// Revoke all sessions mutation
+	const revokeAllSessionsMutation = useMutation({
+		mutationFn: async () => {
+			const response = await fetch("/api/v1/auth/sessions", {
+				method: "DELETE",
+				headers: {
+					Authorization: `Bearer ${localStorage.getItem("token")}`,
+				},
+			});
+			if (!response.ok) throw new Error("Failed to revoke sessions");
+			return response.json();
+		},
+		onSuccess: () => {
+			setMessage({
+				type: "success",
+				text: "All other sessions revoked successfully",
+			});
+			refetch();
+		},
+		onError: (error) => {
+			setMessage({ type: "error", text: error.message });
+		},
+	});
+
+	const formatDate = (dateString) => {
+		return new Date(dateString).toLocaleString();
+	};
+
+	const formatRelativeTime = (dateString) => {
+		const now = new Date();
+		const date = new Date(dateString);
+		const diff = now - date;
+		const minutes = Math.floor(diff / 60000);
+		const hours = Math.floor(diff / 3600000);
+		const days = Math.floor(diff / 86400000);
+
+		if (days > 0) return `${days} day${days > 1 ? "s" : ""} ago`;
+		if (hours > 0) return `${hours} hour${hours > 1 ? "s" : ""} ago`;
+		if (minutes > 0) return `${minutes} minute${minutes > 1 ? "s" : ""} ago`;
+		return "Just now";
+	};
+
+	const handleRevokeSession = (sessionId) => {
+		if (window.confirm("Are you sure you want to revoke this session?")) {
+			revokeSessionMutation.mutate(sessionId);
+		}
+	};
+
+	const handleRevokeAllSessions = () => {
+		if (
+			window.confirm(
+				"Are you sure you want to revoke all other sessions? This will log you out of all other devices.",
+			)
+		) {
+			revokeAllSessionsMutation.mutate();
+		}
+	};
+
+	return (
+		<div className="space-y-6">
+			{/* Header */}
+			<div>
+				<h3 className="text-lg font-medium text-secondary-900 dark:text-secondary-100">
+					Active Sessions
+				</h3>
+				<p className="text-sm text-secondary-600 dark:text-secondary-300">
+					Manage your active sessions and devices. You can see where you're
+					logged in and revoke access for any device.
+				</p>
+			</div>
+
+			{/* Message */}
+			{message.text && (
+				<div
+					className={`rounded-md p-4 ${
+						message.type === "success"
+							? "bg-success-50 border border-success-200 text-success-700"
+							: "bg-danger-50 border border-danger-200 text-danger-700"
+					}`}
+				>
+					<div className="flex">
+						{message.type === "success" ? (
+							<CheckCircle className="h-5 w-5" />
+						) : (
+							<AlertCircle className="h-5 w-5" />
+						)}
+						<div className="ml-3">
+							<p className="text-sm">{message.text}</p>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{/* Sessions List */}
+			{sessionsLoading ? (
+				<div className="flex items-center justify-center py-8">
+					<div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+				</div>
+			) : sessionsData?.sessions?.length > 0 ? (
+				<div className="space-y-4">
+					{/* Revoke All Button */}
+					{sessionsData.sessions.filter((s) => !s.is_current_session).length >
+						0 && (
+						<div className="flex justify-end">
+							<button
+								type="button"
+								onClick={handleRevokeAllSessions}
+								disabled={revokeAllSessionsMutation.isPending}
+								className="inline-flex items-center px-4 py-2 border border-danger-300 text-sm font-medium rounded-md text-danger-700 bg-white hover:bg-danger-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-danger-500 disabled:opacity-50"
+							>
+								<LogOut className="h-4 w-4 mr-2" />
+								{revokeAllSessionsMutation.isPending
+									? "Revoking..."
+									: "Revoke All Other Sessions"}
+							</button>
+						</div>
+					)}
+
+					{/* Sessions */}
+					{sessionsData.sessions.map((session) => (
+						<div
+							key={session.id}
+							className={`border rounded-lg p-4 ${
+								session.is_current_session
+									? "border-primary-200 bg-primary-50 dark:border-primary-800 dark:bg-primary-900/20"
+									: "border-secondary-200 bg-white dark:border-secondary-700 dark:bg-secondary-800"
+							}`}
+						>
+							<div className="flex items-start justify-between">
+								<div className="flex-1">
+									<div className="flex items-center space-x-3">
+										<Monitor className="h-5 w-5 text-secondary-500" />
+										<div>
+											<div className="flex items-center space-x-2">
+												<h4 className="text-sm font-medium text-secondary-900 dark:text-secondary-100">
+													{session.device_info?.browser} on{" "}
+													{session.device_info?.os}
+												</h4>
+												{session.is_current_session && (
+													<span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary-100 text-primary-800 dark:bg-primary-900 dark:text-primary-200">
+														Current Session
+													</span>
+												)}
+												{session.tfa_remember_me && (
+													<span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-success-100 text-success-800 dark:bg-success-900 dark:text-success-200">
+														Remembered
+													</span>
+												)}
+											</div>
+											<p className="text-sm text-secondary-600 dark:text-secondary-400">
+												{session.device_info?.device} • {session.ip_address}
+											</p>
+										</div>
+									</div>
+
+									<div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-secondary-600 dark:text-secondary-400">
+										<div className="flex items-center space-x-2">
+											<MapPin className="h-4 w-4" />
+											<span>
+												{session.location_info?.city},{" "}
+												{session.location_info?.country}
+											</span>
+										</div>
+										<div className="flex items-center space-x-2">
+											<Clock className="h-4 w-4" />
+											<span>
+												Last active: {formatRelativeTime(session.last_activity)}
+											</span>
+										</div>
+										<div className="flex items-center space-x-2">
+											<span>Created: {formatDate(session.created_at)}</span>
+										</div>
+										<div className="flex items-center space-x-2">
+											<span>Login count: {session.login_count}</span>
+										</div>
+									</div>
+								</div>
+
+								{!session.is_current_session && (
+									<button
+										type="button"
+										onClick={() => handleRevokeSession(session.id)}
+										disabled={revokeSessionMutation.isPending}
+										className="ml-4 inline-flex items-center px-3 py-2 border border-danger-300 text-sm font-medium rounded-md text-danger-700 bg-white hover:bg-danger-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-danger-500 disabled:opacity-50"
+									>
+										<LogOut className="h-4 w-4" />
+									</button>
+								)}
+							</div>
+						</div>
+					))}
+				</div>
+			) : (
+				<div className="text-center py-8">
+					<Monitor className="mx-auto h-12 w-12 text-secondary-400" />
+					<h3 className="mt-2 text-sm font-medium text-secondary-900 dark:text-secondary-100">
+						No active sessions
+					</h3>
+					<p className="mt-1 text-sm text-secondary-600 dark:text-secondary-400">
+						You don't have any active sessions at the moment.
+					</p>
 				</div>
 			)}
 		</div>

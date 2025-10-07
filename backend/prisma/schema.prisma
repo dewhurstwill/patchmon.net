@@ -44,6 +44,14 @@ model host_packages {
   packages           packages @relation(fields: [package_id], references: [id], onDelete: Cascade)
 
   @@unique([host_id, package_id])
+  @@index([host_id])
+  @@index([package_id])
+  @@index([needs_update])
+  @@index([is_security_update])
+  @@index([host_id, needs_update])
+  @@index([host_id, needs_update, is_security_update])
+  @@index([package_id, needs_update])
+  @@index([last_checked])
 }
 
 model host_repositories {
@@ -108,6 +116,9 @@ model packages {
   created_at     DateTime        @default(now())
   updated_at     DateTime
   host_packages  host_packages[]
+
+  @@index([name])
+  @@index([category])
 }
 
 model repositories {
@@ -170,14 +181,17 @@ model settings {
 }
 
 model update_history {
-  id             String   @id
-  host_id        String
-  packages_count Int
-  security_count Int
-  timestamp      DateTime @default(now())
-  status         String   @default("success")
-  error_message  String?
-  hosts          hosts    @relation(fields: [host_id], references: [id], onDelete: Cascade)
+  id              String   @id
+  host_id         String
+  packages_count  Int
+  security_count  Int
+  total_packages  Int?
+  payload_size_kb Float?
+  execution_time  Float?
+  timestamp       DateTime @default(now())
+  status          String   @default("success")
+  error_message   String?
+  hosts           hosts    @relation(fields: [host_id], references: [id], onDelete: Cascade)
 }
 
 model users {
@@ -207,15 +221,22 @@ model user_sessions {
   access_token_hash String?
   ip_address        String?
   user_agent        String?
+  device_fingerprint String?
   last_activity     DateTime @default(now())
   expires_at        DateTime
   created_at        DateTime @default(now())
   is_revoked        Boolean  @default(false)
+  tfa_remember_me   Boolean  @default(false)
+  tfa_bypass_until  DateTime?
+  login_count       Int      @default(1)
+  last_login_ip     String?
   users             users    @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
   @@index([user_id])
   @@index([refresh_token])
   @@index([expires_at])
+  @@index([tfa_bypass_until])
+  @@index([device_fingerprint])
 }
 
 model auto_enrollment_tokens {

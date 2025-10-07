@@ -145,9 +145,13 @@ router.get(
 			];
 
 			// Package update priority distribution
+			const regularUpdates = Math.max(
+				0,
+				totalOutdatedPackages - securityUpdates,
+			);
 			const packageUpdateDistribution = [
 				{ name: "Security", count: securityUpdates },
-				{ name: "Regular", count: totalOutdatedPackages - securityUpdates },
+				{ name: "Regular", count: regularUpdates },
 			];
 
 			res.json({
@@ -343,32 +347,41 @@ router.get(
 		try {
 			const { hostId } = req.params;
 
-			const host = await prisma.hosts.findUnique({
-				where: { id: hostId },
-				include: {
-					host_groups: {
-						select: {
-							id: true,
-							name: true,
-							color: true,
+			const limit = parseInt(req.query.limit, 10) || 10;
+			const offset = parseInt(req.query.offset, 10) || 0;
+
+			const [host, totalHistoryCount] = await Promise.all([
+				prisma.hosts.findUnique({
+					where: { id: hostId },
+					include: {
+						host_groups: {
+							select: {
+								id: true,
+								name: true,
+								color: true,
+							},
+						},
+						host_packages: {
+							include: {
+								packages: true,
+							},
+							orderBy: {
+								needs_update: "desc",
+							},
+						},
+						update_history: {
+							orderBy: {
+								timestamp: "desc",
+							},
+							take: limit,
+							skip: offset,
 						},
 					},
-					host_packages: {
-						include: {
-							packages: true,
-						},
-						orderBy: {
-							needs_update: "desc",
-						},
-					},
-					update_history: {
-						orderBy: {
-							timestamp: "desc",
-						},
-						take: 10,
-					},
-				},
-			});
+				}),
+				prisma.update_history.count({
+					where: { host_id: hostId },
+				}),
+			]);
 
 			if (!host) {
 				return res.status(404).json({ error: "Host not found" });
@@ -383,6 +396,12 @@ router.get(
 					security_updates: host.host_packages.filter(
 						(hp) => hp.needs_update && hp.is_security_update,
 					).length,
+				},
+				pagination: {
+					total: totalHistoryCount,
+					limit,
+					offset,
+					hasMore: offset + limit < totalHistoryCount,
 				},
 			};
 
@@ -452,6 +471,134 @@ router.get(
 		} catch (error) {
 			console.error("Error fetching recent collection:", error);
 			res.status(500).json({ error: "Failed to fetch recent collection" });
+		}
+	},
+);
+
+// Get package trends over time
+router.get(
+	"/package-trends",
+	authenticateToken,
+	requireViewHosts,
+	async (req, res) => {
+		try {
+			const { days = 30, hostId } = req.query;
+			const daysInt = parseInt(days, 10);
+
+			// Calculate date range
+			const endDate = new Date();
+			const startDate = new Date();
+			startDate.setDate(endDate.getDate() - daysInt);
+
+			// Build where clause
+			const whereClause = {
+				timestamp: {
+					gte: startDate,
+					lte: endDate,
+				},
+			};
+
+			// Add host filter if specified
+			if (hostId && hostId !== "all" && hostId !== "undefined") {
+				whereClause.host_id = hostId;
+			}
+
+			// Get all update history records in the date range
+			const trendsData = await prisma.update_history.findMany({
+				where: whereClause,
+				select: {
+					timestamp: true,
+					packages_count: true,
+					security_count: true,
+					total_packages: true,
+				},
+				orderBy: {
+					timestamp: "asc",
+				},
+			});
+
+			// Process data to show actual values (no averaging)
+			const processedData = trendsData
+				.filter((record) => record.total_packages !== null) // Only include records with valid data
+				.map((record) => {
+					const date = new Date(record.timestamp);
+					let timeKey;
+
+					if (daysInt <= 1) {
+						// For hourly view, use exact timestamp
+						timeKey = date.toISOString().substring(0, 16); // YYYY-MM-DDTHH:MM
+					} else {
+						// For daily view, group by day
+						timeKey = date.toISOString().split("T")[0]; // YYYY-MM-DD
+					}
+
+					return {
+						timeKey,
+						total_packages: record.total_packages,
+						packages_count: record.packages_count || 0,
+						security_count: record.security_count || 0,
+					};
+				})
+				.sort((a, b) => a.timeKey.localeCompare(b.timeKey)); // Sort by time
+
+			// Get hosts list for dropdown (always fetch for dropdown functionality)
+			const hostsList = await prisma.hosts.findMany({
+				select: {
+					id: true,
+					friendly_name: true,
+					hostname: true,
+				},
+				orderBy: {
+					friendly_name: "asc",
+				},
+			});
+
+			// Format data for chart
+			const chartData = {
+				labels: [],
+				datasets: [
+					{
+						label: "Total Packages",
+						data: [],
+						borderColor: "#3B82F6", // Blue
+						backgroundColor: "rgba(59, 130, 246, 0.1)",
+						tension: 0.4,
+						hidden: true, // Hidden by default
+					},
+					{
+						label: "Outdated Packages",
+						data: [],
+						borderColor: "#F59E0B", // Orange
+						backgroundColor: "rgba(245, 158, 11, 0.1)",
+						tension: 0.4,
+					},
+					{
+						label: "Security Packages",
+						data: [],
+						borderColor: "#EF4444", // Red
+						backgroundColor: "rgba(239, 68, 68, 0.1)",
+						tension: 0.4,
+					},
+				],
+			};
+
+			// Process aggregated data
+			processedData.forEach((item) => {
+				chartData.labels.push(item.timeKey);
+				chartData.datasets[0].data.push(item.total_packages);
+				chartData.datasets[1].data.push(item.packages_count);
+				chartData.datasets[2].data.push(item.security_count);
+			});
+
+			res.json({
+				chartData,
+				hosts: hostsList,
+				period: daysInt,
+				hostId: hostId || "all",
+			});
+		} catch (error) {
+			console.error("Error fetching package trends:", error);
+			res.status(500).json({ error: "Failed to fetch package trends" });
 		}
 	},
 );

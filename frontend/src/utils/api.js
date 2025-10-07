@@ -51,7 +51,11 @@ export const dashboardAPI = {
 	getStats: () => api.get("/dashboard/stats"),
 	getHosts: () => api.get("/dashboard/hosts"),
 	getPackages: () => api.get("/dashboard/packages"),
-	getHostDetail: (hostId) => api.get(`/dashboard/hosts/${hostId}`),
+	getHostDetail: (hostId, params = {}) => {
+		const queryString = new URLSearchParams(params).toString();
+		const url = `/dashboard/hosts/${hostId}${queryString ? `?${queryString}` : ""}`;
+		return api.get(url);
+	},
 	getRecentUsers: () => api.get("/dashboard/recent-users"),
 	getRecentCollection: () => api.get("/dashboard/recent-collection"),
 };
@@ -224,8 +228,8 @@ export const versionAPI = {
 export const authAPI = {
 	login: (username, password) =>
 		api.post("/auth/login", { username, password }),
-	verifyTfa: (username, token) =>
-		api.post("/auth/verify-tfa", { username, token }),
+	verifyTfa: (username, token, remember_me = false) =>
+		api.post("/auth/verify-tfa", { username, token, remember_me }),
 	signup: (username, email, password, firstName, lastName) =>
 		api.post("/auth/signup", {
 			username,
