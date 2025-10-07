@@ -24,7 +24,16 @@ export const getOSIcon = (osType) => {
 	// Linux distributions with authentic react-icons
 	if (os.includes("ubuntu")) return SiUbuntu;
 	if (os.includes("debian")) return SiDebian;
-	if (os.includes("centos") || os.includes("rhel") || os.includes("red hat"))
+	if (
+		os.includes("centos") ||
+		os.includes("rhel") ||
+		os.includes("red hat") ||
+		os.includes("almalinux") ||
+		os.includes("rocky") ||
+		os === "ol" ||
+		os.includes("oraclelinux") ||
+		os.includes("oracle linux")
+	)
 		return SiCentos;
 	if (os.includes("fedora")) return SiFedora;
 	if (os.includes("arch")) return SiArchlinux;
@@ -72,6 +81,10 @@ export const getOSDisplayName = (osType) => {
 	if (os.includes("ubuntu")) return "Ubuntu";
 	if (os.includes("debian")) return "Debian";
 	if (os.includes("centos")) return "CentOS";
+	if (os.includes("almalinux")) return "AlmaLinux";
+	if (os.includes("rocky")) return "Rocky Linux";
+	if (os === "ol" || os.includes("oraclelinux") || os.includes("oracle linux"))
+		return "Oracle Linux";
 	if (os.includes("rhel") || os.includes("red hat"))
 		return "Red Hat Enterprise Linux";
 	if (os.includes("fedora")) return "Fedora";
