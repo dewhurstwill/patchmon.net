@@ -113,9 +113,8 @@ After installation:
 - Visit `http(s)://<your-domain>` and complete first-time admin setup
 - See all useful info in `deployment-info.txt`
 
-## Running manually
-Should you perform a manual update and wish to see the results reflected in PatchMon quicker than the usual scheduled update, you can trigger the process manually by running:
-
+## Forcing updates after host package changes
+Should you perform a manual package update on your host and wish to see the results reflected in PatchMon quicker than the usual scheduled update, you can trigger the process manually by running:
 ```bash
 /usr/local/bin/patchmon-agent.sh update
 ```
