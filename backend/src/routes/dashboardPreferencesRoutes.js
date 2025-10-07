@@ -131,14 +131,19 @@ async function createDefaultDashboardPreferences(userId, userRole = "user") {
 				order: 13,
 			},
 			{
+				cardId: "packageTrends",
+				requiredPermission: "can_view_packages",
+				order: 14,
+			},
+			{
 				cardId: "recentUsers",
 				requiredPermission: "can_view_users",
-				order: 14,
+				order: 15,
 			},
 			{
 				cardId: "quickStats",
 				requiredPermission: "can_view_dashboard",
-				order: 15,
+				order: 16,
 			},
 		];
 
@@ -342,18 +347,25 @@ router.get("/defaults", authenticateToken, async (_req, res) => {
 				order: 13,
 			},
 			{
+				cardId: "packageTrends",
+				title: "Package Trends",
+				icon: "TrendingUp",
+				enabled: true,
+				order: 14,
+			},
+			{
 				cardId: "recentUsers",
 				title: "Recent Users Logged in",
 				icon: "Users",
 				enabled: true,
-				order: 14,
+				order: 15,
 			},
 			{
 				cardId: "quickStats",
 				title: "Quick Stats",
 				icon: "TrendingUp",
 				enabled: true,
-				order: 15,
+				order: 16,
 			},
 		];
 

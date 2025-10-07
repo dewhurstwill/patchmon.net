@@ -475,4 +475,132 @@ router.get(
 	},
 );
 
+// Get package trends over time
+router.get(
+	"/package-trends",
+	authenticateToken,
+	requireViewHosts,
+	async (req, res) => {
+		try {
+			const { days = 30, hostId } = req.query;
+			const daysInt = parseInt(days);
+
+			// Calculate date range
+			const endDate = new Date();
+			const startDate = new Date();
+			startDate.setDate(endDate.getDate() - daysInt);
+
+			// Build where clause
+			const whereClause = {
+				timestamp: {
+					gte: startDate,
+					lte: endDate,
+				},
+			};
+
+			// Add host filter if specified
+			if (hostId && hostId !== "all" && hostId !== "undefined") {
+				whereClause.host_id = hostId;
+			}
+
+			// Get all update history records in the date range
+			const trendsData = await prisma.update_history.findMany({
+				where: whereClause,
+				select: {
+					timestamp: true,
+					packages_count: true,
+					security_count: true,
+					total_packages: true,
+				},
+				orderBy: {
+					timestamp: "asc",
+				},
+			});
+
+			// Process data to show actual values (no averaging)
+			const processedData = trendsData
+				.filter((record) => record.total_packages !== null) // Only include records with valid data
+				.map((record) => {
+					const date = new Date(record.timestamp);
+					let timeKey;
+
+					if (daysInt <= 1) {
+						// For hourly view, use exact timestamp
+						timeKey = date.toISOString().substring(0, 16); // YYYY-MM-DDTHH:MM
+					} else {
+						// For daily view, group by day
+						timeKey = date.toISOString().split("T")[0]; // YYYY-MM-DD
+					}
+
+					return {
+						timeKey,
+						total_packages: record.total_packages,
+						packages_count: record.packages_count || 0,
+						security_count: record.security_count || 0,
+					};
+				})
+				.sort((a, b) => a.timeKey.localeCompare(b.timeKey)); // Sort by time
+
+			// Get hosts list for dropdown (always fetch for dropdown functionality)
+			const hostsList = await prisma.hosts.findMany({
+				select: {
+					id: true,
+					friendly_name: true,
+					hostname: true,
+				},
+				orderBy: {
+					friendly_name: "asc",
+				},
+			});
+
+			// Format data for chart
+			const chartData = {
+				labels: [],
+				datasets: [
+					{
+						label: "Total Packages",
+						data: [],
+						borderColor: "#3B82F6", // Blue
+						backgroundColor: "rgba(59, 130, 246, 0.1)",
+						tension: 0.4,
+						hidden: true, // Hidden by default
+					},
+					{
+						label: "Outdated Packages",
+						data: [],
+						borderColor: "#F59E0B", // Orange
+						backgroundColor: "rgba(245, 158, 11, 0.1)",
+						tension: 0.4,
+					},
+					{
+						label: "Security Packages",
+						data: [],
+						borderColor: "#EF4444", // Red
+						backgroundColor: "rgba(239, 68, 68, 0.1)",
+						tension: 0.4,
+					},
+				],
+			};
+
+			// Process aggregated data
+			processedData.forEach((item) => {
+				chartData.labels.push(item.timeKey);
+				chartData.datasets[0].data.push(item.total_packages);
+				chartData.datasets[1].data.push(item.packages_count);
+				chartData.datasets[2].data.push(item.security_count);
+			});
+
+			res.json({
+				chartData,
+				hosts: hostsList,
+				period: daysInt,
+				hostId: hostId || "all",
+			});
+		} catch (error) {
+			console.error("Error fetching package trends:", error);
+			res.status(500).json({ error: "Failed to fetch package trends" });
+		}
+	},
+);
+
 module.exports = router;
