@@ -908,7 +908,7 @@ const Layout = ({ children }) => {
 									aria-label="Buy Me a Coffee"
 								>
 									<svg
-										className="h-5 w-5"
+										className="h-5 w-5 text-yellow-500"
 										viewBox="0 0 900 1300"
 										fill="currentColor"
 									>
