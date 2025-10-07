@@ -115,8 +115,20 @@ const Packages = () => {
 		refetch,
 		isFetching,
 	} = useQuery({
-		queryKey: ["packages"],
-		queryFn: () => packagesAPI.getAll({ limit: 1000 }).then((res) => res.data),
+		queryKey: ["packages", hostFilter, updateStatusFilter],
+		queryFn: () => {
+			const params = { limit: 10000 }; // High limit to effectively get all packages
+			if (hostFilter && hostFilter !== "all") {
+				params.host = hostFilter;
+			}
+			// Pass update status filter to backend to pre-filter packages
+			if (updateStatusFilter === "needs-updates") {
+				params.needsUpdate = "true";
+			} else if (updateStatusFilter === "security-updates") {
+				params.isSecurityUpdate = "true";
+			}
+			return packagesAPI.getAll(params).then((res) => res.data);
+		},
 		staleTime: 5 * 60 * 1000, // Data stays fresh for 5 minutes
 		refetchOnWindowFocus: false, // Don't refetch when window regains focus
 	});
@@ -160,15 +172,13 @@ const Packages = () => {
 
 			const matchesUpdateStatus =
 				updateStatusFilter === "all-packages" ||
-				updateStatusFilter === "needs-updates" ||
-				(updateStatusFilter === "security-updates" && pkg.isSecurityUpdate) ||
-				(updateStatusFilter === "regular-updates" && !pkg.isSecurityUpdate);
-
-			// For "all-packages", we don't filter by update status
-			// For other filters, we only show packages that need updates
-			const matchesUpdateNeeded =
-				updateStatusFilter === "all-packages" ||
-				(pkg.stats?.updatesNeeded || 0) > 0;
+				(updateStatusFilter === "needs-updates" &&
+					(pkg.stats?.updatesNeeded || 0) > 0) ||
+				(updateStatusFilter === "security-updates" &&
+					(pkg.stats?.securityUpdates || 0) > 0) ||
+				(updateStatusFilter === "regular-updates" &&
+					(pkg.stats?.updatesNeeded || 0) > 0 &&
+					(pkg.stats?.securityUpdates || 0) === 0);
 
 			const packageHosts = pkg.packageHosts || [];
 			const matchesHost =
@@ -176,11 +186,7 @@ const Packages = () => {
 				packageHosts.some((host) => host.hostId === hostFilter);
 
 			return (
-				matchesSearch &&
-				matchesCategory &&
-				matchesUpdateStatus &&
-				matchesUpdateNeeded &&
-				matchesHost
+				matchesSearch && matchesCategory && matchesUpdateStatus && matchesHost
 			);
 		});
 
@@ -435,8 +441,16 @@ const Packages = () => {
 	});
 	const uniquePackageHostsCount = uniquePackageHosts.size;
 
-	// Calculate total packages available
-	const totalPackagesCount = packages?.length || 0;
+	// Calculate total packages installed
+	// When filtering by host, count each package once (since it can only be installed once per host)
+	// When not filtering, sum up all installations across all hosts
+	const totalPackagesCount =
+		hostFilter && hostFilter !== "all"
+			? packages?.length || 0
+			: packages?.reduce(
+					(sum, pkg) => sum + (pkg.stats?.totalInstalls || 0),
+					0,
+				) || 0;
 
 	// Calculate outdated packages
 	const outdatedPackagesCount =
@@ -517,7 +531,7 @@ const Packages = () => {
 						<Package className="h-5 w-5 text-primary-600 mr-2" />
 						<div>
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Total Packages
+								Total Installed
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{totalPackagesCount}

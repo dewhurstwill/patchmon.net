@@ -1012,13 +1012,15 @@ const HostDetail = () => {
 										{host.stats.total_packages}
 									</p>
 									<p className="text-sm text-secondary-500 dark:text-secondary-300">
-										Total Packages
+										Total Installed
 									</p>
 								</button>
 
 								<button
 									type="button"
-									onClick={() => navigate(`/packages?host=${hostId}`)}
+									onClick={() =>
+										navigate(`/packages?host=${hostId}&filter=outdated`)
+									}
 									className="text-center p-4 bg-warning-50 dark:bg-warning-900/20 rounded-lg hover:bg-warning-100 dark:hover:bg-warning-900/30 transition-colors group"
 									title="View outdated packages for this host"
 								>

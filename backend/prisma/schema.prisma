@@ -44,6 +44,14 @@ model host_packages {
   packages           packages @relation(fields: [package_id], references: [id], onDelete: Cascade)
 
   @@unique([host_id, package_id])
+  @@index([host_id])
+  @@index([package_id])
+  @@index([needs_update])
+  @@index([is_security_update])
+  @@index([host_id, needs_update])
+  @@index([host_id, needs_update, is_security_update])
+  @@index([package_id, needs_update])
+  @@index([last_checked])
 }
 
 model host_repositories {
@@ -108,6 +116,9 @@ model packages {
   created_at     DateTime        @default(now())
   updated_at     DateTime
   host_packages  host_packages[]
+
+  @@index([name])
+  @@index([category])
 }
 
 model repositories {

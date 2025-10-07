@@ -870,9 +870,11 @@ const Hosts = () => {
 				return (
 					<button
 						type="button"
-						onClick={() => navigate(`/packages?host=${host.id}`)}
+						onClick={() =>
+							navigate(`/packages?host=${host.id}&filter=outdated`)
+						}
 						className="text-sm text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300 font-medium hover:underline"
-						title="View packages for this host"
+						title="View outdated packages for this host"
 					>
 						{host.updatesCount || 0}
 					</button>

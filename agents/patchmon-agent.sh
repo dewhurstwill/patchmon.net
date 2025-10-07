@@ -605,8 +605,24 @@ get_apt_packages() {
     local -n packages_ref=$1
     local -n first_ref=$2
     
-    # Update package lists (use apt-get for older distros; quieter output)
-    apt-get update -qq
+    # Update package lists with retry logic for lock conflicts
+    local retry_count=0
+    local max_retries=3
+    local retry_delay=5
+    
+    while [[ $retry_count -lt $max_retries ]]; do
+        if apt-get update -qq 2>/dev/null; then
+            break
+        else
+            retry_count=$((retry_count + 1))
+            if [[ $retry_count -lt $max_retries ]]; then
+                warning "APT lock detected, retrying in ${retry_delay} seconds... (attempt $retry_count/$max_retries)"
+                sleep $retry_delay
+            else
+                warning "APT lock persists after $max_retries attempts, continuing without update..."
+            fi
+        fi
+    done
     
     # Determine upgradable packages using apt-get simulation (compatible with Ubuntu 18.04)
     # Example line format:
@@ -626,6 +642,11 @@ get_apt_packages() {
                 is_security_update=true
             fi
             
+            # Escape JSON special characters in package data
+            package_name=$(echo "$package_name" | sed 's/"/\\"/g' | sed 's/\\/\\\\/g')
+            current_version=$(echo "$current_version" | sed 's/"/\\"/g' | sed 's/\\/\\\\/g')
+            available_version=$(echo "$available_version" | sed 's/"/\\"/g' | sed 's/\\/\\\\/g')
+            
             if [[ "$first_ref" == true ]]; then
                 first_ref=false
             else
@@ -642,7 +663,11 @@ get_apt_packages() {
     while IFS=' ' read -r package_name version; do
         if [[ -n "$package_name" && -n "$version" ]]; then
             # Check if this package is not in the upgrade list
-            if ! echo "$upgradable" | grep -q "^$package_name/"; then
+            if ! echo "$upgradable_sim" | grep -q "^Inst $package_name "; then
+                # Escape JSON special characters in package data
+                package_name=$(echo "$package_name" | sed 's/"/\\"/g' | sed 's/\\/\\\\/g')
+                version=$(echo "$version" | sed 's/"/\\"/g' | sed 's/\\/\\\\/g')
+                
                 if [[ "$first_ref" == true ]]; then
                     first_ref=false
                 else
@@ -883,6 +908,15 @@ send_update() {
     local network_json=$(get_network_info)
     local system_json=$(get_system_info)
     
+    # Validate JSON before sending
+    if ! echo "$packages_json" | jq empty 2>/dev/null; then
+        error "Invalid packages JSON generated: $packages_json"
+    fi
+    
+    if ! echo "$repositories_json" | jq empty 2>/dev/null; then
+        error "Invalid repositories JSON generated: $repositories_json"
+    fi
+    
     info "Sending update to PatchMon server..."
     
     # Merge all JSON objects into one
@@ -909,15 +943,27 @@ EOF
     # Merge the base payload with the system information
     local payload=$(echo "$base_payload $merged_json" | jq -s '.[0] * .[1]')
     
+    # Write payload to temporary file to avoid "Argument list too long" error
+    local temp_payload_file=$(mktemp)
+    echo "$payload" > "$temp_payload_file"
+    
+    # Debug: Show payload size
+    local payload_size=$(wc -c < "$temp_payload_file")
+    echo -e "${BLUE}ℹ️  📊 Payload size: $payload_size bytes${NC}"
     
     local response=$(curl $CURL_FLAGS -X POST \
         -H "Content-Type: application/json" \
         -H "X-API-ID: $API_ID" \
         -H "X-API-KEY: $API_KEY" \
-        -d "$payload" \
-        "$PATCHMON_SERVER/api/$API_VERSION/hosts/update")
+        -d @"$temp_payload_file" \
+        "$PATCHMON_SERVER/api/$API_VERSION/hosts/update" 2>&1)
     
-    if [[ $? -eq 0 ]]; then
+    local curl_exit_code=$?
+    
+    # Clean up temporary file
+    rm -f "$temp_payload_file"
+    
+    if [[ $curl_exit_code -eq 0 ]]; then
         if echo "$response" | grep -q "success"; then
             local packages_count=$(echo "$response" | grep -o '"packagesProcessed":[0-9]*' | cut -d':' -f2)
             success "Update sent successfully (${packages_count} packages processed)"
@@ -953,7 +999,7 @@ EOF
             error "Update failed: $response"
         fi
     else
-        error "Failed to send update"
+        error "Failed to send update (curl exit code: $curl_exit_code): $response"
     fi
 }
 

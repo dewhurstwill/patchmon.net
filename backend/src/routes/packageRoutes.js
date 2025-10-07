@@ -14,6 +14,7 @@ router.get("/", async (req, res) => {
 			category = "",
 			needsUpdate = "",
 			isSecurityUpdate = "",
+			host = "",
 		} = req.query;
 
 		const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
@@ -33,8 +34,27 @@ router.get("/", async (req, res) => {
 					: {},
 				// Category filter
 				category ? { category: { equals: category } } : {},
-				// Update status filters
-				needsUpdate
+				// Host filter - only return packages installed on the specified host
+				// Combined with update status filters if both are present
+				host
+					? {
+							host_packages: {
+								some: {
+									host_id: host,
+									// If needsUpdate or isSecurityUpdate filters are present, apply them here
+									...(needsUpdate
+										? { needs_update: needsUpdate === "true" }
+										: {}),
+									...(isSecurityUpdate
+										? { is_security_update: isSecurityUpdate === "true" }
+										: {}),
+								},
+							},
+						}
+					: {},
+				// Update status filters (only applied if no host filter)
+				// If host filter is present, these are already applied above
+				!host && needsUpdate
 					? {
 							host_packages: {
 								some: {
@@ -43,7 +63,7 @@ router.get("/", async (req, res) => {
 							},
 						}
 					: {},
-				isSecurityUpdate
+				!host && isSecurityUpdate
 					? {
 							host_packages: {
 								some: {
@@ -84,24 +104,32 @@ router.get("/", async (req, res) => {
 		// Get additional stats for each package
 		const packagesWithStats = await Promise.all(
 			packages.map(async (pkg) => {
+				// Build base where clause for this package
+				const baseWhere = { package_id: pkg.id };
+
+				// If host filter is specified, add host filter to all queries
+				const hostWhere = host ? { ...baseWhere, host_id: host } : baseWhere;
+
 				const [updatesCount, securityCount, packageHosts] = await Promise.all([
 					prisma.host_packages.count({
 						where: {
-							package_id: pkg.id,
+							...hostWhere,
 							needs_update: true,
 						},
 					}),
 					prisma.host_packages.count({
 						where: {
-							package_id: pkg.id,
+							...hostWhere,
 							needs_update: true,
 							is_security_update: true,
 						},
 					}),
 					prisma.host_packages.findMany({
 						where: {
-							package_id: pkg.id,
-							needs_update: true,
+							...hostWhere,
+							// If host filter is specified, include all packages for that host
+							// Otherwise, only include packages that need updates
+							...(host ? {} : { needs_update: true }),
 						},
 						select: {
 							hosts: {
@@ -112,6 +140,10 @@ router.get("/", async (req, res) => {
 									os_type: true,
 								},
 							},
+							current_version: true,
+							available_version: true,
+							needs_update: true,
+							is_security_update: true,
 						},
 						take: 10, // Limit to first 10 for performance
 					}),
