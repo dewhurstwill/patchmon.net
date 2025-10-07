@@ -5,8 +5,6 @@ import {
 	ArrowLeft,
 	Calendar,
 	CheckCircle,
-	ChevronDown,
-	ChevronUp,
 	Clock,
 	Copy,
 	Cpu,

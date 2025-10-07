@@ -11,6 +11,7 @@ import {
 	Github,
 	Globe,
 	Home,
+	List,
 	LogOut,
 	Mail,
 	Menu,
@@ -23,6 +24,7 @@ import {
 	Star,
 	UserCircle,
 	X,
+	Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { FaYoutube } from "react-icons/fa";
@@ -134,6 +136,22 @@ const Layout = ({ children }) => {
 				);
 			}
 
+			// Add Pro-Action and Queue items (available to all users with inventory access)
+			inventoryItems.push(
+				{
+					name: "Pro-Action",
+					href: "/pro-action",
+					icon: Zap,
+					comingSoon: true,
+				},
+				{
+					name: "Queue",
+					href: "/queue",
+					icon: List,
+					comingSoon: true,
+				},
+			);
+
 			if (inventoryItems.length > 0) {
 				nav.push({
 					section: "Inventory",
@@ -191,6 +209,8 @@ const Layout = ({ children }) => {
 			return "Repositories";
 		if (path === "/services") return "Services";
 		if (path === "/docker") return "Docker";
+		if (path === "/pro-action") return "Pro-Action";
+		if (path === "/queue") return "Queue";
 		if (path === "/users") return "Users";
 		if (path === "/permissions") return "Permissions";
 		if (path === "/settings") return "Settings";
