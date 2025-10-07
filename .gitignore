@@ -154,4 +154,4 @@ setup-installer-site.sh
 install-server.*
 notify-clients-upgrade.sh
 debug-agent.sh
-docker/compose_dev_data
+docker/compose_dev_*
