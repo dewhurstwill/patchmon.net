@@ -347,32 +347,41 @@ router.get(
 		try {
 			const { hostId } = req.params;
 
-			const host = await prisma.hosts.findUnique({
-				where: { id: hostId },
-				include: {
-					host_groups: {
-						select: {
-							id: true,
-							name: true,
-							color: true,
+			const limit = parseInt(req.query.limit) || 10;
+			const offset = parseInt(req.query.offset) || 0;
+
+			const [host, totalHistoryCount] = await Promise.all([
+				prisma.hosts.findUnique({
+					where: { id: hostId },
+					include: {
+						host_groups: {
+							select: {
+								id: true,
+								name: true,
+								color: true,
+							},
+						},
+						host_packages: {
+							include: {
+								packages: true,
+							},
+							orderBy: {
+								needs_update: "desc",
+							},
+						},
+						update_history: {
+							orderBy: {
+								timestamp: "desc",
+							},
+							take: limit,
+							skip: offset,
 						},
 					},
-					host_packages: {
-						include: {
-							packages: true,
-						},
-						orderBy: {
-							needs_update: "desc",
-						},
-					},
-					update_history: {
-						orderBy: {
-							timestamp: "desc",
-						},
-						take: 10,
-					},
-				},
-			});
+				}),
+				prisma.update_history.count({
+					where: { host_id: hostId },
+				}),
+			]);
 
 			if (!host) {
 				return res.status(404).json({ error: "Host not found" });
@@ -387,6 +396,12 @@ router.get(
 					security_updates: host.host_packages.filter(
 						(hp) => hp.needs_update && hp.is_security_update,
 					).length,
+				},
+				pagination: {
+					total: totalHistoryCount,
+					limit,
+					offset,
+					hasMore: offset + limit < totalHistoryCount,
 				},
 			};
 

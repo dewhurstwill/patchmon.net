@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# PatchMon Agent Script v1.2.7
+# PatchMon Agent Script v1.2.8
 # This script sends package update information to the PatchMon server using API credentials
 
 # Configuration
 PATCHMON_SERVER="${PATCHMON_SERVER:-http://localhost:3001}"
 API_VERSION="v1"
-AGENT_VERSION="1.2.7"
+AGENT_VERSION="1.2.8"
 CONFIG_FILE="/etc/patchmon/agent.conf"
 CREDENTIALS_FILE="/etc/patchmon/credentials"
 LOG_FILE="/var/log/patchmon-agent.log"
@@ -896,6 +896,9 @@ get_system_info() {
 send_update() {
     load_credentials
     
+    # Track execution start time
+    local start_time=$(date +%s.%N)
+    
     # Verify datetime before proceeding
     if ! verify_datetime; then
         warning "Datetime verification failed, but continuing with update..."
@@ -924,6 +927,10 @@ send_update() {
     # Get machine ID
     local machine_id=$(get_machine_id)
     
+    # Calculate execution time (in seconds with decimals)
+    local end_time=$(date +%s.%N)
+    local execution_time=$(echo "$end_time - $start_time" | bc)
+    
     # Create the base payload and merge with system info
     local base_payload=$(cat <<EOF
 {
@@ -935,7 +942,8 @@ send_update() {
     "ip": "$IP_ADDRESS",
     "architecture": "$ARCHITECTURE",
     "agentVersion": "$AGENT_VERSION",
-    "machineId": "$machine_id"
+    "machineId": "$machine_id",
+    "executionTime": $execution_time
 }
 EOF
 )

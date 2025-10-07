@@ -325,8 +325,12 @@ router.post(
 				return res.status(400).json({ errors: errors.array() });
 			}
 
-			const { packages, repositories } = req.body;
+			const { packages, repositories, executionTime } = req.body;
 			const host = req.hostRecord;
+
+			// Calculate payload size in KB
+			const payloadSizeBytes = JSON.stringify(req.body).length;
+			const payloadSizeKb = payloadSizeBytes / 1024;
 
 			// Update host last update timestamp and system info if provided
 			const updateData = {
@@ -383,6 +387,7 @@ router.post(
 				(pkg) => pkg.isSecurityUpdate,
 			).length;
 			const updatesCount = packages.filter((pkg) => pkg.needsUpdate).length;
+			const totalPackages = packages.length;
 
 			// Process everything in a single transaction to avoid race conditions
 			await prisma.$transaction(async (tx) => {
@@ -525,6 +530,9 @@ router.post(
 						host_id: host.id,
 						packages_count: updatesCount,
 						security_count: securityCount,
+						total_packages: totalPackages,
+						payload_size_kb: payloadSizeKb,
+						execution_time: executionTime ? parseFloat(executionTime) : null,
 						status: "success",
 					},
 				});

@@ -181,14 +181,17 @@ model settings {
 }
 
 model update_history {
-  id             String   @id
-  host_id        String
-  packages_count Int
-  security_count Int
-  timestamp      DateTime @default(now())
-  status         String   @default("success")
-  error_message  String?
-  hosts          hosts    @relation(fields: [host_id], references: [id], onDelete: Cascade)
+  id              String   @id
+  host_id         String
+  packages_count  Int
+  security_count  Int
+  total_packages  Int?
+  payload_size_kb Float?
+  execution_time  Float?
+  timestamp       DateTime @default(now())
+  status          String   @default("success")
+  error_message   String?
+  hosts           hosts    @relation(fields: [host_id], references: [id], onDelete: Cascade)
 }
 
 model users {

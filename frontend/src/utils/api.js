@@ -51,7 +51,11 @@ export const dashboardAPI = {
 	getStats: () => api.get("/dashboard/stats"),
 	getHosts: () => api.get("/dashboard/hosts"),
 	getPackages: () => api.get("/dashboard/packages"),
-	getHostDetail: (hostId) => api.get(`/dashboard/hosts/${hostId}`),
+	getHostDetail: (hostId, params = {}) => {
+		const queryString = new URLSearchParams(params).toString();
+		const url = `/dashboard/hosts/${hostId}${queryString ? `?${queryString}` : ""}`;
+		return api.get(url);
+	},
 	getRecentUsers: () => api.get("/dashboard/recent-users"),
 	getRecentCollection: () => api.get("/dashboard/recent-collection"),
 };
