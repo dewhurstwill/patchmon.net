@@ -657,6 +657,18 @@ const Hosts = () => {
 		hideStale,
 	]);
 
+	// Get unique OS types from hosts for dynamic dropdown
+	const uniqueOsTypes = useMemo(() => {
+		if (!hosts) return [];
+		const osTypes = new Set();
+		hosts.forEach((host) => {
+			if (host.os_type) {
+				osTypes.add(host.os_type);
+			}
+		});
+		return Array.from(osTypes).sort();
+	}, [hosts]);
+
 	// Group hosts by selected field
 	const groupedHosts = useMemo(() => {
 		if (groupBy === "none") {
@@ -1268,9 +1280,11 @@ const Hosts = () => {
 											className="w-full border border-secondary-300 dark:border-secondary-600 rounded-lg px-3 py-2 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 bg-white dark:bg-secondary-800 text-secondary-900 dark:text-white"
 										>
 											<option value="all">All OS</option>
-											<option value="linux">Linux</option>
-											<option value="windows">Windows</option>
-											<option value="macos">macOS</option>
+											{uniqueOsTypes.map((osType) => (
+												<option key={osType} value={osType.toLowerCase()}>
+													{osType}
+												</option>
+											))}
 										</select>
 									</div>
 									<div className="flex items-end">

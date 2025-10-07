@@ -651,17 +651,7 @@ const Dashboard = () => {
 
 			case "osDistribution":
 				return (
-					<button
-						type="button"
-						className="card p-6 cursor-pointer hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow duration-200 w-full text-left"
-						onClick={handleOSDistributionClick}
-						onKeyDown={(e) => {
-							if (e.key === "Enter" || e.key === " ") {
-								e.preventDefault();
-								handleOSDistributionClick();
-							}
-						}}
-					>
+					<div className="card p-6 w-full">
 						<h3 className="text-lg font-medium text-secondary-900 dark:text-white mb-4">
 							OS Distribution
 						</h3>
@@ -670,22 +660,12 @@ const Dashboard = () => {
 								<Pie data={osChartData} options={chartOptions} />
 							</div>
 						</div>
-					</button>
+					</div>
 				);
 
 			case "osDistributionDoughnut":
 				return (
-					<button
-						type="button"
-						className="card p-6 cursor-pointer hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow duration-200 w-full text-left"
-						onClick={handleOSDistributionClick}
-						onKeyDown={(e) => {
-							if (e.key === "Enter" || e.key === " ") {
-								e.preventDefault();
-								handleOSDistributionClick();
-							}
-						}}
-					>
+					<div className="card p-6 w-full">
 						<h3 className="text-lg font-medium text-secondary-900 dark:text-white mb-4">
 							OS Distribution
 						</h3>
@@ -694,29 +674,19 @@ const Dashboard = () => {
 								<Doughnut data={osChartData} options={doughnutChartOptions} />
 							</div>
 						</div>
-					</button>
+					</div>
 				);
 
 			case "osDistributionBar":
 				return (
-					<button
-						type="button"
-						className="card p-6 cursor-pointer hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow duration-200 w-full text-left"
-						onClick={handleOSDistributionClick}
-						onKeyDown={(e) => {
-							if (e.key === "Enter" || e.key === " ") {
-								e.preventDefault();
-								handleOSDistributionClick();
-							}
-						}}
-					>
+					<div className="card p-6 w-full">
 						<h3 className="text-lg font-medium text-secondary-900 dark:text-white mb-4">
 							OS Distribution
 						</h3>
 						<div className="h-64">
 							<Bar data={osBarChartData} options={barChartOptions} />
 						</div>
-					</button>
+					</div>
 				);
 
 			case "updateStatus":
@@ -1100,6 +1070,7 @@ const Dashboard = () => {
 				},
 			},
 		},
+		onClick: handleOSChartClick,
 	};
 
 	const osChartData = {
