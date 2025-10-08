@@ -231,13 +231,14 @@ detect_os() {
             "opensuse"|"opensuse-leap"|"opensuse-tumbleweed")
                 OS_TYPE="suse"
                 ;;
-            "rocky"|"almalinux")
+            "almalinux")
                 OS_TYPE="rhel"
                 ;;
             "ol")
                 # Keep Oracle Linux as 'ol' for proper frontend identification
                 OS_TYPE="ol"
                 ;;
+            # Rocky Linux keeps its own identity for proper frontend display
         esac
         
     elif [[ -f /etc/redhat-release ]]; then
@@ -265,7 +266,7 @@ get_repository_info() {
         "ubuntu"|"debian")
             get_apt_repositories repos_json first
             ;;
-        "centos"|"rhel"|"fedora"|"ol")
+        "centos"|"rhel"|"fedora"|"ol"|"rocky")
             get_yum_repositories repos_json first
             ;;
         *)
@@ -592,7 +593,7 @@ get_package_info() {
         "ubuntu"|"debian")
             get_apt_packages packages_json first
             ;;
-        "centos"|"rhel"|"fedora"|"ol")
+        "centos"|"rhel"|"fedora"|"ol"|"rocky")
             get_yum_packages packages_json first
             ;;
         *)
