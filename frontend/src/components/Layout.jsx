@@ -929,14 +929,19 @@ const Layout = ({ children }) => {
 					<div className="h-6 w-px bg-secondary-200 dark:bg-secondary-600 lg:hidden" />
 
 					<div className="flex flex-1 gap-x-4 self-stretch lg:gap-x-6">
-						<div className="relative flex items-center">
-							<h2 className="text-lg font-semibold text-secondary-900 dark:text-secondary-100 whitespace-nowrap">
-								{getPageTitle()}
-							</h2>
-						</div>
+						{/* Page title - hidden on dashboard to give more space to search */}
+						{location.pathname !== "/" && (
+							<div className="relative flex items-center">
+								<h2 className="text-lg font-semibold text-secondary-900 dark:text-secondary-100 whitespace-nowrap">
+									{getPageTitle()}
+								</h2>
+							</div>
+						)}
 
 						{/* Global Search Bar */}
-						<div className="flex items-center max-w-sm">
+						<div
+							className={`flex items-center ${location.pathname === "/" ? "flex-1 max-w-none" : "max-w-sm"}`}
+						>
 							<GlobalSearch />
 						</div>
 
