@@ -319,9 +319,8 @@ const UsersTab = () => {
 					user={editingUser}
 					isOpen={!!editingUser}
 					onClose={() => setEditingUser(null)}
-					onUserUpdated={() => {
-						queryClient.invalidateQueries(["users"]);
-					}}
+					onUpdateUser={updateUserMutation.mutate}
+					isLoading={updateUserMutation.isPending}
 					roles={roles}
 				/>
 			)}
@@ -591,7 +590,14 @@ const AddUserModal = ({ isOpen, onClose, onUserCreated, roles }) => {
 };
 
 // Edit User Modal Component
-const EditUserModal = ({ user, isOpen, onClose, onUserUpdated, roles }) => {
+const EditUserModal = ({
+	user,
+	isOpen,
+	onClose,
+	onUpdateUser,
+	isLoading,
+	roles,
+}) => {
 	const editUsernameId = useId();
 	const editEmailId = useId();
 	const editFirstNameId = useId();
@@ -607,7 +613,6 @@ const EditUserModal = ({ user, isOpen, onClose, onUserUpdated, roles }) => {
 		role: user?.role || "user",
 		is_active: user?.is_active ?? true,
 	});
-	const [isLoading, setIsLoading] = useState(false);
 	const [error, setError] = useState("");
 	const [success, setSuccess] = useState(false);
 
@@ -635,22 +640,18 @@ const EditUserModal = ({ user, isOpen, onClose, onUserUpdated, roles }) => {
 
 	const handleSubmit = async (e) => {
 		e.preventDefault();
-		setIsLoading(true);
 		setError("");
 		setSuccess(false);
 
 		try {
-			await adminUsersAPI.update(user.id, formData);
+			await onUpdateUser({ id: user.id, data: formData });
 			setSuccess(true);
-			onUserUpdated();
 			// Auto-close after 1.5 seconds
 			setTimeout(() => {
 				onClose();
 			}, 1500);
 		} catch (err) {
 			setError(err.response?.data?.error || "Failed to update user");
-		} finally {
-			setIsLoading(false);
 		}
 	};
 

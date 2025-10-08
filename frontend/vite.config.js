@@ -43,5 +43,25 @@ export default defineConfig({
 		outDir: "dist",
 		sourcemap: process.env.NODE_ENV !== "production",
 		target: "es2018",
+		rollupOptions: {
+			output: {
+				manualChunks: {
+					// React core
+					"react-vendor": ["react", "react-dom", "react-router-dom"],
+					// Large utility libraries
+					"utils-vendor": ["axios", "@tanstack/react-query", "date-fns"],
+					// Chart libraries
+					"chart-vendor": ["chart.js", "react-chartjs-2"],
+					// Icon libraries
+					"icons-vendor": ["lucide-react", "react-icons"],
+					// DnD libraries
+					"dnd-vendor": [
+						"@dnd-kit/core",
+						"@dnd-kit/sortable",
+						"@dnd-kit/utilities",
+					],
+				},
+			},
+		},
 	},
 });
