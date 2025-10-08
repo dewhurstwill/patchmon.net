@@ -29,12 +29,11 @@ export const getOSIcon = (osType) => {
 		os.includes("rhel") ||
 		os.includes("red hat") ||
 		os.includes("almalinux") ||
-		os.includes("rocky") ||
-		os === "ol" ||
-		os.includes("oraclelinux") ||
-		os.includes("oracle linux")
+		os.includes("rocky")
 	)
 		return SiCentos;
+	if (os === "ol" || os.includes("oraclelinux") || os.includes("oracle linux"))
+		return SiLinux; // Use generic Linux icon for Oracle Linux
 	if (os.includes("fedora")) return SiFedora;
 	if (os.includes("arch")) return SiArchlinux;
 	if (os.includes("alpine")) return SiAlpinelinux;

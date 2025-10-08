@@ -316,7 +316,7 @@ const Layout = ({ children }) => {
 					onClick={() => setSidebarOpen(false)}
 					aria-label="Close sidebar"
 				/>
-				<div className="relative flex w-full max-w-[280px] flex-col bg-white pb-4 pt-5 shadow-xl">
+				<div className="relative flex w-full max-w-[280px] flex-col bg-white dark:bg-secondary-800 pb-4 pt-5 shadow-xl">
 					<div className="absolute right-0 top-0 -mr-12 pt-2">
 						<button
 							type="button"
@@ -352,8 +352,8 @@ const Layout = ({ children }) => {
 										to={item.href}
 										className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
 											isActive(item.href)
-												? "bg-primary-100 text-primary-900"
-												: "text-secondary-600 hover:bg-secondary-50 hover:text-secondary-900"
+												? "bg-primary-100 dark:bg-primary-600 text-primary-900 dark:text-white"
+												: "text-secondary-600 dark:text-secondary-300 hover:bg-secondary-50 dark:hover:bg-secondary-700 hover:text-secondary-900 dark:hover:text-white"
 										}`}
 										onClick={() => setSidebarOpen(false)}
 									>
@@ -365,80 +365,82 @@ const Layout = ({ children }) => {
 								// Section with items
 								return (
 									<div key={item.section}>
-										<h3 className="text-xs font-semibold text-secondary-500 uppercase tracking-wider mb-2">
+										<h3 className="text-xs font-semibold text-secondary-500 dark:text-secondary-400 uppercase tracking-wider mb-2">
 											{item.section}
 										</h3>
 										<div className="space-y-1">
-											{item.items.map((subItem) => (
-												<div key={subItem.name}>
-													{subItem.name === "Hosts" && canManageHosts() ? (
-														// Special handling for Hosts item with integrated + button (mobile)
-														<Link
-															to={subItem.href}
-															className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
-																isActive(subItem.href)
-																	? "bg-primary-100 text-primary-900"
-																	: "text-secondary-600 hover:bg-secondary-50 hover:text-secondary-900"
-															}`}
-															onClick={() => setSidebarOpen(false)}
-														>
-															<subItem.icon className="mr-3 h-5 w-5" />
-															<span className="flex items-center gap-2 flex-1">
-																{subItem.name}
-																{subItem.name === "Hosts" &&
-																	stats?.cards?.totalHosts !== undefined && (
-																		<span className="ml-2 inline-flex items-center justify-center px-1.5 py-0.5 text-xs rounded bg-secondary-100 text-secondary-700">
-																			{stats.cards.totalHosts}
-																		</span>
-																	)}
-															</span>
-															<button
-																type="button"
-																onClick={(e) => {
-																	e.preventDefault();
-																	setSidebarOpen(false);
-																	handleAddHost();
-																}}
-																className="ml-auto flex items-center justify-center w-5 h-5 rounded-full border-2 border-current opacity-60 hover:opacity-100 transition-all duration-200 self-center"
-																title="Add Host"
+											{item.items
+												.filter((subItem) => !subItem.comingSoon)
+												.map((subItem) => (
+													<div key={subItem.name}>
+														{subItem.name === "Hosts" && canManageHosts() ? (
+															// Special handling for Hosts item with integrated + button (mobile)
+															<Link
+																to={subItem.href}
+																className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
+																	isActive(subItem.href)
+																		? "bg-primary-100 dark:bg-primary-600 text-primary-900 dark:text-white"
+																		: "text-secondary-600 dark:text-secondary-300 hover:bg-secondary-50 dark:hover:bg-secondary-700 hover:text-secondary-900 dark:hover:text-white"
+																}`}
+																onClick={() => setSidebarOpen(false)}
 															>
-																<Plus className="h-3 w-3" />
-															</button>
-														</Link>
-													) : (
-														// Standard navigation item (mobile)
-														<Link
-															to={subItem.href}
-															className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
-																isActive(subItem.href)
-																	? "bg-primary-100 text-primary-900"
-																	: "text-secondary-600 hover:bg-secondary-50 hover:text-secondary-900"
-															} ${subItem.comingSoon ? "opacity-50 cursor-not-allowed" : ""}`}
-															onClick={
-																subItem.comingSoon
-																	? (e) => e.preventDefault()
-																	: () => setSidebarOpen(false)
-															}
-														>
-															<subItem.icon className="mr-3 h-5 w-5" />
-															<span className="flex items-center gap-2">
-																{subItem.name}
-																{subItem.name === "Hosts" &&
-																	stats?.cards?.totalHosts !== undefined && (
-																		<span className="ml-2 inline-flex items-center justify-center px-1.5 py-0.5 text-xs rounded bg-secondary-100 text-secondary-700">
-																			{stats.cards.totalHosts}
+																<subItem.icon className="mr-3 h-5 w-5" />
+																<span className="flex items-center gap-2 flex-1">
+																	{subItem.name}
+																	{subItem.name === "Hosts" &&
+																		stats?.cards?.totalHosts !== undefined && (
+																			<span className="ml-2 inline-flex items-center justify-center px-1.5 py-0.5 text-xs rounded bg-secondary-100 dark:bg-secondary-600 text-secondary-700 dark:text-secondary-200">
+																				{stats.cards.totalHosts}
+																			</span>
+																		)}
+																</span>
+																<button
+																	type="button"
+																	onClick={(e) => {
+																		e.preventDefault();
+																		setSidebarOpen(false);
+																		handleAddHost();
+																	}}
+																	className="ml-auto flex items-center justify-center w-5 h-5 rounded-full border-2 border-current opacity-60 hover:opacity-100 transition-all duration-200 self-center"
+																	title="Add Host"
+																>
+																	<Plus className="h-3 w-3" />
+																</button>
+															</Link>
+														) : (
+															// Standard navigation item (mobile)
+															<Link
+																to={subItem.href}
+																className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
+																	isActive(subItem.href)
+																		? "bg-primary-100 dark:bg-primary-600 text-primary-900 dark:text-white"
+																		: "text-secondary-600 dark:text-secondary-300 hover:bg-secondary-50 dark:hover:bg-secondary-700 hover:text-secondary-900 dark:hover:text-white"
+																} ${subItem.comingSoon ? "opacity-50 cursor-not-allowed" : ""}`}
+																onClick={
+																	subItem.comingSoon
+																		? (e) => e.preventDefault()
+																		: () => setSidebarOpen(false)
+																}
+															>
+																<subItem.icon className="mr-3 h-5 w-5" />
+																<span className="flex items-center gap-2">
+																	{subItem.name}
+																	{subItem.name === "Hosts" &&
+																		stats?.cards?.totalHosts !== undefined && (
+																			<span className="ml-2 inline-flex items-center justify-center px-1.5 py-0.5 text-xs rounded bg-secondary-100 dark:bg-secondary-600 text-secondary-700 dark:text-secondary-200">
+																				{stats.cards.totalHosts}
+																			</span>
+																		)}
+																	{subItem.comingSoon && (
+																		<span className="text-xs bg-secondary-100 dark:bg-secondary-600 text-secondary-600 dark:text-secondary-200 px-1.5 py-0.5 rounded">
+																			Soon
 																		</span>
 																	)}
-																{subItem.comingSoon && (
-																	<span className="text-xs bg-secondary-100 text-secondary-600 px-1.5 py-0.5 rounded">
-																		Soon
-																	</span>
-																)}
-															</span>
-														</Link>
-													)}
-												</div>
-											))}
+																</span>
+															</Link>
+														)}
+													</div>
+												))}
 										</div>
 									</div>
 								);
@@ -453,32 +455,70 @@ const Layout = ({ children }) => {
 								return (
 									<div key={item.section}>
 										<div className="space-y-1">
-											{item.items.map((subItem) => (
-												<Link
-													key={subItem.name}
-													to={subItem.href}
-													className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
-														isActive(subItem.href)
-															? "bg-primary-100 text-primary-900"
-															: "text-secondary-600 hover:bg-secondary-50 hover:text-secondary-900"
-													}`}
-													onClick={() => setSidebarOpen(false)}
-												>
-													<subItem.icon className="mr-3 h-5 w-5" />
-													<span className="flex items-center gap-2">
-														{subItem.name}
-														{subItem.showUpgradeIcon && (
-															<UpgradeNotificationIcon className="h-3 w-3" />
-														)}
-													</span>
-												</Link>
-											))}
+											{item.items
+												.filter((subItem) => !subItem.comingSoon)
+												.map((subItem) => (
+													<Link
+														key={subItem.name}
+														to={subItem.href}
+														className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
+															isActive(subItem.href)
+																? "bg-primary-100 dark:bg-primary-600 text-primary-900 dark:text-white"
+																: "text-secondary-600 dark:text-secondary-300 hover:bg-secondary-50 dark:hover:bg-secondary-700 hover:text-secondary-900 dark:hover:text-white"
+														}`}
+														onClick={() => setSidebarOpen(false)}
+													>
+														<subItem.icon className="mr-3 h-5 w-5" />
+														<span className="flex items-center gap-2">
+															{subItem.name}
+															{subItem.showUpgradeIcon && (
+																<UpgradeNotificationIcon className="h-3 w-3" />
+															)}
+														</span>
+													</Link>
+												))}
 										</div>
 									</div>
 								);
 							}
 							return null;
 						})}
+
+						{/* Mobile Logout Section */}
+						<div className="mt-8 pt-4 border-t border-secondary-200 dark:border-secondary-700">
+							<div className="px-2 space-y-1">
+								<Link
+									to="/settings/profile"
+									className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
+										isActive("/settings/profile")
+											? "bg-primary-100 dark:bg-primary-600 text-primary-900 dark:text-white"
+											: "text-secondary-600 dark:text-secondary-300 hover:bg-secondary-50 dark:hover:bg-secondary-700 hover:text-secondary-900 dark:hover:text-white"
+									}`}
+									onClick={() => setSidebarOpen(false)}
+								>
+									<UserCircle className="mr-3 h-5 w-5" />
+									<span className="flex items-center gap-2">
+										{user?.first_name || user?.username}
+										{user?.role === "admin" && (
+											<span className="text-xs bg-secondary-100 dark:bg-secondary-600 text-secondary-600 dark:text-secondary-200 px-1.5 py-0.5 rounded">
+												Admin
+											</span>
+										)}
+									</span>
+								</Link>
+								<button
+									type="button"
+									onClick={() => {
+										handleLogout();
+										setSidebarOpen(false);
+									}}
+									className="w-full group flex items-center px-2 py-2 text-sm font-medium rounded-md text-secondary-600 dark:text-secondary-300 hover:bg-secondary-50 dark:hover:bg-secondary-700 hover:text-secondary-900 dark:hover:text-white"
+								>
+									<LogOut className="mr-3 h-5 w-5" />
+									Sign out
+								</button>
+							</div>
+						</div>
 					</nav>
 				</div>
 			</div>
@@ -879,24 +919,29 @@ const Layout = ({ children }) => {
 				<div className="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-x-4 border-b border-secondary-200 dark:border-secondary-600 bg-white dark:bg-secondary-800 px-4 shadow-sm sm:gap-x-6 sm:px-6 lg:px-8">
 					<button
 						type="button"
-						className="-m-2.5 p-2.5 text-secondary-700 lg:hidden"
+						className="-m-2.5 p-2.5 text-secondary-700 dark:text-white lg:hidden"
 						onClick={() => setSidebarOpen(true)}
 					>
 						<Menu className="h-6 w-6" />
 					</button>
 
 					{/* Separator */}
-					<div className="h-6 w-px bg-secondary-200 lg:hidden" />
+					<div className="h-6 w-px bg-secondary-200 dark:bg-secondary-600 lg:hidden" />
 
 					<div className="flex flex-1 gap-x-4 self-stretch lg:gap-x-6">
-						<div className="relative flex items-center">
-							<h2 className="text-lg font-semibold text-secondary-900 dark:text-secondary-100 whitespace-nowrap">
-								{getPageTitle()}
-							</h2>
-						</div>
+						{/* Page title - hidden on dashboard to give more space to search */}
+						{location.pathname !== "/" && (
+							<div className="relative flex items-center">
+								<h2 className="text-lg font-semibold text-secondary-900 dark:text-secondary-100 whitespace-nowrap">
+									{getPageTitle()}
+								</h2>
+							</div>
+						)}
 
 						{/* Global Search Bar */}
-						<div className="flex items-center max-w-sm">
+						<div
+							className={`flex items-center ${location.pathname === "/" ? "flex-1 max-w-none" : "max-w-sm"}`}
+						>
 							<GlobalSearch />
 						</div>
 

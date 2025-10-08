@@ -1150,23 +1150,46 @@ const Dashboard = () => {
 				callbacks: {
 					title: (context) => {
 						const label = context[0].label;
+
+						// Handle empty or invalid labels
+						if (!label || typeof label !== "string") {
+							return "Unknown Date";
+						}
+
 						// Format hourly labels (e.g., "2025-10-07T14" -> "Oct 7, 2:00 PM")
 						if (label.includes("T")) {
-							const date = new Date(`${label}:00:00`);
+							try {
+								const date = new Date(`${label}:00:00`);
+								// Check if date is valid
+								if (isNaN(date.getTime())) {
+									return label; // Return original label if date is invalid
+								}
+								return date.toLocaleDateString("en-US", {
+									month: "short",
+									day: "numeric",
+									hour: "numeric",
+									minute: "2-digit",
+									hour12: true,
+								});
+							} catch (error) {
+								return label; // Return original label if parsing fails
+							}
+						}
+
+						// Format daily labels (e.g., "2025-10-07" -> "Oct 7")
+						try {
+							const date = new Date(label);
+							// Check if date is valid
+							if (isNaN(date.getTime())) {
+								return label; // Return original label if date is invalid
+							}
 							return date.toLocaleDateString("en-US", {
 								month: "short",
 								day: "numeric",
-								hour: "numeric",
-								minute: "2-digit",
-								hour12: true,
 							});
+						} catch (error) {
+							return label; // Return original label if parsing fails
 						}
-						// Format daily labels (e.g., "2025-10-07" -> "Oct 7")
-						const date = new Date(label);
-						return date.toLocaleDateString("en-US", {
-							month: "short",
-							day: "numeric",
-						});
 					},
 				},
 			},
@@ -1186,24 +1209,49 @@ const Dashboard = () => {
 					},
 					callback: function (value, _index, _ticks) {
 						const label = this.getLabelForValue(value);
+
+						// Handle empty or invalid labels
+						if (!label || typeof label !== "string") {
+							return "Unknown";
+						}
+
 						// Format hourly labels (e.g., "2025-10-07T14" -> "2 PM")
 						if (label.includes("T")) {
-							const hour = label.split("T")[1];
-							const hourNum = parseInt(hour, 10);
-							return hourNum === 0
-								? "12 AM"
-								: hourNum < 12
-									? `${hourNum} AM`
-									: hourNum === 12
-										? "12 PM"
-										: `${hourNum - 12} PM`;
+							try {
+								const hour = label.split("T")[1];
+								const hourNum = parseInt(hour, 10);
+
+								// Validate hour number
+								if (isNaN(hourNum) || hourNum < 0 || hourNum > 23) {
+									return hour; // Return original hour if invalid
+								}
+
+								return hourNum === 0
+									? "12 AM"
+									: hourNum < 12
+										? `${hourNum} AM`
+										: hourNum === 12
+											? "12 PM"
+											: `${hourNum - 12} PM`;
+							} catch (error) {
+								return label; // Return original label if parsing fails
+							}
 						}
+
 						// Format daily labels (e.g., "2025-10-07" -> "Oct 7")
-						const date = new Date(label);
-						return date.toLocaleDateString("en-US", {
-							month: "short",
-							day: "numeric",
-						});
+						try {
+							const date = new Date(label);
+							// Check if date is valid
+							if (isNaN(date.getTime())) {
+								return label; // Return original label if date is invalid
+							}
+							return date.toLocaleDateString("en-US", {
+								month: "short",
+								day: "numeric",
+							});
+						} catch (error) {
+							return label; // Return original label if parsing fails
+						}
 					},
 				},
 				grid: {
