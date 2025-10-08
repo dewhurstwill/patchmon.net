@@ -1589,28 +1589,31 @@ const BulkAssignModal = ({
 
 	return (
 		<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-			<div className="bg-white rounded-lg p-6 w-full max-w-md">
+			<div className="bg-white dark:bg-secondary-800 rounded-lg p-6 w-full max-w-md">
 				<div className="flex justify-between items-center mb-4">
-					<h3 className="text-lg font-semibold text-secondary-900">
+					<h3 className="text-lg font-semibold text-secondary-900 dark:text-white">
 						Assign to Host Group
 					</h3>
 					<button
 						type="button"
 						onClick={onClose}
-						className="text-secondary-400 hover:text-secondary-600"
+						className="text-secondary-400 hover:text-secondary-600 dark:text-secondary-300 dark:hover:text-secondary-100"
 					>
 						<X className="h-5 w-5" />
 					</button>
 				</div>
 
 				<div className="mb-4">
-					<p className="text-sm text-secondary-600 mb-2">
+					<p className="text-sm text-secondary-600 dark:text-secondary-400 mb-2">
 						Assigning {selectedHosts.length} host
 						{selectedHosts.length !== 1 ? "s" : ""}:
 					</p>
-					<div className="max-h-32 overflow-y-auto bg-secondary-50 rounded-md p-3">
+					<div className="max-h-32 overflow-y-auto bg-secondary-50 dark:bg-secondary-700 rounded-md p-3">
 						{selectedHostNames.map((friendlyName) => (
-							<div key={friendlyName} className="text-sm text-secondary-700">
+							<div
+								key={friendlyName}
+								className="text-sm text-secondary-700 dark:text-secondary-300"
+							>
 								• {friendlyName}
 							</div>
 						))}
@@ -1621,7 +1624,7 @@ const BulkAssignModal = ({
 					<div>
 						<label
 							htmlFor={bulkHostGroupId}
-							className="block text-sm font-medium text-secondary-700 mb-1"
+							className="block text-sm font-medium text-secondary-700 dark:text-secondary-300 mb-1"
 						>
 							Host Group
 						</label>
@@ -1629,7 +1632,7 @@ const BulkAssignModal = ({
 							id={bulkHostGroupId}
 							value={selectedGroupId}
 							onChange={(e) => setSelectedGroupId(e.target.value)}
-							className="w-full px-3 py-2 border border-secondary-300 rounded-md focus:outline-none focus:ring-2 focus:ring-primary-500"
+							className="w-full px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
 						>
 							<option value="">No group (ungrouped)</option>
 							{hostGroups?.map((group) => (
@@ -1638,7 +1641,7 @@ const BulkAssignModal = ({
 								</option>
 							))}
 						</select>
-						<p className="mt-1 text-sm text-secondary-500">
+						<p className="mt-1 text-sm text-secondary-500 dark:text-secondary-400">
 							Select a group to assign these hosts to, or leave ungrouped.
 						</p>
 					</div>
