@@ -919,14 +919,14 @@ const Layout = ({ children }) => {
 				<div className="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-x-4 border-b border-secondary-200 dark:border-secondary-600 bg-white dark:bg-secondary-800 px-4 shadow-sm sm:gap-x-6 sm:px-6 lg:px-8">
 					<button
 						type="button"
-						className="-m-2.5 p-2.5 text-secondary-700 lg:hidden"
+						className="-m-2.5 p-2.5 text-secondary-700 dark:text-white lg:hidden"
 						onClick={() => setSidebarOpen(true)}
 					>
 						<Menu className="h-6 w-6" />
 					</button>
 
 					{/* Separator */}
-					<div className="h-6 w-px bg-secondary-200 lg:hidden" />
+					<div className="h-6 w-px bg-secondary-200 dark:bg-secondary-600 lg:hidden" />
 
 					<div className="flex flex-1 gap-x-4 self-stretch lg:gap-x-6">
 						<div className="relative flex items-center">
