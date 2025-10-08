@@ -352,8 +352,8 @@ const Layout = ({ children }) => {
 										to={item.href}
 										className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
 											isActive(item.href)
-												? "bg-primary-100 text-primary-900"
-												: "text-secondary-600 hover:bg-secondary-50 hover:text-secondary-900"
+												? "bg-primary-100 dark:bg-primary-600 text-primary-900 dark:text-white"
+												: "text-secondary-600 dark:text-secondary-300 hover:bg-secondary-50 dark:hover:bg-secondary-700 hover:text-secondary-900 dark:hover:text-white"
 										}`}
 										onClick={() => setSidebarOpen(false)}
 									>
@@ -365,7 +365,7 @@ const Layout = ({ children }) => {
 								// Section with items
 								return (
 									<div key={item.section}>
-										<h3 className="text-xs font-semibold text-secondary-500 uppercase tracking-wider mb-2">
+										<h3 className="text-xs font-semibold text-secondary-500 dark:text-secondary-400 uppercase tracking-wider mb-2">
 											{item.section}
 										</h3>
 										<div className="space-y-1">
@@ -379,8 +379,8 @@ const Layout = ({ children }) => {
 																to={subItem.href}
 																className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
 																	isActive(subItem.href)
-																		? "bg-primary-100 text-primary-900"
-																		: "text-secondary-600 hover:bg-secondary-50 hover:text-secondary-900"
+																		? "bg-primary-100 dark:bg-primary-600 text-primary-900 dark:text-white"
+																		: "text-secondary-600 dark:text-secondary-300 hover:bg-secondary-50 dark:hover:bg-secondary-700 hover:text-secondary-900 dark:hover:text-white"
 																}`}
 																onClick={() => setSidebarOpen(false)}
 															>
@@ -389,7 +389,7 @@ const Layout = ({ children }) => {
 																	{subItem.name}
 																	{subItem.name === "Hosts" &&
 																		stats?.cards?.totalHosts !== undefined && (
-																			<span className="ml-2 inline-flex items-center justify-center px-1.5 py-0.5 text-xs rounded bg-secondary-100 text-secondary-700">
+																			<span className="ml-2 inline-flex items-center justify-center px-1.5 py-0.5 text-xs rounded bg-secondary-100 dark:bg-secondary-600 text-secondary-700 dark:text-secondary-200">
 																				{stats.cards.totalHosts}
 																			</span>
 																		)}
