@@ -234,6 +234,10 @@ detect_os() {
             "rocky"|"almalinux")
                 OS_TYPE="rhel"
                 ;;
+            "ol")
+                # Keep Oracle Linux as 'ol' for proper frontend identification
+                OS_TYPE="ol"
+                ;;
         esac
         
     elif [[ -f /etc/redhat-release ]]; then
@@ -261,7 +265,7 @@ get_repository_info() {
         "ubuntu"|"debian")
             get_apt_repositories repos_json first
             ;;
-        "centos"|"rhel"|"fedora")
+        "centos"|"rhel"|"fedora"|"ol")
             get_yum_repositories repos_json first
             ;;
         *)
@@ -588,11 +592,11 @@ get_package_info() {
         "ubuntu"|"debian")
             get_apt_packages packages_json first
             ;;
-        "centos"|"rhel"|"fedora")
+        "centos"|"rhel"|"fedora"|"ol")
             get_yum_packages packages_json first
             ;;
         *)
-            error "Unsupported OS type: $OS_TYPE"
+            warning "Unsupported OS type: $OS_TYPE - returning empty package list"
             ;;
     esac
     
