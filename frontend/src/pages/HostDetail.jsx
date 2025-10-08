@@ -8,6 +8,7 @@ import {
 	Clock,
 	Copy,
 	Cpu,
+	Database,
 	Eye,
 	EyeOff,
 	HardDrive,
@@ -31,6 +32,7 @@ import {
 	dashboardAPI,
 	formatDate,
 	formatRelativeTime,
+	repositoryAPI,
 	settingsAPI,
 } from "../utils/api";
 import { OSIcon } from "../utils/osIcons.jsx";
@@ -62,6 +64,15 @@ const HostDetail = () => {
 				.then((res) => res.data),
 		staleTime: 5 * 60 * 1000, // 5 minutes - data stays fresh longer
 		refetchOnWindowFocus: false, // Don't refetch when window regains focus
+	});
+
+	// Fetch repository count for this host
+	const { data: repositories, isLoading: isLoadingRepos } = useQuery({
+		queryKey: ["host-repositories", hostId],
+		queryFn: () => repositoryAPI.getByHost(hostId).then((res) => res.data),
+		staleTime: 5 * 60 * 1000, // 5 minutes - data stays fresh longer
+		refetchOnWindowFocus: false, // Don't refetch when window regains focus
+		enabled: !!hostId,
 	});
 
 	// Tab change handler
@@ -290,7 +301,7 @@ const HostDetail = () => {
 			</div>
 
 			{/* Package Statistics Cards */}
-			<div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+			<div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
 				<button
 					type="button"
 					onClick={() => navigate(`/packages?host=${hostId}`)}
@@ -343,6 +354,25 @@ const HostDetail = () => {
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{host.stats.security_updates}
+							</p>
+						</div>
+					</div>
+				</button>
+
+				<button
+					type="button"
+					onClick={() => navigate(`/repositories?host=${hostId}`)}
+					className="card p-4 cursor-pointer hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow duration-200 text-left w-full"
+					title="View repositories for this host"
+				>
+					<div className="flex items-center">
+						<Database className="h-5 w-5 text-blue-600 mr-2" />
+						<div>
+							<p className="text-sm text-secondary-500 dark:text-white">
+								Repos
+							</p>
+							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
+								{isLoadingRepos ? "..." : repositories?.length || 0}
 							</p>
 						</div>
 					</div>

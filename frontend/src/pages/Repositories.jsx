@@ -18,20 +18,30 @@ import {
 	Unlock,
 	X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { repositoryAPI } from "../utils/api";
+import { useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { dashboardAPI, repositoryAPI } from "../utils/api";
 
 const Repositories = () => {
 	const queryClient = useQueryClient();
 	const navigate = useNavigate();
+	const [searchParams] = useSearchParams();
 	const [searchTerm, setSearchTerm] = useState("");
 	const [filterType, setFilterType] = useState("all"); // all, secure, insecure
 	const [filterStatus, setFilterStatus] = useState("all"); // all, active, inactive
+	const [hostFilter, setHostFilter] = useState("");
 	const [sortField, setSortField] = useState("name");
 	const [sortDirection, setSortDirection] = useState("asc");
 	const [showColumnSettings, setShowColumnSettings] = useState(false);
 	const [deleteModalData, setDeleteModalData] = useState(null);
+
+	// Handle host filter from URL parameter
+	useEffect(() => {
+		const hostParam = searchParams.get("host");
+		if (hostParam) {
+			setHostFilter(hostParam);
+		}
+	}, [searchParams]);
 
 	// Column configuration
 	const [columnConfig, setColumnConfig] = useState(() => {
@@ -81,6 +91,17 @@ const Repositories = () => {
 		queryKey: ["repository-stats"],
 		queryFn: () => repositoryAPI.getStats().then((res) => res.data),
 	});
+
+	// Fetch host information when filtering by host
+	const { data: hosts } = useQuery({
+		queryKey: ["hosts"],
+		queryFn: () => dashboardAPI.getHosts().then((res) => res.data),
+		staleTime: 5 * 60 * 1000,
+		enabled: !!hostFilter,
+	});
+
+	// Get the filtered host information
+	const filteredHost = hosts?.find((host) => host.id === hostFilter);
 
 	// Delete repository mutation
 	const deleteRepositoryMutation = useMutation({
@@ -202,7 +223,11 @@ const Repositories = () => {
 				(filterStatus === "active" && repo.is_active === true) ||
 				(filterStatus === "inactive" && repo.is_active === false);
 
-			return matchesSearch && matchesType && matchesStatus;
+			// Filter by host if hostFilter is set
+			const matchesHost =
+				!hostFilter || repo.hosts?.some((host) => host.id === hostFilter);
+
+			return matchesSearch && matchesType && matchesStatus && matchesHost;
 		});
 
 		// Sort repositories
@@ -237,6 +262,7 @@ const Repositories = () => {
 		filterStatus,
 		sortField,
 		sortDirection,
+		hostFilter,
 	]);
 
 	if (isLoading) {
@@ -420,6 +446,31 @@ const Repositories = () => {
 									/>
 								</div>
 							</div>
+
+							{/* Host Filter Indicator */}
+							{hostFilter && filteredHost && (
+								<div className="flex items-center gap-2 px-3 py-2 bg-primary-50 dark:bg-primary-900 border border-primary-200 dark:border-primary-700 rounded-md">
+									<Server className="h-4 w-4 text-primary-600 dark:text-primary-400" />
+									<span className="text-sm text-primary-700 dark:text-primary-300">
+										Filtered by: {filteredHost.friendly_name}
+									</span>
+									<button
+										type="button"
+										onClick={() => {
+											setHostFilter("");
+											// Update URL to remove host parameter
+											const newSearchParams = new URLSearchParams(searchParams);
+											newSearchParams.delete("host");
+											navigate(`/repositories?${newSearchParams.toString()}`, {
+												replace: true,
+											});
+										}}
+										className="text-primary-500 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-200"
+									>
+										<X className="h-4 w-4" />
+									</button>
+								</div>
+							)}
 
 							{/* Security Filter */}
 							<div className="sm:w-48">
