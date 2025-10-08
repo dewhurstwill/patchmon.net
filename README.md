@@ -113,6 +113,14 @@ After installation:
 - Visit `http(s)://<your-domain>` and complete first-time admin setup
 - See all useful info in `deployment-info.txt`
 
+## Forcing updates after host package changes
+Should you perform a manual package update on your host and wish to see the results reflected in PatchMon quicker than the usual scheduled update, you can trigger the process manually by running:
+```bash
+/usr/local/bin/patchmon-agent.sh update
+```
+
+This will send the results immediately to PatchMon.
+
 ## Communication Model
 
 - Outbound-only agents: servers initiate communication to PatchMon
