@@ -929,33 +929,36 @@ const Layout = ({ children }) => {
 					<div className="h-6 w-px bg-secondary-200 dark:bg-secondary-600 lg:hidden" />
 
 					<div className="flex flex-1 gap-x-4 self-stretch lg:gap-x-6">
-						{/* Page title - hidden on dashboard, hosts, repositories, and packages to give more space to search */}
+						{/* Page title - hidden on dashboard, hosts, repositories, packages, and host details to give more space to search */}
 						{!["/", "/hosts", "/repositories", "/packages"].includes(
 							location.pathname,
-						) && (
-							<div className="relative flex items-center">
-								<h2 className="text-lg font-semibold text-secondary-900 dark:text-secondary-100 whitespace-nowrap">
-									{getPageTitle()}
-								</h2>
-							</div>
-						)}
+						) &&
+							!location.pathname.startsWith("/hosts/") && (
+								<div className="relative flex items-center">
+									<h2 className="text-lg font-semibold text-secondary-900 dark:text-secondary-100 whitespace-nowrap">
+										{getPageTitle()}
+									</h2>
+								</div>
+							)}
 
 						{/* Global Search Bar */}
 						<div
-							className={`flex items-center ${["/", "/hosts", "/repositories", "/packages"].includes(location.pathname) ? "flex-1 max-w-none" : "max-w-sm"}`}
+							className={`flex items-center ${["/", "/hosts", "/repositories", "/packages"].includes(location.pathname) || location.pathname.startsWith("/hosts/") ? "flex-1 max-w-none" : "max-w-sm"}`}
 						>
 							<GlobalSearch />
 						</div>
 
 						<div className="flex flex-1 items-center gap-x-4 lg:gap-x-6 justify-end">
 							{/* External Links */}
-							<div className="hidden md:flex items-center gap-2">
+							<div className="hidden md:flex items-center gap-1">
 								{/* 1) GitHub */}
 								<a
 									href="https://github.com/PatchMon/PatchMon"
 									target="_blank"
 									rel="noopener noreferrer"
 									className="flex items-center justify-center gap-1.5 px-3 py-2 bg-gray-50 dark:bg-gray-800 text-secondary-600 dark:text-secondary-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors shadow-sm group relative"
+									title="GitHub"
+									aria-label="GitHub"
 								>
 									<Github className="h-5 w-5 flex-shrink-0" />
 									{githubStars !== null && (
