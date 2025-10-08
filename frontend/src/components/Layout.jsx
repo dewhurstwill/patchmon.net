@@ -316,7 +316,7 @@ const Layout = ({ children }) => {
 					onClick={() => setSidebarOpen(false)}
 					aria-label="Close sidebar"
 				/>
-				<div className="relative flex w-full max-w-[280px] flex-col bg-white pb-4 pt-5 shadow-xl">
+				<div className="relative flex w-full max-w-[280px] flex-col bg-white dark:bg-secondary-800 pb-4 pt-5 shadow-xl">
 					<div className="absolute right-0 top-0 -mr-12 pt-2">
 						<button
 							type="button"
@@ -411,8 +411,8 @@ const Layout = ({ children }) => {
 															to={subItem.href}
 															className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
 																isActive(subItem.href)
-																	? "bg-primary-100 text-primary-900"
-																	: "text-secondary-600 hover:bg-secondary-50 hover:text-secondary-900"
+																	? "bg-primary-100 dark:bg-primary-600 text-primary-900 dark:text-white"
+																	: "text-secondary-600 dark:text-secondary-300 hover:bg-secondary-50 dark:hover:bg-secondary-700 hover:text-secondary-900 dark:hover:text-white"
 															} ${subItem.comingSoon ? "opacity-50 cursor-not-allowed" : ""}`}
 															onClick={
 																subItem.comingSoon
@@ -425,12 +425,12 @@ const Layout = ({ children }) => {
 																{subItem.name}
 																{subItem.name === "Hosts" &&
 																	stats?.cards?.totalHosts !== undefined && (
-																		<span className="ml-2 inline-flex items-center justify-center px-1.5 py-0.5 text-xs rounded bg-secondary-100 text-secondary-700">
+																		<span className="ml-2 inline-flex items-center justify-center px-1.5 py-0.5 text-xs rounded bg-secondary-100 dark:bg-secondary-600 text-secondary-700 dark:text-secondary-200">
 																			{stats.cards.totalHosts}
 																		</span>
 																	)}
 																{subItem.comingSoon && (
-																	<span className="text-xs bg-secondary-100 text-secondary-600 px-1.5 py-0.5 rounded">
+																	<span className="text-xs bg-secondary-100 dark:bg-secondary-600 text-secondary-600 dark:text-secondary-200 px-1.5 py-0.5 rounded">
 																		Soon
 																	</span>
 																)}
@@ -459,8 +459,8 @@ const Layout = ({ children }) => {
 													to={subItem.href}
 													className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
 														isActive(subItem.href)
-															? "bg-primary-100 text-primary-900"
-															: "text-secondary-600 hover:bg-secondary-50 hover:text-secondary-900"
+															? "bg-primary-100 dark:bg-primary-600 text-primary-900 dark:text-white"
+															: "text-secondary-600 dark:text-secondary-300 hover:bg-secondary-50 dark:hover:bg-secondary-700 hover:text-secondary-900 dark:hover:text-white"
 													}`}
 													onClick={() => setSidebarOpen(false)}
 												>
@@ -479,6 +479,42 @@ const Layout = ({ children }) => {
 							}
 							return null;
 						})}
+
+						{/* Mobile Logout Section */}
+						<div className="mt-8 pt-4 border-t border-secondary-200 dark:border-secondary-700">
+							<div className="px-2 space-y-1">
+								<Link
+									to="/settings/profile"
+									className={`group flex items-center px-2 py-2 text-sm font-medium rounded-md ${
+										isActive("/settings/profile")
+											? "bg-primary-100 dark:bg-primary-600 text-primary-900 dark:text-white"
+											: "text-secondary-600 dark:text-secondary-300 hover:bg-secondary-50 dark:hover:bg-secondary-700 hover:text-secondary-900 dark:hover:text-white"
+									}`}
+									onClick={() => setSidebarOpen(false)}
+								>
+									<UserCircle className="mr-3 h-5 w-5" />
+									<span className="flex items-center gap-2">
+										{user?.first_name || user?.username}
+										{user?.role === "admin" && (
+											<span className="text-xs bg-secondary-100 dark:bg-secondary-600 text-secondary-600 dark:text-secondary-200 px-1.5 py-0.5 rounded">
+												Admin
+											</span>
+										)}
+									</span>
+								</Link>
+								<button
+									type="button"
+									onClick={() => {
+										handleLogout();
+										setSidebarOpen(false);
+									}}
+									className="w-full group flex items-center px-2 py-2 text-sm font-medium rounded-md text-secondary-600 dark:text-secondary-300 hover:bg-secondary-50 dark:hover:bg-secondary-700 hover:text-secondary-900 dark:hover:text-white"
+								>
+									<LogOut className="mr-3 h-5 w-5" />
+									Sign out
+								</button>
+							</div>
+						</div>
 					</nav>
 				</div>
 			</div>
