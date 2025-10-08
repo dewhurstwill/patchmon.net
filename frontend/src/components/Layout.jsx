@@ -929,8 +929,10 @@ const Layout = ({ children }) => {
 					<div className="h-6 w-px bg-secondary-200 dark:bg-secondary-600 lg:hidden" />
 
 					<div className="flex flex-1 gap-x-4 self-stretch lg:gap-x-6">
-						{/* Page title - hidden on dashboard to give more space to search */}
-						{location.pathname !== "/" && (
+						{/* Page title - hidden on dashboard, hosts, repositories, and packages to give more space to search */}
+						{!["/", "/hosts", "/repositories", "/packages"].includes(
+							location.pathname,
+						) && (
 							<div className="relative flex items-center">
 								<h2 className="text-lg font-semibold text-secondary-900 dark:text-secondary-100 whitespace-nowrap">
 									{getPageTitle()}
@@ -940,7 +942,7 @@ const Layout = ({ children }) => {
 
 						{/* Global Search Bar */}
 						<div
-							className={`flex items-center ${location.pathname === "/" ? "flex-1 max-w-none" : "max-w-sm"}`}
+							className={`flex items-center ${["/", "/hosts", "/repositories", "/packages"].includes(location.pathname) ? "flex-1 max-w-none" : "max-w-sm"}`}
 						>
 							<GlobalSearch />
 						</div>
