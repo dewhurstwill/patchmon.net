@@ -126,43 +126,61 @@ async function getLatestCommit(owner, repo) {
 
 // Helper function to get commit count difference
 async function getCommitDifference(owner, repo, currentVersion) {
-	try {
-		const currentVersionTag = `v${currentVersion}`;
-		// Compare main branch with the released version tag
-		const apiUrl = `https://api.github.com/repos/${owner}/${repo}/compare/${currentVersionTag}...main`;
+	// Try both with and without 'v' prefix for compatibility
+	const versionTags = [
+		currentVersion, // Try without 'v' first (new format)
+		`v${currentVersion}`, // Try with 'v' prefix (old format)
+	];
 
-		const response = await fetch(apiUrl, {
-			method: "GET",
-			headers: {
-				Accept: "application/vnd.github.v3+json",
-				"User-Agent": `PatchMon-Server/${getCurrentVersion()}`,
-			},
-		});
+	for (const versionTag of versionTags) {
+		try {
+			// Compare main branch with the released version tag
+			const apiUrl = `https://api.github.com/repos/${owner}/${repo}/compare/${versionTag}...main`;
 
-		if (!response.ok) {
-			const errorText = await response.text();
-			if (
-				errorText.includes("rate limit") ||
-				errorText.includes("API rate limit")
-			) {
-				throw new Error("GitHub API rate limit exceeded");
+			const response = await fetch(apiUrl, {
+				method: "GET",
+				headers: {
+					Accept: "application/vnd.github.v3+json",
+					"User-Agent": `PatchMon-Server/${getCurrentVersion()}`,
+				},
+			});
+
+			if (!response.ok) {
+				const errorText = await response.text();
+				if (
+					errorText.includes("rate limit") ||
+					errorText.includes("API rate limit")
+				) {
+					throw new Error("GitHub API rate limit exceeded");
+				}
+				// If 404, try next tag format
+				if (response.status === 404) {
+					continue;
+				}
+				throw new Error(
+					`GitHub API error: ${response.status} ${response.statusText}`,
+				);
 			}
-			throw new Error(
-				`GitHub API error: ${response.status} ${response.statusText}`,
-			);
-		}
 
-		const compareData = await response.json();
-		return {
-			commitsBehind: compareData.behind_by || 0, // How many commits main is behind release
-			commitsAhead: compareData.ahead_by || 0, // How many commits main is ahead of release
-			totalCommits: compareData.total_commits || 0,
-			branchInfo: "main branch vs release",
-		};
-	} catch (error) {
-		console.error("Error fetching commit difference:", error.message);
-		throw error;
+			const compareData = await response.json();
+			return {
+				commitsBehind: compareData.behind_by || 0, // How many commits main is behind release
+				commitsAhead: compareData.ahead_by || 0, // How many commits main is ahead of release
+				totalCommits: compareData.total_commits || 0,
+				branchInfo: "main branch vs release",
+			};
+		} catch (error) {
+			// If rate limit, throw immediately
+			if (error.message.includes("rate limit")) {
+				throw error;
+			}
+		}
 	}
+
+	// If all attempts failed, throw error
+	throw new Error(
+		`Could not find tag '${currentVersion}' or 'v${currentVersion}' in repository`,
+	);
 }
 
 // Helper function to compare version strings (semantic versioning)
@@ -296,10 +314,14 @@ router.get(
 						};
 					} else {
 						// Fall back to cached data for other errors
+						const githubRepoUrl = settings.githubRepoUrl || DEFAULT_GITHUB_REPO;
 						latestRelease = settings.latest_version
 							? {
 									version: settings.latest_version,
-									tagName: `v${settings.latest_version}`,
+									tagName: settings.latest_version,
+									publishedAt: null, // Only use date from GitHub API, not cached data
+									// Note: URL may need 'v' prefix depending on actual tag format in repo
+									htmlUrl: `${githubRepoUrl.replace(/\.git$/, "")}/releases/tag/${settings.latest_version}`,
 								}
 							: null;
 					}

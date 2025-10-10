@@ -128,12 +128,14 @@ const VersionUpdateTab = () => {
 								<span className="text-lg font-mono text-secondary-900 dark:text-white">
 									{versionInfo.github.latestRelease.tagName}
 								</span>
-								<div className="text-xs text-secondary-500 dark:text-secondary-400">
-									Published:{" "}
-									{new Date(
-										versionInfo.github.latestRelease.publishedAt,
-									).toLocaleDateString()}
-								</div>
+								{versionInfo.github.latestRelease.publishedAt && (
+									<div className="text-xs text-secondary-500 dark:text-secondary-400">
+										Published:{" "}
+										{new Date(
+											versionInfo.github.latestRelease.publishedAt,
+										).toLocaleDateString()}
+									</div>
+								)}
 							</div>
 						</div>
 					)}
