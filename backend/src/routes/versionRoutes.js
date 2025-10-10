@@ -14,13 +14,13 @@ const router = express.Router();
 function getCurrentVersion() {
 	try {
 		const packageJson = require("../../package.json");
-		return packageJson?.version || "1.2.7";
+		return packageJson?.version || "1.2.8";
 	} catch (packageError) {
 		console.warn(
 			"Could not read version from package.json, using fallback:",
 			packageError.message,
 		);
-		return "1.2.7";
+		return "1.2.8";
 	}
 }
 
@@ -274,11 +274,11 @@ router.get(
 					) {
 						console.log("GitHub API rate limited, providing fallback data");
 						latestRelease = {
-							tagName: "v1.2.7",
-							version: "1.2.7",
+							tagName: "1.2.8",
+							version: "1.2.8",
 							publishedAt: "2025-10-02T17:12:53Z",
 							htmlUrl:
-								"https://github.com/PatchMon/PatchMon/releases/tag/v1.2.7",
+								"https://github.com/PatchMon/PatchMon/releases/tag/1.2.8",
 						};
 						latestCommit = {
 							sha: "cc89df161b8ea5d48ff95b0eb405fe69042052cd",

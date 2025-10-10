@@ -104,7 +104,7 @@ class UpdateScheduler {
 			}
 
 			// Read version from package.json dynamically
-			let currentVersion = "1.2.7"; // fallback
+			let currentVersion = "1.2.8"; // fallback
 			try {
 				const packageJson = require("../../package.json");
 				if (packageJson?.version) {
@@ -214,7 +214,7 @@ class UpdateScheduler {
 			const httpsRepoUrl = `https://api.github.com/repos/${owner}/${repo}/releases/latest`;
 
 			// Get current version for User-Agent
-			let currentVersion = "1.2.7"; // fallback
+			let currentVersion = "1.2.8"; // fallback
 			try {
 				const packageJson = require("../../package.json");
 				if (packageJson?.version) {
