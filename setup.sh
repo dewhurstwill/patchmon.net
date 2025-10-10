@@ -34,7 +34,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Global variables
-SCRIPT_VERSION="self-hosting-install.sh v1.2.8-selfhost-2025-10-10-5"
+SCRIPT_VERSION="self-hosting-install.sh v1.2.8-selfhost-2025-10-10-6"
 DEFAULT_GITHUB_REPO="https://github.com/PatchMon/PatchMon.git"
 FQDN=""
 CUSTOM_FQDN=""
@@ -1706,6 +1706,22 @@ update_installation() {
     if [ -f "$instance_dir/backend/.env" ]; then
         source "$instance_dir/backend/.env"
         print_status "Loaded existing configuration"
+        
+        # Parse DATABASE_URL to extract credentials
+        # Format: postgresql://user:password@host:port/database
+        if [ -n "$DATABASE_URL" ]; then
+            # Extract components using regex
+            DB_USER=$(echo "$DATABASE_URL" | sed -n 's|postgresql://\([^:]*\):.*|\1|p')
+            DB_PASS=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^:]*:\([^@]*\)@.*|\1|p')
+            DB_HOST=$(echo "$DATABASE_URL" | sed -n 's|.*@\([^:]*\):.*|\1|p')
+            DB_PORT=$(echo "$DATABASE_URL" | sed -n 's|.*:\([0-9]*\)/.*|\1|p')
+            DB_NAME=$(echo "$DATABASE_URL" | sed -n 's|.*/\([^?]*\).*|\1|p')
+            
+            print_info "Database: $DB_NAME (user: $DB_USER)"
+        else
+            print_error "DATABASE_URL not found in .env file"
+            exit 1
+        fi
     else
         print_error "Cannot find .env file at $instance_dir/backend/.env"
         exit 1
@@ -1737,8 +1753,8 @@ update_installation() {
     mkdir -p "$backup_dir"
     
     # Backup database
-    print_info "Backing up database: $DATABASE_NAME"
-    if PGPASSWORD="$DATABASE_PASSWORD" pg_dump -h localhost -U "$DATABASE_USER" -d "$DATABASE_NAME" -F c -f "$db_backup_file" 2>/dev/null; then
+    print_info "Backing up database: $DB_NAME"
+    if PGPASSWORD="$DB_PASS" pg_dump -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -F c -f "$db_backup_file" 2>/dev/null; then
         print_status "Database backup created: $db_backup_file"
     else
         print_warning "Database backup failed, but continuing with code backup"
@@ -1801,7 +1817,7 @@ update_installation() {
         print_info "  Database backup: $db_backup_file"
         echo ""
         print_info "To restore database if needed:"
-        print_info "  PGPASSWORD=\"$DATABASE_PASSWORD\" pg_restore -h localhost -U \"$DATABASE_USER\" -d \"$DATABASE_NAME\" -c \"$db_backup_file\""
+        print_info "  PGPASSWORD=\"$DB_PASS\" pg_restore -h \"$DB_HOST\" -U \"$DB_USER\" -d \"$DB_NAME\" -c \"$db_backup_file\""
         echo ""
     else
         print_error "Service failed to start after update"
@@ -1812,7 +1828,7 @@ update_installation() {
         print_info "   sudo mv $backup_dir/code $instance_dir"
         echo ""
         print_info "2. Restore database:"
-        print_info "   PGPASSWORD=\"$DATABASE_PASSWORD\" pg_restore -h localhost -U \"$DATABASE_USER\" -d \"$DATABASE_NAME\" -c \"$db_backup_file\""
+        print_info "   PGPASSWORD=\"$DB_PASS\" pg_restore -h \"$DB_HOST\" -U \"$DB_USER\" -d \"$DB_NAME\" -c \"$db_backup_file\""
         echo ""
         print_info "3. Restart service:"
         print_info "   sudo systemctl start $service_name"
