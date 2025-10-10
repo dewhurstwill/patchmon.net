@@ -18,7 +18,7 @@ const Login = lazy(() => import("./pages/Login"));
 const PackageDetail = lazy(() => import("./pages/PackageDetail"));
 const Packages = lazy(() => import("./pages/Packages"));
 const Profile = lazy(() => import("./pages/Profile"));
-const Queue = lazy(() => import("./pages/Queue"));
+const Automation = lazy(() => import("./pages/Automation"));
 const Repositories = lazy(() => import("./pages/Repositories"));
 const RepositoryDetail = lazy(() => import("./pages/RepositoryDetail"));
 const AlertChannels = lazy(() => import("./pages/settings/AlertChannels"));
@@ -137,11 +137,11 @@ function AppRoutes() {
 					}
 				/>
 				<Route
-					path="/queue"
+					path="/automation"
 					element={
 						<ProtectedRoute requirePermission="can_view_hosts">
 							<Layout>
-								<Queue />
+								<Automation />
 							</Layout>
 						</ProtectedRoute>
 					}

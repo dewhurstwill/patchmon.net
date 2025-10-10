@@ -136,7 +136,7 @@ const Layout = ({ children }) => {
 				);
 			}
 
-			// Add Pro-Action and Queue items (available to all users with inventory access)
+			// Add Pro-Action and Automation items (available to all users with inventory access)
 			inventoryItems.push(
 				{
 					name: "Pro-Action",
@@ -145,8 +145,8 @@ const Layout = ({ children }) => {
 					comingSoon: true,
 				},
 				{
-					name: "Queue",
-					href: "/queue",
+					name: "Automation",
+					href: "/automation",
 					icon: List,
 					comingSoon: true,
 				},
@@ -210,7 +210,7 @@ const Layout = ({ children }) => {
 		if (path === "/services") return "Services";
 		if (path === "/docker") return "Docker";
 		if (path === "/pro-action") return "Pro-Action";
-		if (path === "/queue") return "Queue";
+		if (path === "/automation") return "Automation";
 		if (path === "/users") return "Users";
 		if (path === "/permissions") return "Permissions";
 		if (path === "/settings") return "Settings";
@@ -929,10 +929,14 @@ const Layout = ({ children }) => {
 					<div className="h-6 w-px bg-secondary-200 dark:bg-secondary-600 lg:hidden" />
 
 					<div className="flex flex-1 gap-x-4 self-stretch lg:gap-x-6">
-						{/* Page title - hidden on dashboard, hosts, repositories, packages, and host details to give more space to search */}
-						{!["/", "/hosts", "/repositories", "/packages"].includes(
-							location.pathname,
-						) &&
+						{/* Page title - hidden on dashboard, hosts, repositories, packages, automation, and host details to give more space to search */}
+						{![
+							"/",
+							"/hosts",
+							"/repositories",
+							"/packages",
+							"/automation",
+						].includes(location.pathname) &&
 							!location.pathname.startsWith("/hosts/") && (
 								<div className="relative flex items-center">
 									<h2 className="text-lg font-semibold text-secondary-900 dark:text-secondary-100 whitespace-nowrap">
@@ -943,7 +947,7 @@ const Layout = ({ children }) => {
 
 						{/* Global Search Bar */}
 						<div
-							className={`flex items-center ${["/", "/hosts", "/repositories", "/packages"].includes(location.pathname) || location.pathname.startsWith("/hosts/") ? "flex-1 max-w-none" : "max-w-sm"}`}
+							className={`flex items-center ${["/", "/hosts", "/repositories", "/packages", "/automation"].includes(location.pathname) || location.pathname.startsWith("/hosts/") ? "flex-1 max-w-none" : "max-w-sm"}`}
 						>
 							<GlobalSearch />
 						</div>
