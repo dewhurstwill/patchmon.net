@@ -231,13 +231,14 @@ detect_os() {
             "opensuse"|"opensuse-leap"|"opensuse-tumbleweed")
                 OS_TYPE="suse"
                 ;;
-            "rocky"|"almalinux")
+            "almalinux")
                 OS_TYPE="rhel"
                 ;;
             "ol")
                 # Keep Oracle Linux as 'ol' for proper frontend identification
                 OS_TYPE="ol"
                 ;;
+            # Rocky Linux keeps its own identity for proper frontend display
         esac
         
     elif [[ -f /etc/redhat-release ]]; then
@@ -265,7 +266,7 @@ get_repository_info() {
         "ubuntu"|"debian")
             get_apt_repositories repos_json first
             ;;
-        "centos"|"rhel"|"fedora"|"ol")
+        "centos"|"rhel"|"fedora"|"ol"|"rocky")
             get_yum_repositories repos_json first
             ;;
         *)
@@ -573,14 +574,118 @@ get_yum_repositories() {
     local -n first_ref=$2
     
     # Parse yum/dnf repository configuration
+    local repo_info=""
     if command -v dnf >/dev/null 2>&1; then
-        local repo_info=$(dnf repolist all --verbose 2>/dev/null | grep -E "^Repo-id|^Repo-baseurl|^Repo-name|^Repo-status")
+        repo_info=$(dnf repolist all --verbose 2>/dev/null | grep -E "^Repo-id|^Repo-baseurl|^Repo-mirrors|^Repo-name|^Repo-status")
     elif command -v yum >/dev/null 2>&1; then
-        local repo_info=$(yum repolist all -v 2>/dev/null | grep -E "^Repo-id|^Repo-baseurl|^Repo-name|^Repo-status")
+        repo_info=$(yum repolist all -v 2>/dev/null | grep -E "^Repo-id|^Repo-baseurl|^Repo-mirrors|^Repo-name|^Repo-status")
     fi
     
-    # This is a simplified implementation - would need more work for full YUM support
-    # For now, return empty for non-APT systems
+    if [[ -z "$repo_info" ]]; then
+        return
+    fi
+    
+    # Parse repository information
+    local current_repo=""
+    local repo_id=""
+    local repo_name=""
+    local repo_url=""
+    local repo_mirrors=""
+    local repo_status=""
+    
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^Repo-id[[:space:]]+:[[:space:]]+(.+)$ ]]; then
+            # Process previous repository if we have one
+            if [[ -n "$current_repo" ]]; then
+                process_yum_repo repos_ref first_ref "$repo_id" "$repo_name" "$repo_url" "$repo_mirrors" "$repo_status"
+            fi
+            
+            # Start new repository
+            repo_id="${BASH_REMATCH[1]}"
+            repo_name="$repo_id"
+            repo_url=""
+            repo_mirrors=""
+            repo_status=""
+            current_repo="$repo_id"
+            
+        elif [[ "$line" =~ ^Repo-name[[:space:]]+:[[:space:]]+(.+)$ ]]; then
+            repo_name="${BASH_REMATCH[1]}"
+            
+        elif [[ "$line" =~ ^Repo-baseurl[[:space:]]+:[[:space:]]+(.+)$ ]]; then
+            repo_url="${BASH_REMATCH[1]}"
+            
+        elif [[ "$line" =~ ^Repo-mirrors[[:space:]]+:[[:space:]]+(.+)$ ]]; then
+            repo_mirrors="${BASH_REMATCH[1]}"
+            
+        elif [[ "$line" =~ ^Repo-status[[:space:]]+:[[:space:]]+(.+)$ ]]; then
+            repo_status="${BASH_REMATCH[1]}"
+        fi
+    done <<< "$repo_info"
+    
+    # Process the last repository
+    if [[ -n "$current_repo" ]]; then
+        process_yum_repo repos_ref first_ref "$repo_id" "$repo_name" "$repo_url" "$repo_mirrors" "$repo_status"
+    fi
+}
+
+# Process a single YUM repository and add it to the JSON
+process_yum_repo() {
+    local -n _repos_ref=$1
+    local -n _first_ref=$2
+    local repo_id="$3"
+    local repo_name="$4"
+    local repo_url="$5"
+    local repo_mirrors="$6"
+    local repo_status="$7"
+    
+    # Skip if we don't have essential info
+    if [[ -z "$repo_id" ]]; then
+        return
+    fi
+    
+    # Determine if repository is enabled
+    local is_enabled=false
+    if [[ "$repo_status" == "enabled" ]]; then
+        is_enabled=true
+    fi
+    
+    # Use baseurl if available, otherwise use mirrors URL
+    local final_url=""
+    if [[ -n "$repo_url" ]]; then
+        # Extract first URL if multiple are listed
+        final_url=$(echo "$repo_url" | head -n 1 | awk '{print $1}')
+    elif [[ -n "$repo_mirrors" ]]; then
+        final_url="$repo_mirrors"
+    fi
+    
+    # Skip if we don't have any URL
+    if [[ -z "$final_url" ]]; then
+        return
+    fi
+    
+    # Determine if repository uses HTTPS
+    local is_secure=false
+    if [[ "$final_url" =~ ^https:// ]]; then
+        is_secure=true
+    fi
+    
+    # Generate repository name if not provided
+    if [[ -z "$repo_name" ]]; then
+        repo_name="$repo_id"
+    fi
+    
+    # Clean up repository name and URL - escape quotes and backslashes
+    repo_name=$(echo "$repo_name" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g')
+    final_url=$(echo "$final_url" | sed 's/\\/\\\\/g' | sed 's/"/\\"/g')
+    
+    # Add to JSON
+    if [[ "$_first_ref" == true ]]; then
+        _first_ref=false
+    else
+        _repos_ref+=","
+    fi
+    
+    _repos_ref+="{\"name\":\"$repo_name\",\"url\":\"$final_url\",\"distribution\":\"$OS_VERSION\",\"components\":\"main\",\"repoType\":\"rpm\",\"isEnabled\":$is_enabled,\"isSecure\":$is_secure}"
 }
 
 # Get package information based on OS
@@ -592,7 +697,7 @@ get_package_info() {
         "ubuntu"|"debian")
             get_apt_packages packages_json first
             ;;
-        "centos"|"rhel"|"fedora"|"ol")
+        "centos"|"rhel"|"fedora"|"ol"|"rocky")
             get_yum_packages packages_json first
             ;;
         *)
