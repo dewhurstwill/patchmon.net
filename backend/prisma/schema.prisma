@@ -262,3 +262,65 @@ model auto_enrollment_tokens {
   @@index([token_key])
   @@index([is_active])
 }
+
+model docker_containers {
+  id                String              @id
+  host_id           String
+  container_id      String
+  name              String
+  image_id          String?
+  image_name        String
+  image_tag         String              @default("latest")
+  status            String
+  state             String?
+  ports             Json?
+  created_at        DateTime
+  started_at        DateTime?
+  updated_at        DateTime
+  last_checked      DateTime            @default(now())
+  docker_images     docker_images?      @relation(fields: [image_id], references: [id], onDelete: SetNull)
+
+  @@unique([host_id, container_id])
+  @@index([host_id])
+  @@index([image_id])
+  @@index([status])
+  @@index([name])
+}
+
+model docker_images {
+  id                 String                 @id
+  repository         String
+  tag                String                 @default("latest")
+  image_id           String
+  digest             String?
+  size_bytes         BigInt?
+  source             String                 @default("docker-hub")
+  created_at         DateTime
+  last_pulled        DateTime?
+  last_checked       DateTime               @default(now())
+  updated_at         DateTime
+  docker_containers  docker_containers[]
+  docker_image_updates docker_image_updates[]
+
+  @@unique([repository, tag, image_id])
+  @@index([repository])
+  @@index([source])
+  @@index([repository, tag])
+}
+
+model docker_image_updates {
+  id                String        @id
+  image_id          String
+  current_tag       String
+  available_tag     String
+  is_security_update Boolean      @default(false)
+  severity          String?
+  changelog_url     String?
+  created_at        DateTime      @default(now())
+  updated_at        DateTime
+  docker_images     docker_images @relation(fields: [image_id], references: [id], onDelete: Cascade)
+
+  @@unique([image_id, available_tag])
+  @@index([image_id])
+  @@index([is_security_update])
+}

@@ -64,6 +64,7 @@ const searchRoutes = require("./routes/searchRoutes");
 const autoEnrollmentRoutes = require("./routes/autoEnrollmentRoutes");
 const gethomepageRoutes = require("./routes/gethomepageRoutes");
 const automationRoutes = require("./routes/automationRoutes");
+const dockerRoutes = require("./routes/dockerRoutes");
 const updateScheduler = require("./services/updateScheduler");
 const { initSettings } = require("./services/settingsService");
 const { cleanup_expired_sessions } = require("./utils/session_manager");
@@ -427,6 +428,7 @@ app.use(
 );
 app.use(`/api/${apiVersion}/gethomepage`, gethomepageRoutes);
 app.use(`/api/${apiVersion}/automation`, automationRoutes);
+app.use(`/api/${apiVersion}/docker`, dockerRoutes);
 
 // Error handling middleware
 app.use((err, _req, res, _next) => {

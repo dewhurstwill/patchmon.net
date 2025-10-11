@@ -21,6 +21,12 @@ const Profile = lazy(() => import("./pages/Profile"));
 const Automation = lazy(() => import("./pages/Automation"));
 const Repositories = lazy(() => import("./pages/Repositories"));
 const RepositoryDetail = lazy(() => import("./pages/RepositoryDetail"));
+const Docker = lazy(() => import("./pages/Docker"));
+const DockerContainerDetail = lazy(
+	() => import("./pages/docker/ContainerDetail"),
+);
+const DockerImageDetail = lazy(() => import("./pages/docker/ImageDetail"));
+const DockerHostDetail = lazy(() => import("./pages/docker/HostDetail"));
 const AlertChannels = lazy(() => import("./pages/settings/AlertChannels"));
 const Integrations = lazy(() => import("./pages/settings/Integrations"));
 const Notifications = lazy(() => import("./pages/settings/Notifications"));
@@ -142,6 +148,46 @@ function AppRoutes() {
 						<ProtectedRoute requirePermission="can_view_hosts">
 							<Layout>
 								<Automation />
+							</Layout>
+						</ProtectedRoute>
+					}
+				/>
+				<Route
+					path="/docker"
+					element={
+						<ProtectedRoute requirePermission="can_view_reports">
+							<Layout>
+								<Docker />
+							</Layout>
+						</ProtectedRoute>
+					}
+				/>
+				<Route
+					path="/docker/containers/:id"
+					element={
+						<ProtectedRoute requirePermission="can_view_reports">
+							<Layout>
+								<DockerContainerDetail />
+							</Layout>
+						</ProtectedRoute>
+					}
+				/>
+				<Route
+					path="/docker/images/:id"
+					element={
+						<ProtectedRoute requirePermission="can_view_reports">
+							<Layout>
+								<DockerImageDetail />
+							</Layout>
+						</ProtectedRoute>
+					}
+				/>
+				<Route
+					path="/docker/hosts/:id"
+					element={
+						<ProtectedRoute requirePermission="can_view_reports">
+							<Layout>
+								<DockerHostDetail />
 							</Layout>
 						</ProtectedRoute>
 					}
