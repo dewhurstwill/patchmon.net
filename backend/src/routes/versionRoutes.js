@@ -14,13 +14,13 @@ const router = express.Router();
 function getCurrentVersion() {
 	try {
 		const packageJson = require("../../package.json");
-		return packageJson?.version || "1.2.8";
+		return packageJson?.version || "1.2.9";
 	} catch (packageError) {
 		console.warn(
 			"Could not read version from package.json, using fallback:",
 			packageError.message,
 		);
-		return "1.2.8";
+		return "1.2.9";
 	}
 }
 
@@ -292,11 +292,11 @@ router.get(
 					) {
 						console.log("GitHub API rate limited, providing fallback data");
 						latestRelease = {
-							tagName: "1.2.8",
+							tagName: "v1.2.8",
 							version: "1.2.8",
 							publishedAt: "2025-10-02T17:12:53Z",
 							htmlUrl:
-								"https://github.com/PatchMon/PatchMon/releases/tag/1.2.8",
+								"https://github.com/PatchMon/PatchMon/releases/tag/v1.2.8",
 						};
 						latestCommit = {
 							sha: "cc89df161b8ea5d48ff95b0eb405fe69042052cd",
@@ -318,10 +318,9 @@ router.get(
 						latestRelease = settings.latest_version
 							? {
 									version: settings.latest_version,
-									tagName: settings.latest_version,
+									tagName: `v${settings.latest_version}`,
 									publishedAt: null, // Only use date from GitHub API, not cached data
-									// Note: URL may need 'v' prefix depending on actual tag format in repo
-									htmlUrl: `${githubRepoUrl.replace(/\.git$/, "")}/releases/tag/${settings.latest_version}`,
+									htmlUrl: `${githubRepoUrl.replace(/\.git$/, "")}/releases/tag/v${settings.latest_version}`,
 								}
 							: null;
 					}
