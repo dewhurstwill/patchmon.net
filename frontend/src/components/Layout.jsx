@@ -148,7 +148,6 @@ const Layout = ({ children }) => {
 					name: "Automation",
 					href: "/automation",
 					icon: List,
-					comingSoon: true,
 				},
 			);
 
