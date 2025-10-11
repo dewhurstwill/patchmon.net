@@ -43,7 +43,7 @@ PatchMon provides centralized patch management across diverse server environment
 
 ### API & Integrations
 - REST API under `/api/v1` with JWT auth
-- **Proxmox LXC Auto-Enrollment** - Automatically discover and enroll LXC containers from Proxmox hosts ([Documentation](PROXMOX_AUTO_ENROLLMENT.md))
+- Proxmox LXC Auto-Enrollment - Automatically discover and enroll LXC containers from Proxmox hosts
 
 ### Security
 - Rate limiting for general, auth, and agent endpoints
@@ -85,9 +85,14 @@ apt-get upgrade -y
 apt install curl -y
 ```
 
-#### Script
+#### Install Script
 ```bash
 curl -fsSL -o setup.sh https://raw.githubusercontent.com/PatchMon/PatchMon/refs/heads/main/setup.sh && chmod +x setup.sh && bash setup.sh
+```
+
+#### Update Script (--update flag)
+```bash
+curl -fsSL -o setup.sh https://raw.githubusercontent.com/PatchMon/PatchMon/refs/heads/main/setup.sh && chmod +x setup.sh && bash setup.sh --update
 ```
 
 #### Minimum specs for building : #####

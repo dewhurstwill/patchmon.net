@@ -60,6 +60,9 @@ SERVICE_USE_LETSENCRYPT="true"  # Will be set based on user input
 SERVER_PROTOCOL_SEL="https"
 SERVER_PORT_SEL=""  # Will be set to BACKEND_PORT in init_instance_vars
 SETUP_NGINX="true"
+UPDATE_MODE="false"
+SELECTED_INSTANCE=""
+SELECTED_SERVICE_NAME=""
 
 # Functions
 print_status() {
@@ -642,31 +645,61 @@ EOF
 
 # Setup database for instance
 setup_database() {
-    print_info "Creating database: $DB_NAME"
+    print_info "Setting up database: $DB_NAME"
     
     # Check if sudo is available for user switching
     if command -v sudo >/dev/null 2>&1; then
-        # Drop and recreate database and user for clean state
-        sudo -u postgres psql -c "DROP DATABASE IF EXISTS $DB_NAME;" || true
-        sudo -u postgres psql -c "DROP USER IF EXISTS $DB_USER;" || true
+        # Check if user exists
+        user_exists=$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'" || echo "0")
         
-        # Create database and user
-        sudo -u postgres psql -c "CREATE USER $DB_USER WITH PASSWORD '$DB_PASS';"
-        sudo -u postgres psql -c "CREATE DATABASE $DB_NAME OWNER $DB_USER;"
+        if [ "$user_exists" = "1" ]; then
+            print_info "Database user $DB_USER already exists, skipping creation"
+        else
+            print_info "Creating database user $DB_USER"
+            sudo -u postgres psql -c "CREATE USER $DB_USER WITH PASSWORD '$DB_PASS';"
+        fi
+        
+        # Check if database exists
+        db_exists=$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'" || echo "0")
+        
+        if [ "$db_exists" = "1" ]; then
+            print_info "Database $DB_NAME already exists, skipping creation"
+        else
+            print_info "Creating database $DB_NAME"
+            sudo -u postgres psql -c "CREATE DATABASE $DB_NAME OWNER $DB_USER;"
+        fi
+        
+        # Always grant privileges (in case they were revoked)
         sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;"
     else
         # Alternative method for systems without sudo (run as postgres user directly)
         print_warning "sudo not available, using alternative method for PostgreSQL setup"
         
-        # Switch to postgres user using su
-        su - postgres -c "psql -c \"DROP DATABASE IF EXISTS $DB_NAME;\"" || true
-        su - postgres -c "psql -c \"DROP USER IF EXISTS $DB_USER;\"" || true
-        su - postgres -c "psql -c \"CREATE USER $DB_USER WITH PASSWORD '$DB_PASS';\""
-        su - postgres -c "psql -c \"CREATE DATABASE $DB_NAME OWNER $DB_USER;\""
+        # Check if user exists
+        user_exists=$(su - postgres -c "psql -tAc \"SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'\"" || echo "0")
+        
+        if [ "$user_exists" = "1" ]; then
+            print_info "Database user $DB_USER already exists, skipping creation"
+        else
+            print_info "Creating database user $DB_USER"
+            su - postgres -c "psql -c \"CREATE USER $DB_USER WITH PASSWORD '$DB_PASS';\""
+        fi
+        
+        # Check if database exists
+        db_exists=$(su - postgres -c "psql -tAc \"SELECT 1 FROM pg_database WHERE datname='$DB_NAME'\"" || echo "0")
+        
+        if [ "$db_exists" = "1" ]; then
+            print_info "Database $DB_NAME already exists, skipping creation"
+        else
+            print_info "Creating database $DB_NAME"
+            su - postgres -c "psql -c \"CREATE DATABASE $DB_NAME OWNER $DB_USER;\""
+        fi
+        
+        # Always grant privileges (in case they were revoked)
         su - postgres -c "psql -c \"GRANT ALL PRIVILEGES ON DATABASE $DB_NAME TO $DB_USER;\""
     fi
     
-    print_status "Database $DB_NAME created with user $DB_USER"
+    print_status "Database setup complete for $DB_NAME"
 }
 
 # Clone application repository
@@ -1550,11 +1583,287 @@ deploy_instance() {
     :
 }
 
+# Detect existing PatchMon installations
+detect_installations() {
+    local installations=()
+    
+    # Find all directories in /opt that contain PatchMon installations
+    if [ -d "/opt" ]; then
+        for dir in /opt/*/; do
+            local dirname=$(basename "$dir")
+            # Skip backup directories
+            if [[ "$dirname" =~ \.backup\. ]]; then
+                continue
+            fi
+            # Check if it's a PatchMon installation
+            if [ -f "$dir/backend/package.json" ] && grep -q "patchmon" "$dir/backend/package.json" 2>/dev/null; then
+                installations+=("$dirname")
+            fi
+        done
+    fi
+    
+    echo "${installations[@]}"
+}
+
+# Select installation to update
+select_installation_to_update() {
+    local installations=($(detect_installations))
+    
+    if [ ${#installations[@]} -eq 0 ]; then
+        print_error "No existing PatchMon installations found in /opt"
+        exit 1
+    fi
+    
+    print_info "Found ${#installations[@]} existing installation(s):"
+    echo ""
+    
+    local i=1
+    declare -A install_map
+    for install in "${installations[@]}"; do
+        # Get current version if possible
+        local version="unknown"
+        if [ -f "/opt/$install/backend/package.json" ]; then
+            version=$(grep '"version"' "/opt/$install/backend/package.json" | head -1 | sed 's/.*"version": "\([^"]*\)".*/\1/')
+        fi
+        
+        # Get service status - try multiple naming conventions
+        # Convention 1: Just the install name (e.g., patchmon.internal)
+        local service_name="$install"
+        # Convention 2: patchmon. prefix (e.g., patchmon.patchmon.internal)
+        local alt_service_name1="patchmon.$install"
+        # Convention 3: patchmon- prefix with underscores (e.g., patchmon-patchmon_internal)
+        local alt_service_name2="patchmon-$(echo "$install" | tr '.' '_')"
+        local status="unknown"
+        
+        # Try convention 1 first (most common)
+        if systemctl is-active --quiet "$service_name" 2>/dev/null; then
+            status="running"
+        elif systemctl is-enabled --quiet "$service_name" 2>/dev/null; then
+            status="stopped"
+        # Try convention 2
+        elif systemctl is-active --quiet "$alt_service_name1" 2>/dev/null; then
+            status="running"
+            service_name="$alt_service_name1"
+        elif systemctl is-enabled --quiet "$alt_service_name1" 2>/dev/null; then
+            status="stopped"
+            service_name="$alt_service_name1"
+        # Try convention 3
+        elif systemctl is-active --quiet "$alt_service_name2" 2>/dev/null; then
+            status="running"
+            service_name="$alt_service_name2"
+        elif systemctl is-enabled --quiet "$alt_service_name2" 2>/dev/null; then
+            status="stopped"
+            service_name="$alt_service_name2"
+        fi
+        
+        printf "%2d. %-30s (v%-10s - %s)\n" "$i" "$install" "$version" "$status"
+        install_map[$i]="$install"
+        # Store the service name for later use
+        declare -g "service_map_$i=$service_name"
+        i=$((i + 1))
+    done
+    
+    echo ""
+    
+    while true; do
+        read_input "Select installation number to update" SELECTION "1"
+        
+        if [[ "$SELECTION" =~ ^[0-9]+$ ]] && [ -n "${install_map[$SELECTION]}" ]; then
+            SELECTED_INSTANCE="${install_map[$SELECTION]}"
+            # Get the stored service name
+            local varname="service_map_$SELECTION"
+            SELECTED_SERVICE_NAME="${!varname}"
+            print_status "Selected: $SELECTED_INSTANCE"
+            print_info "Service: $SELECTED_SERVICE_NAME"
+            return 0
+        else
+            print_error "Invalid selection. Please enter a number from 1 to ${#installations[@]}"
+        fi
+    done
+}
+
+# Update existing installation
+update_installation() {
+    local instance_dir="/opt/$SELECTED_INSTANCE"
+    local service_name="$SELECTED_SERVICE_NAME"
+    
+    print_info "Updating PatchMon installation: $SELECTED_INSTANCE"
+    print_info "Installation directory: $instance_dir"
+    print_info "Service name: $service_name"
+    
+    # Verify it's a git repository
+    if [ ! -d "$instance_dir/.git" ]; then
+        print_error "Installation directory is not a git repository"
+        print_error "Cannot perform git-based update"
+        exit 1
+    fi
+    
+    # Add git safe.directory to avoid ownership issues when running as root
+    print_info "Configuring git safe.directory..."
+    git config --global --add safe.directory "$instance_dir" 2>/dev/null || true
+    
+    # Load existing .env to get database credentials
+    if [ -f "$instance_dir/backend/.env" ]; then
+        source "$instance_dir/backend/.env"
+        print_status "Loaded existing configuration"
+        
+        # Parse DATABASE_URL to extract credentials
+        # Format: postgresql://user:password@host:port/database
+        if [ -n "$DATABASE_URL" ]; then
+            # Extract components using regex
+            DB_USER=$(echo "$DATABASE_URL" | sed -n 's|postgresql://\([^:]*\):.*|\1|p')
+            DB_PASS=$(echo "$DATABASE_URL" | sed -n 's|postgresql://[^:]*:\([^@]*\)@.*|\1|p')
+            DB_HOST=$(echo "$DATABASE_URL" | sed -n 's|.*@\([^:]*\):.*|\1|p')
+            DB_PORT=$(echo "$DATABASE_URL" | sed -n 's|.*:\([0-9]*\)/.*|\1|p')
+            DB_NAME=$(echo "$DATABASE_URL" | sed -n 's|.*/\([^?]*\).*|\1|p')
+            
+            print_info "Database: $DB_NAME (user: $DB_USER)"
+        else
+            print_error "DATABASE_URL not found in .env file"
+            exit 1
+        fi
+    else
+        print_error "Cannot find .env file at $instance_dir/backend/.env"
+        exit 1
+    fi
+    
+    # Select branch/version to update to
+    select_branch
+    
+    print_info "Updating to: $DEPLOYMENT_BRANCH"
+    echo ""
+    
+    read_yes_no "Proceed with update? This will pull new code and restart services" CONFIRM_UPDATE "y"
+    
+    if [ "$CONFIRM_UPDATE" != "y" ]; then
+        print_warning "Update cancelled by user"
+        exit 0
+    fi
+    
+    # Stop the service
+    print_info "Stopping service: $service_name"
+    systemctl stop "$service_name" || true
+    
+    # Create backup directory
+    local timestamp=$(date +%Y%m%d_%H%M%S)
+    local backup_dir="$instance_dir.backup.$timestamp"
+    local db_backup_file="$backup_dir/database_backup_$timestamp.sql"
+    
+    print_info "Creating backup directory: $backup_dir"
+    mkdir -p "$backup_dir"
+    
+    # Backup database
+    print_info "Backing up database: $DB_NAME"
+    if PGPASSWORD="$DB_PASS" pg_dump -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -F c -f "$db_backup_file" 2>/dev/null; then
+        print_status "Database backup created: $db_backup_file"
+    else
+        print_warning "Database backup failed, but continuing with code backup"
+    fi
+    
+    # Backup code
+    print_info "Backing up code files..."
+    cp -r "$instance_dir" "$backup_dir/code"
+    print_status "Code backup created"
+    
+    # Update code
+    print_info "Pulling latest code from branch: $DEPLOYMENT_BRANCH"
+    cd "$instance_dir"
+    
+    # Fetch latest changes
+    git fetch origin
+    
+    # Checkout the selected branch/tag
+    git checkout "$DEPLOYMENT_BRANCH"
+    git pull origin "$DEPLOYMENT_BRANCH" || git pull # For tags, just pull
+    
+    print_status "Code updated successfully"
+    
+    # Update dependencies
+    print_info "Updating backend dependencies..."
+    cd "$instance_dir/backend"
+    npm install --production --ignore-scripts
+    
+    print_info "Updating frontend dependencies..."
+    cd "$instance_dir/frontend"
+    npm install --ignore-scripts
+    
+    # Build frontend
+    print_info "Building frontend..."
+    npm run build
+    
+    # Run database migrations and generate Prisma client
+    print_info "Running database migrations..."
+    cd "$instance_dir/backend"
+    npx prisma generate
+    npx prisma migrate deploy
+    
+    # Start the service
+    print_info "Starting service: $service_name"
+    systemctl start "$service_name"
+    
+    # Wait a moment and check status
+    sleep 3
+    
+    if systemctl is-active --quiet "$service_name"; then
+        print_success "✅ Update completed successfully!"
+        print_status "Service $service_name is running"
+        
+        # Get new version
+        local new_version=$(grep '"version"' "$instance_dir/backend/package.json" | head -1 | sed 's/.*"version": "\([^"]*\)".*/\1/')
+        print_info "Updated to version: $new_version"
+        echo ""
+        print_info "Backup Information:"
+        print_info "  Code backup: $backup_dir/code"
+        print_info "  Database backup: $db_backup_file"
+        echo ""
+        print_info "To restore database if needed:"
+        print_info "  PGPASSWORD=\"$DB_PASS\" pg_restore -h \"$DB_HOST\" -U \"$DB_USER\" -d \"$DB_NAME\" -c \"$db_backup_file\""
+        echo ""
+    else
+        print_error "Service failed to start after update"
+        echo ""
+        print_warning "ROLLBACK INSTRUCTIONS:"
+        print_info "1. Restore code:"
+        print_info "   sudo rm -rf $instance_dir"
+        print_info "   sudo mv $backup_dir/code $instance_dir"
+        echo ""
+        print_info "2. Restore database:"
+        print_info "   PGPASSWORD=\"$DB_PASS\" pg_restore -h \"$DB_HOST\" -U \"$DB_USER\" -d \"$DB_NAME\" -c \"$db_backup_file\""
+        echo ""
+        print_info "3. Restart service:"
+        print_info "   sudo systemctl start $service_name"
+        echo ""
+        print_info "Check logs: journalctl -u $service_name -f"
+        exit 1
+    fi
+}
+
 # Main script execution
 main() {
-    # Log script entry
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Interactive installation started" >> "$DEBUG_LOG"
+    # Parse command-line arguments
+    if [ "$1" = "--update" ]; then
+        UPDATE_MODE="true"
+    fi
     
+    # Log script entry
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Script started - Update mode: $UPDATE_MODE" >> "$DEBUG_LOG"
+    
+    # Handle update mode
+    if [ "$UPDATE_MODE" = "true" ]; then
+        print_banner
+        print_info "🔄 PatchMon Update Mode"
+        echo ""
+        
+        # Select installation to update
+        select_installation_to_update
+        
+        # Perform update
+        update_installation
+        
+        exit 0
+    fi
+    
+    # Normal installation mode
     # Run interactive setup
     interactive_setup
     
@@ -1588,5 +1897,30 @@ main() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] deploy_instance function completed" >> "$DEBUG_LOG"
 }
 
-# Run main function (no arguments needed for interactive mode)
-main
+# Show usage/help
+show_usage() {
+    echo "PatchMon Self-Hosting Installation & Update Script"
+    echo "Version: $SCRIPT_VERSION"
+    echo ""
+    echo "Usage:"
+    echo "  $0              # Interactive installation (default)"
+    echo "  $0 --update     # Update existing installation"
+    echo "  $0 --help       # Show this help message"
+    echo ""
+    echo "Examples:"
+    echo "  # New installation:"
+    echo "  sudo bash $0"
+    echo ""
+    echo "  # Update existing installation:"
+    echo "  sudo bash $0 --update"
+    echo ""
+}
+
+# Check for help flag
+if [ "$1" = "--help" ] || [ "$1" = "-h" ]; then
+    show_usage
+    exit 0
+fi
+
+# Run main function
+main "$@"
