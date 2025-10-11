@@ -34,7 +34,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Global variables
-SCRIPT_VERSION="self-hosting-install.sh v1.2.7-selfhost-2025-01-20-1"
+SCRIPT_VERSION="self-hosting-install.sh v1.2.9-selfhost-2025-10-11-1"
 DEFAULT_GITHUB_REPO="https://github.com/PatchMon/PatchMon.git"
 FQDN=""
 CUSTOM_FQDN=""
@@ -834,7 +834,7 @@ EOF
     cat > frontend/.env << EOF
 VITE_API_URL=$SERVER_PROTOCOL_SEL://$FQDN/api/v1
 VITE_APP_NAME=PatchMon
-VITE_APP_VERSION=1.2.7
+VITE_APP_VERSION=1.2.9
 EOF
 
     print_status "Environment files created"
@@ -1206,7 +1206,7 @@ create_agent_version() {
     
     # Priority 2: Use fallback version if not found
     if [ "$current_version" = "N/A" ] || [ -z "$current_version" ]; then
-        current_version="1.2.7"
+        current_version="1.2.9"
         print_warning "Could not determine version, using fallback: $current_version"
     fi
     
