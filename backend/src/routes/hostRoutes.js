@@ -390,153 +390,190 @@ router.post(
 			const totalPackages = packages.length;
 
 			// Process everything in a single transaction to avoid race conditions
-			await prisma.$transaction(async (tx) => {
-				// Update host data
-				await tx.hosts.update({
-					where: { id: host.id },
-					data: updateData,
-				});
-
-				// Clear existing host packages to avoid duplicates
-				await tx.host_packages.deleteMany({
-					where: { host_id: host.id },
-				});
-
-				// Process each package
-				for (const packageData of packages) {
-					// Find or create package
-					let pkg = await tx.packages.findUnique({
-						where: { name: packageData.name },
+			await prisma.$transaction(
+				async (tx) => {
+					// Update host data
+					await tx.hosts.update({
+						where: { id: host.id },
+						data: updateData,
 					});
 
-					if (!pkg) {
-						pkg = await tx.packages.create({
-							data: {
+					// Clear existing host packages to avoid duplicates
+					await tx.host_packages.deleteMany({
+						where: { host_id: host.id },
+					});
+
+					// Process packages in batches using createMany/updateMany
+					const packagesToCreate = [];
+					const packagesToUpdate = [];
+					const hostPackagesToUpsert = [];
+
+					// First pass: identify what needs to be created/updated
+					const existingPackages = await tx.packages.findMany({
+						where: {
+							name: { in: packages.map((p) => p.name) },
+						},
+					});
+
+					const existingPackageMap = new Map(
+						existingPackages.map((p) => [p.name, p]),
+					);
+
+					for (const packageData of packages) {
+						const existingPkg = existingPackageMap.get(packageData.name);
+
+						if (!existingPkg) {
+							// Package doesn't exist, create it
+							const newPkg = {
 								id: uuidv4(),
 								name: packageData.name,
 								description: packageData.description || null,
 								category: packageData.category || null,
 								latest_version:
 									packageData.availableVersion || packageData.currentVersion,
+								created_at: new Date(),
+								updated_at: new Date(),
+							};
+							packagesToCreate.push(newPkg);
+							existingPackageMap.set(packageData.name, newPkg);
+						} else if (
+							packageData.availableVersion &&
+							packageData.availableVersion !== existingPkg.latest_version
+						) {
+							// Package exists but needs version update
+							packagesToUpdate.push({
+								id: existingPkg.id,
+								latest_version: packageData.availableVersion,
+							});
+						}
+					}
+
+					// Batch create new packages
+					if (packagesToCreate.length > 0) {
+						await tx.packages.createMany({
+							data: packagesToCreate,
+							skipDuplicates: true,
+						});
+					}
+
+					// Batch update existing packages
+					for (const update of packagesToUpdate) {
+						await tx.packages.update({
+							where: { id: update.id },
+							data: {
+								latest_version: update.latest_version,
 								updated_at: new Date(),
 							},
 						});
-					} else {
-						// Update package latest version if newer
-						if (
-							packageData.availableVersion &&
-							packageData.availableVersion !== pkg.latest_version
-						) {
-							await tx.packages.update({
-								where: { id: pkg.id },
-								data: {
-									latest_version: packageData.availableVersion,
-									updated_at: new Date(),
-								},
-							});
-						}
 					}
 
-					// Create host package relationship
-					// Use upsert to handle potential duplicates gracefully
-					await tx.host_packages.upsert({
-						where: {
-							host_id_package_id: {
-								host_id: host.id,
-								package_id: pkg.id,
-							},
-						},
-						update: {
-							current_version: packageData.currentVersion,
-							available_version: packageData.availableVersion || null,
-							needs_update: packageData.needsUpdate,
-							is_security_update: packageData.isSecurityUpdate || false,
-							last_checked: new Date(),
-						},
-						create: {
-							id: uuidv4(),
-							host_id: host.id,
-							package_id: pkg.id,
-							current_version: packageData.currentVersion,
-							available_version: packageData.availableVersion || null,
-							needs_update: packageData.needsUpdate,
-							is_security_update: packageData.isSecurityUpdate || false,
-							last_checked: new Date(),
-						},
-					});
-				}
+					// Now process host_packages
+					for (const packageData of packages) {
+						const pkg = existingPackageMap.get(packageData.name);
 
-				// Process repositories if provided
-				if (repositories && Array.isArray(repositories)) {
-					// Clear existing host repositories
-					await tx.host_repositories.deleteMany({
-						where: { host_id: host.id },
-					});
-
-					// Deduplicate repositories by URL+distribution+components to avoid constraint violations
-					const uniqueRepos = new Map();
-					for (const repoData of repositories) {
-						const key = `${repoData.url}|${repoData.distribution}|${repoData.components}`;
-						if (!uniqueRepos.has(key)) {
-							uniqueRepos.set(key, repoData);
-						}
-					}
-
-					// Process each unique repository
-					for (const repoData of uniqueRepos.values()) {
-						// Find or create repository
-						let repo = await tx.repositories.findFirst({
+						await tx.host_packages.upsert({
 							where: {
-								url: repoData.url,
-								distribution: repoData.distribution,
-								components: repoData.components,
-							},
-						});
-
-						if (!repo) {
-							repo = await tx.repositories.create({
-								data: {
-									id: uuidv4(),
-									name: repoData.name,
-									url: repoData.url,
-									distribution: repoData.distribution,
-									components: repoData.components,
-									repo_type: repoData.repoType,
-									is_active: true,
-									is_secure: repoData.isSecure || false,
-									description: `${repoData.repoType} repository for ${repoData.distribution}`,
-									updated_at: new Date(),
+								host_id_package_id: {
+									host_id: host.id,
+									package_id: pkg.id,
 								},
-							});
-						}
-
-						// Create host repository relationship
-						await tx.host_repositories.create({
-							data: {
+							},
+							update: {
+								current_version: packageData.currentVersion,
+								available_version: packageData.availableVersion || null,
+								needs_update: packageData.needsUpdate,
+								is_security_update: packageData.isSecurityUpdate || false,
+								last_checked: new Date(),
+							},
+							create: {
 								id: uuidv4(),
 								host_id: host.id,
-								repository_id: repo.id,
-								is_enabled: repoData.isEnabled !== false, // Default to enabled
+								package_id: pkg.id,
+								current_version: packageData.currentVersion,
+								available_version: packageData.availableVersion || null,
+								needs_update: packageData.needsUpdate,
+								is_security_update: packageData.isSecurityUpdate || false,
 								last_checked: new Date(),
 							},
 						});
 					}
-				}
 
-				// Create update history record
-				await tx.update_history.create({
-					data: {
-						id: uuidv4(),
-						host_id: host.id,
-						packages_count: updatesCount,
-						security_count: securityCount,
-						total_packages: totalPackages,
-						payload_size_kb: payloadSizeKb,
-						execution_time: executionTime ? parseFloat(executionTime) : null,
-						status: "success",
-					},
-				});
-			});
+					// Process repositories if provided
+					if (repositories && Array.isArray(repositories)) {
+						// Clear existing host repositories
+						await tx.host_repositories.deleteMany({
+							where: { host_id: host.id },
+						});
+
+						// Deduplicate repositories by URL+distribution+components to avoid constraint violations
+						const uniqueRepos = new Map();
+						for (const repoData of repositories) {
+							const key = `${repoData.url}|${repoData.distribution}|${repoData.components}`;
+							if (!uniqueRepos.has(key)) {
+								uniqueRepos.set(key, repoData);
+							}
+						}
+
+						// Process each unique repository
+						for (const repoData of uniqueRepos.values()) {
+							// Find or create repository
+							let repo = await tx.repositories.findFirst({
+								where: {
+									url: repoData.url,
+									distribution: repoData.distribution,
+									components: repoData.components,
+								},
+							});
+
+							if (!repo) {
+								repo = await tx.repositories.create({
+									data: {
+										id: uuidv4(),
+										name: repoData.name,
+										url: repoData.url,
+										distribution: repoData.distribution,
+										components: repoData.components,
+										repo_type: repoData.repoType,
+										is_active: true,
+										is_secure: repoData.isSecure || false,
+										description: `${repoData.repoType} repository for ${repoData.distribution}`,
+										updated_at: new Date(),
+									},
+								});
+							}
+
+							// Create host repository relationship
+							await tx.host_repositories.create({
+								data: {
+									id: uuidv4(),
+									host_id: host.id,
+									repository_id: repo.id,
+									is_enabled: repoData.isEnabled !== false, // Default to enabled
+									last_checked: new Date(),
+								},
+							});
+						}
+					}
+
+					// Create update history record
+					await tx.update_history.create({
+						data: {
+							id: uuidv4(),
+							host_id: host.id,
+							packages_count: updatesCount,
+							security_count: securityCount,
+							total_packages: totalPackages,
+							payload_size_kb: payloadSizeKb,
+							execution_time: executionTime ? parseFloat(executionTime) : null,
+							status: "success",
+						},
+					});
+				},
+				{
+					maxWait: 30000, // Wait up to 30s for a transaction slot
+					timeout: 60000, // Allow transaction to run for up to 60s
+				},
+			);
 
 			// Agent auto-update is now handled client-side by the agent itself
 
