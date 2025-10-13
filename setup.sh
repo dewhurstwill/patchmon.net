@@ -1769,6 +1769,14 @@ update_installation() {
     print_info "Pulling latest code from branch: $DEPLOYMENT_BRANCH"
     cd "$instance_dir"
     
+    # Clean up any untracked files that might conflict with incoming changes
+    print_info "Cleaning up untracked files to prevent merge conflicts..."
+    git clean -fd
+    
+    # Reset any local changes to ensure clean state
+    print_info "Resetting local changes to ensure clean state..."
+    git reset --hard HEAD
+    
     # Fetch latest changes
     git fetch origin
     
