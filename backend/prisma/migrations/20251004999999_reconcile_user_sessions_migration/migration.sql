@@ -52,4 +52,13 @@ BEGIN
         RAISE NOTICE 'Table does not exist - migration will proceed normally';
     END IF;
     
+    -- Additional check: If we have any old migration names, update them
+    IF EXISTS (SELECT 1 FROM _prisma_migrations WHERE migration_name = 'add_user_sessions') THEN
+        RAISE NOTICE 'Found old migration name - updating to new format';
+        UPDATE _prisma_migrations 
+        SET migration_name = '20251005000000_add_user_sessions'
+        WHERE migration_name = 'add_user_sessions';
+        RAISE NOTICE 'Old migration name updated';
+    END IF;
+    
 END $$;
