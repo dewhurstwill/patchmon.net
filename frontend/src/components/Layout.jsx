@@ -11,7 +11,6 @@ import {
 	Github,
 	Globe,
 	Home,
-	List,
 	LogOut,
 	Mail,
 	Menu,
@@ -113,18 +112,26 @@ const Layout = ({ children }) => {
 				});
 			}
 
+			// Add Automation item (available to all users with inventory access)
+			inventoryItems.push({
+				name: "Automation",
+				href: "/automation",
+				icon: RefreshCw,
+				beta: true,
+			});
+
 			if (canViewReports()) {
 				inventoryItems.push(
-					{
-						name: "Services",
-						href: "/services",
-						icon: Activity,
-						comingSoon: true,
-					},
 					{
 						name: "Docker",
 						href: "/docker",
 						icon: Container,
+						beta: true,
+					},
+					{
+						name: "Services",
+						href: "/services",
+						icon: Activity,
 						comingSoon: true,
 					},
 					{
@@ -136,21 +143,13 @@ const Layout = ({ children }) => {
 				);
 			}
 
-			// Add Pro-Action and Queue items (available to all users with inventory access)
-			inventoryItems.push(
-				{
-					name: "Pro-Action",
-					href: "/pro-action",
-					icon: Zap,
-					comingSoon: true,
-				},
-				{
-					name: "Queue",
-					href: "/queue",
-					icon: List,
-					comingSoon: true,
-				},
-			);
+			// Add Pro-Action item (available to all users with inventory access)
+			inventoryItems.push({
+				name: "Pro-Action",
+				href: "/pro-action",
+				icon: Zap,
+				comingSoon: true,
+			});
 
 			if (inventoryItems.length > 0) {
 				nav.push({
@@ -210,7 +209,7 @@ const Layout = ({ children }) => {
 		if (path === "/services") return "Services";
 		if (path === "/docker") return "Docker";
 		if (path === "/pro-action") return "Pro-Action";
-		if (path === "/queue") return "Queue";
+		if (path === "/automation") return "Automation";
 		if (path === "/users") return "Users";
 		if (path === "/permissions") return "Permissions";
 		if (path === "/settings") return "Settings";
@@ -434,6 +433,11 @@ const Layout = ({ children }) => {
 																	{subItem.comingSoon && (
 																		<span className="text-xs bg-secondary-100 dark:bg-secondary-600 text-secondary-600 dark:text-secondary-200 px-1.5 py-0.5 rounded">
 																			Soon
+																		</span>
+																	)}
+																	{subItem.beta && (
+																		<span className="text-xs bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-200 px-1.5 py-0.5 rounded font-medium">
+																			Beta
 																		</span>
 																	)}
 																</span>
@@ -707,6 +711,11 @@ const Layout = ({ children }) => {
 																				Soon
 																			</span>
 																		)}
+																		{subItem.beta && (
+																			<span className="text-xs bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-200 px-1.5 py-0.5 rounded font-medium">
+																				Beta
+																			</span>
+																		)}
 																		{subItem.showUpgradeIcon && (
 																			<UpgradeNotificationIcon className="h-3 w-3" />
 																		)}
@@ -929,11 +938,17 @@ const Layout = ({ children }) => {
 					<div className="h-6 w-px bg-secondary-200 dark:bg-secondary-600 lg:hidden" />
 
 					<div className="flex flex-1 gap-x-4 self-stretch lg:gap-x-6">
-						{/* Page title - hidden on dashboard, hosts, repositories, packages, and host details to give more space to search */}
-						{!["/", "/hosts", "/repositories", "/packages"].includes(
-							location.pathname,
-						) &&
-							!location.pathname.startsWith("/hosts/") && (
+						{/* Page title - hidden on dashboard, hosts, repositories, packages, automation, docker, and host details to give more space to search */}
+						{![
+							"/",
+							"/hosts",
+							"/repositories",
+							"/packages",
+							"/automation",
+							"/docker",
+						].includes(location.pathname) &&
+							!location.pathname.startsWith("/hosts/") &&
+							!location.pathname.startsWith("/docker/") && (
 								<div className="relative flex items-center">
 									<h2 className="text-lg font-semibold text-secondary-900 dark:text-secondary-100 whitespace-nowrap">
 										{getPageTitle()}
@@ -943,7 +958,7 @@ const Layout = ({ children }) => {
 
 						{/* Global Search Bar */}
 						<div
-							className={`flex items-center ${["/", "/hosts", "/repositories", "/packages"].includes(location.pathname) || location.pathname.startsWith("/hosts/") ? "flex-1 max-w-none" : "max-w-sm"}`}
+							className={`flex items-center ${["/", "/hosts", "/repositories", "/packages", "/automation", "/docker"].includes(location.pathname) || location.pathname.startsWith("/hosts/") || location.pathname.startsWith("/docker/") ? "flex-1 max-w-none" : "max-w-sm"}`}
 						>
 							<GlobalSearch />
 						</div>

@@ -2,6 +2,7 @@ import {
 	AlertCircle,
 	BookOpen,
 	CheckCircle,
+	Container,
 	Copy,
 	Eye,
 	EyeOff,
@@ -254,6 +255,17 @@ const Integrations = () => {
 							}`}
 						>
 							GetHomepage
+						</button>
+						<button
+							type="button"
+							onClick={() => handleTabChange("docker")}
+							className={`px-6 py-3 text-sm font-medium ${
+								activeTab === "docker"
+									? "text-primary-600 dark:text-primary-400 border-b-2 border-primary-500 bg-primary-50 dark:bg-primary-900/20"
+									: "text-secondary-500 dark:text-secondary-400 hover:text-secondary-700 dark:hover:text-secondary-300 hover:bg-secondary-50 dark:hover:bg-secondary-700/50"
+							}`}
+						>
+							Docker
 						</button>
 						{/* Future tabs can be added here */}
 					</div>
@@ -718,6 +730,256 @@ const Integrations = () => {
 												<br />
 												label: Updates (24h)
 											</div>
+										</div>
+									</div>
+								</div>
+							</div>
+						)}
+
+						{/* Docker Tab */}
+						{activeTab === "docker" && (
+							<div className="space-y-6">
+								{/* Header */}
+								<div className="flex items-center gap-3">
+									<div className="w-10 h-10 bg-primary-100 dark:bg-primary-900 rounded-lg flex items-center justify-center">
+										<Container className="h-5 w-5 text-primary-600 dark:text-primary-400" />
+									</div>
+									<div>
+										<h3 className="text-lg font-semibold text-secondary-900 dark:text-white">
+											Docker Container Monitoring
+										</h3>
+										<p className="text-sm text-secondary-600 dark:text-secondary-400">
+											Monitor Docker containers and images for available updates
+										</p>
+									</div>
+								</div>
+
+								{/* Installation Instructions */}
+								<div className="bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-lg p-6">
+									<h3 className="text-lg font-semibold text-primary-900 dark:text-primary-200 mb-4">
+										Agent Installation
+									</h3>
+									<ol className="list-decimal list-inside space-y-3 text-sm text-primary-800 dark:text-primary-300">
+										<li>
+											Make sure you have the PatchMon credentials file set up on
+											your host (
+											<code className="bg-primary-100 dark:bg-primary-900/40 px-1 py-0.5 rounded text-xs">
+												/etc/patchmon/credentials
+											</code>
+											)
+										</li>
+										<li>
+											SSH into your Docker host where you want to monitor
+											containers
+										</li>
+										<li>Run the installation command below</li>
+										<li>
+											The agent will automatically collect Docker container and
+											image information every 5 minutes
+										</li>
+										<li>View your Docker inventory in the Docker page</li>
+									</ol>
+								</div>
+
+								{/* Installation Command */}
+								<div className="bg-white dark:bg-secondary-900 border border-secondary-200 dark:border-secondary-600 rounded-lg p-6">
+									<h4 className="text-md font-semibold text-secondary-900 dark:text-white mb-3">
+										Quick Installation (One-Line Command)
+									</h4>
+									<div className="space-y-3">
+										<div>
+											<div className="block text-sm font-medium text-secondary-700 dark:text-secondary-300 mb-2">
+												Download and install the Docker agent:
+											</div>
+											<div className="flex items-center gap-2">
+												<input
+													type="text"
+													value={`curl -o /usr/local/bin/patchmon-docker-agent.sh "${server_url}/api/v1/docker/agent" && chmod +x /usr/local/bin/patchmon-docker-agent.sh && echo "*/5 * * * * /usr/local/bin/patchmon-docker-agent.sh collect" | crontab -`}
+													readOnly
+													className="flex-1 px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-secondary-50 dark:bg-secondary-900 text-secondary-900 dark:text-white font-mono text-xs"
+												/>
+												<button
+													type="button"
+													onClick={() =>
+														copy_to_clipboard(
+															`curl -o /usr/local/bin/patchmon-docker-agent.sh "${server_url}/api/v1/docker/agent" && chmod +x /usr/local/bin/patchmon-docker-agent.sh && echo "*/5 * * * * /usr/local/bin/patchmon-docker-agent.sh collect" | crontab -`,
+															"docker-install",
+														)
+													}
+													className="btn-primary flex items-center gap-1 px-3 py-2 whitespace-nowrap"
+												>
+													{copy_success["docker-install"] ? (
+														<>
+															<CheckCircle className="h-4 w-4" />
+															Copied
+														</>
+													) : (
+														<>
+															<Copy className="h-4 w-4" />
+															Copy
+														</>
+													)}
+												</button>
+											</div>
+											<p className="text-xs text-secondary-500 dark:text-secondary-400 mt-2">
+												💡 This will download the agent, make it executable, and
+												set up a cron job to run every 5 minutes
+											</p>
+										</div>
+									</div>
+								</div>
+
+								{/* Manual Installation Steps */}
+								<div className="bg-white dark:bg-secondary-900 border border-secondary-200 dark:border-secondary-600 rounded-lg p-6">
+									<h4 className="text-md font-semibold text-secondary-900 dark:text-white mb-3">
+										Manual Installation Steps
+									</h4>
+									<div className="space-y-4">
+										<div>
+											<p className="text-sm text-secondary-700 dark:text-secondary-300 mb-2">
+												<strong>Step 1:</strong> Download the agent
+											</p>
+											<div className="flex items-center gap-2">
+												<input
+													type="text"
+													value={`curl -o /usr/local/bin/patchmon-docker-agent.sh "${server_url}/api/v1/docker/agent"`}
+													readOnly
+													className="flex-1 px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-secondary-50 dark:bg-secondary-900 text-secondary-900 dark:text-white font-mono text-xs"
+												/>
+												<button
+													type="button"
+													onClick={() =>
+														copy_to_clipboard(
+															`curl -o /usr/local/bin/patchmon-docker-agent.sh "${server_url}/api/v1/docker/agent"`,
+															"docker-download",
+														)
+													}
+													className="btn-primary p-2"
+												>
+													{copy_success["docker-download"] ? (
+														<CheckCircle className="h-4 w-4" />
+													) : (
+														<Copy className="h-4 w-4" />
+													)}
+												</button>
+											</div>
+										</div>
+
+										<div>
+											<p className="text-sm text-secondary-700 dark:text-secondary-300 mb-2">
+												<strong>Step 2:</strong> Make it executable
+											</p>
+											<div className="flex items-center gap-2">
+												<input
+													type="text"
+													value="chmod +x /usr/local/bin/patchmon-docker-agent.sh"
+													readOnly
+													className="flex-1 px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-secondary-50 dark:bg-secondary-900 text-secondary-900 dark:text-white font-mono text-xs"
+												/>
+												<button
+													type="button"
+													onClick={() =>
+														copy_to_clipboard(
+															"chmod +x /usr/local/bin/patchmon-docker-agent.sh",
+															"docker-chmod",
+														)
+													}
+													className="btn-primary p-2"
+												>
+													{copy_success["docker-chmod"] ? (
+														<CheckCircle className="h-4 w-4" />
+													) : (
+														<Copy className="h-4 w-4" />
+													)}
+												</button>
+											</div>
+										</div>
+
+										<div>
+											<p className="text-sm text-secondary-700 dark:text-secondary-300 mb-2">
+												<strong>Step 3:</strong> Test the agent
+											</p>
+											<div className="flex items-center gap-2">
+												<input
+													type="text"
+													value="/usr/local/bin/patchmon-docker-agent.sh collect"
+													readOnly
+													className="flex-1 px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-secondary-50 dark:bg-secondary-900 text-secondary-900 dark:text-white font-mono text-xs"
+												/>
+												<button
+													type="button"
+													onClick={() =>
+														copy_to_clipboard(
+															"/usr/local/bin/patchmon-docker-agent.sh collect",
+															"docker-test",
+														)
+													}
+													className="btn-primary p-2"
+												>
+													{copy_success["docker-test"] ? (
+														<CheckCircle className="h-4 w-4" />
+													) : (
+														<Copy className="h-4 w-4" />
+													)}
+												</button>
+											</div>
+										</div>
+
+										<div>
+											<p className="text-sm text-secondary-700 dark:text-secondary-300 mb-2">
+												<strong>Step 4:</strong> Set up automatic collection
+												(every 5 minutes)
+											</p>
+											<div className="flex items-center gap-2">
+												<input
+													type="text"
+													value='echo "*/5 * * * * /usr/local/bin/patchmon-docker-agent.sh collect" | crontab -'
+													readOnly
+													className="flex-1 px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-secondary-50 dark:bg-secondary-900 text-secondary-900 dark:text-white font-mono text-xs"
+												/>
+												<button
+													type="button"
+													onClick={() =>
+														copy_to_clipboard(
+															'echo "*/5 * * * * /usr/local/bin/patchmon-docker-agent.sh collect" | crontab -',
+															"docker-cron",
+														)
+													}
+													className="btn-primary p-2"
+												>
+													{copy_success["docker-cron"] ? (
+														<CheckCircle className="h-4 w-4" />
+													) : (
+														<Copy className="h-4 w-4" />
+													)}
+												</button>
+											</div>
+										</div>
+									</div>
+								</div>
+
+								{/* Prerequisites */}
+								<div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+									<div className="flex items-start gap-2">
+										<AlertCircle className="h-5 w-5 text-yellow-600 dark:text-yellow-400 flex-shrink-0 mt-0.5" />
+										<div className="text-sm text-yellow-800 dark:text-yellow-200">
+											<p className="font-semibold mb-2">Prerequisites:</p>
+											<ul className="list-disc list-inside space-y-1 ml-2">
+												<li>
+													Docker must be installed and running on the host
+												</li>
+												<li>
+													PatchMon credentials file must exist at{" "}
+													<code className="bg-yellow-100 dark:bg-yellow-900/40 px-1 py-0.5 rounded text-xs">
+														/etc/patchmon/credentials
+													</code>
+												</li>
+												<li>
+													The host must have network access to your PatchMon
+													server
+												</li>
+												<li>The agent must run as root (or with sudo)</li>
+											</ul>
 										</div>
 									</div>
 								</div>

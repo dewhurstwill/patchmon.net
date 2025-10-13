@@ -63,9 +63,12 @@ const tfaRoutes = require("./routes/tfaRoutes");
 const searchRoutes = require("./routes/searchRoutes");
 const autoEnrollmentRoutes = require("./routes/autoEnrollmentRoutes");
 const gethomepageRoutes = require("./routes/gethomepageRoutes");
+const automationRoutes = require("./routes/automationRoutes");
+const dockerRoutes = require("./routes/dockerRoutes");
 const updateScheduler = require("./services/updateScheduler");
 const { initSettings } = require("./services/settingsService");
 const { cleanup_expired_sessions } = require("./utils/session_manager");
+const { queueManager } = require("./services/automation");
 
 // Initialize Prisma client with optimized connection pooling for multiple instances
 const prisma = createPrismaClient();
@@ -424,6 +427,8 @@ app.use(
 	autoEnrollmentRoutes,
 );
 app.use(`/api/${apiVersion}/gethomepage`, gethomepageRoutes);
+app.use(`/api/${apiVersion}/automation`, automationRoutes);
+app.use(`/api/${apiVersion}/docker`, dockerRoutes);
 
 // Error handling middleware
 app.use((err, _req, res, _next) => {
@@ -450,6 +455,7 @@ process.on("SIGINT", async () => {
 		clearInterval(app.locals.session_cleanup_interval);
 	}
 	updateScheduler.stop();
+	await queueManager.shutdown();
 	await disconnectPrisma(prisma);
 	process.exit(0);
 });
@@ -462,6 +468,7 @@ process.on("SIGTERM", async () => {
 		clearInterval(app.locals.session_cleanup_interval);
 	}
 	updateScheduler.stop();
+	await queueManager.shutdown();
 	await disconnectPrisma(prisma);
 	process.exit(0);
 });
@@ -729,6 +736,12 @@ async function startServer() {
 
 		// Initialize dashboard preferences for all users
 		await initializeDashboardPreferences();
+
+		// Initialize BullMQ queue manager
+		await queueManager.initialize();
+
+		// Schedule recurring jobs
+		await queueManager.scheduleAllJobs();
 
 		// Initial session cleanup
 		await cleanup_expired_sessions();
