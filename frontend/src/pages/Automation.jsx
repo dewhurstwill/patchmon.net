@@ -126,6 +126,7 @@ const Automation = () => {
 
 	const getNextRunTime = (schedule, _lastRun) => {
 		if (schedule === "Manual only") return "Manual trigger only";
+		if (schedule.includes("Agent-driven")) return "Agent-driven (automatic)";
 		if (schedule === "Daily at midnight") {
 			const now = new Date();
 			const tomorrow = new Date(now);
@@ -172,6 +173,7 @@ const Automation = () => {
 
 	const getNextRunTimestamp = (schedule) => {
 		if (schedule === "Manual only") return Number.MAX_SAFE_INTEGER; // Manual tasks go to bottom
+		if (schedule.includes("Agent-driven")) return Number.MAX_SAFE_INTEGER - 1; // Agent-driven tasks near bottom but above manual
 		if (schedule === "Daily at midnight") {
 			const now = new Date();
 			const tomorrow = new Date(now);
@@ -218,6 +220,8 @@ const Automation = () => {
 				endpoint = "/automation/trigger/session-cleanup";
 			} else if (jobType === "orphaned-repos") {
 				endpoint = "/automation/trigger/orphaned-repo-cleanup";
+			} else if (jobType === "agent-collection") {
+				endpoint = "/automation/trigger/agent-collection";
 			}
 
 			const _response = await api.post(endpoint, data);
@@ -527,6 +531,10 @@ const Automation = () => {
 																automation.queue.includes("orphaned-repo")
 															) {
 																triggerManualJob("orphaned-repos");
+															} else if (
+																automation.queue.includes("agent-commands")
+															) {
+																triggerManualJob("agent-collection");
 															}
 														}}
 														className="inline-flex items-center justify-center w-6 h-6 border border-transparent rounded text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors duration-200"

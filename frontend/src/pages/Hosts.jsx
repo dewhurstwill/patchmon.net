@@ -328,22 +328,24 @@ const Hosts = () => {
 		const defaultConfig = [
 			{ id: "select", label: "Select", visible: true, order: 0 },
 			{ id: "host", label: "Friendly Name", visible: true, order: 1 },
-			{ id: "ip", label: "IP Address", visible: false, order: 2 },
-			{ id: "group", label: "Group", visible: true, order: 3 },
-			{ id: "os", label: "OS", visible: true, order: 4 },
-			{ id: "os_version", label: "OS Version", visible: false, order: 5 },
-			{ id: "agent_version", label: "Agent Version", visible: true, order: 6 },
+			{ id: "hostname", label: "System Hostname", visible: true, order: 2 },
+			{ id: "ip", label: "IP Address", visible: false, order: 3 },
+			{ id: "group", label: "Group", visible: true, order: 4 },
+			{ id: "os", label: "OS", visible: true, order: 5 },
+			{ id: "os_version", label: "OS Version", visible: false, order: 6 },
+			{ id: "agent_version", label: "Agent Version", visible: true, order: 7 },
 			{
 				id: "auto_update",
 				label: "Agent Auto-Update",
 				visible: true,
-				order: 7,
+				order: 8,
 			},
-			{ id: "status", label: "Status", visible: true, order: 8 },
-			{ id: "updates", label: "Updates", visible: true, order: 9 },
-			{ id: "notes", label: "Notes", visible: false, order: 10 },
-			{ id: "last_update", label: "Last Update", visible: true, order: 11 },
-			{ id: "actions", label: "Actions", visible: true, order: 12 },
+			{ id: "ws_status", label: "Online", visible: true, order: 9 },
+			{ id: "status", label: "Status", visible: true, order: 10 },
+			{ id: "updates", label: "Updates", visible: true, order: 11 },
+			{ id: "notes", label: "Notes", visible: false, order: 12 },
+			{ id: "last_update", label: "Last Update", visible: true, order: 13 },
+			{ id: "actions", label: "Actions", visible: true, order: 14 },
 		];
 
 		const saved = localStorage.getItem("hosts-column-config");
@@ -397,6 +399,70 @@ const Hosts = () => {
 		queryKey: ["hostGroups"],
 		queryFn: () => hostGroupsAPI.list().then((res) => res.data),
 	});
+
+	// Track WebSocket status for all hosts
+	const [wsStatusMap, setWsStatusMap] = useState({});
+
+	// Subscribe to WebSocket status changes for all hosts via SSE
+	useEffect(() => {
+		if (!hosts || hosts.length === 0) return;
+
+		const token = localStorage.getItem("token");
+		if (!token) return;
+
+		const eventSources = new Map();
+		let isMounted = true;
+
+		const connectHost = (apiId) => {
+			if (!isMounted || eventSources.has(apiId)) return;
+
+			try {
+				const es = new EventSource(
+					`/api/v1/ws/status/${apiId}/stream?token=${encodeURIComponent(token)}`,
+				);
+
+				es.onmessage = (event) => {
+					try {
+						const data = JSON.parse(event.data);
+						if (isMounted) {
+							setWsStatusMap((prev) => ({ ...prev, [apiId]: data }));
+						}
+					} catch (_err) {
+						// Silently handle parse errors
+					}
+				};
+
+				es.onerror = () => {
+					es?.close();
+					eventSources.delete(apiId);
+					if (isMounted) {
+						// Retry connection after 5 seconds
+						setTimeout(() => connectHost(apiId), 5000);
+					}
+				};
+
+				eventSources.set(apiId, es);
+			} catch (_err) {
+				// Silently handle connection errors
+			}
+		};
+
+		// Connect to all hosts
+		for (const host of hosts) {
+			if (host.api_id) {
+				connectHost(host.api_id);
+			}
+		}
+
+		// Cleanup function
+		return () => {
+			isMounted = false;
+			for (const es of eventSources.values()) {
+				es.close();
+			}
+			eventSources.clear();
+		};
+	}, [hosts]);
 
 	const bulkUpdateGroupMutation = useMutation({
 		mutationFn: ({ hostIds, hostGroupId }) =>
@@ -756,10 +822,19 @@ const Hosts = () => {
 			{ id: "group", label: "Group", visible: true, order: 4 },
 			{ id: "os", label: "OS", visible: true, order: 5 },
 			{ id: "os_version", label: "OS Version", visible: false, order: 6 },
-			{ id: "status", label: "Status", visible: true, order: 7 },
-			{ id: "updates", label: "Updates", visible: true, order: 8 },
-			{ id: "last_update", label: "Last Update", visible: true, order: 9 },
-			{ id: "actions", label: "Actions", visible: true, order: 10 },
+			{ id: "agent_version", label: "Agent Version", visible: true, order: 7 },
+			{
+				id: "auto_update",
+				label: "Agent Auto-Update",
+				visible: true,
+				order: 8,
+			},
+			{ id: "ws_status", label: "Online", visible: true, order: 9 },
+			{ id: "status", label: "Status", visible: true, order: 10 },
+			{ id: "updates", label: "Updates", visible: true, order: 11 },
+			{ id: "notes", label: "Notes", visible: false, order: 12 },
+			{ id: "last_update", label: "Last Update", visible: true, order: 13 },
+			{ id: "actions", label: "Actions", visible: true, order: 14 },
 		];
 		updateColumnConfig(defaultConfig);
 	};
@@ -871,6 +946,32 @@ const Hosts = () => {
 						falseLabel="No"
 					/>
 				);
+			case "ws_status": {
+				const wsStatus = wsStatusMap[host.api_id];
+				if (!wsStatus) {
+					return (
+						<span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold uppercase bg-secondary-100 text-secondary-600 dark:bg-secondary-700 dark:text-secondary-400">
+							...
+						</span>
+					);
+				}
+				return (
+					<span
+						className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold uppercase ${
+							wsStatus.connected
+								? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 shadow-lg shadow-green-500/50 dark:shadow-green-500/30 animate-pulse"
+								: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
+						}`}
+						title={
+							wsStatus.connected
+								? `Agent connected via ${wsStatus.secure ? "WSS (secure)" : "WS"}`
+								: "Agent not connected"
+						}
+					>
+						{wsStatus.connected ? (wsStatus.secure ? "WSS" : "WS") : "Offline"}
+					</span>
+				);
+			}
 			case "status":
 				return (
 					<div className="text-sm text-secondary-900 dark:text-white">
@@ -1026,13 +1127,12 @@ const Hosts = () => {
 						type="button"
 						onClick={() => refetch()}
 						disabled={isFetching}
-						className="btn-outline flex items-center gap-2"
+						className="btn-outline flex items-center justify-center p-2"
 						title="Refresh hosts data"
 					>
 						<RefreshCw
 							className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`}
 						/>
-						{isFetching ? "Refreshing..." : "Refresh"}
 					</button>
 					<button
 						type="button"

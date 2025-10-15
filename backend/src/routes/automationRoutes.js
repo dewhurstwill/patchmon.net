@@ -241,12 +241,15 @@ router.get("/health", authenticateToken, async (_req, res) => {
 router.get("/overview", authenticateToken, async (_req, res) => {
 	try {
 		const stats = await queueManager.getAllQueueStats();
+		const { getSettings } = require("../services/settingsService");
+		const settings = await getSettings();
 
 		// Get recent jobs for each queue to show last run times
 		const recentJobs = await Promise.all([
 			queueManager.getRecentJobs(QUEUE_NAMES.GITHUB_UPDATE_CHECK, 1),
 			queueManager.getRecentJobs(QUEUE_NAMES.SESSION_CLEANUP, 1),
 			queueManager.getRecentJobs(QUEUE_NAMES.ORPHANED_REPO_CLEANUP, 1),
+			queueManager.getRecentJobs(QUEUE_NAMES.AGENT_COMMANDS, 1),
 		]);
 
 		// Calculate overview metrics
@@ -326,6 +329,22 @@ router.get("/overview", authenticateToken, async (_req, res) => {
 							? "Success"
 							: "Never run",
 					stats: stats[QUEUE_NAMES.ORPHANED_REPO_CLEANUP],
+				},
+				{
+					name: "Collect Host Statistics",
+					queue: QUEUE_NAMES.AGENT_COMMANDS,
+					description: "Collects package statistics from all connected agents",
+					schedule: `Every ${settings.update_interval} minutes (Agent-driven)`,
+					lastRun: recentJobs[3][0]?.finishedOn
+						? new Date(recentJobs[3][0].finishedOn).toLocaleString()
+						: "Never",
+					lastRunTimestamp: recentJobs[3][0]?.finishedOn || 0,
+					status: recentJobs[3][0]?.failedReason
+						? "Failed"
+						: recentJobs[3][0]
+							? "Success"
+							: "Never run",
+					stats: stats[QUEUE_NAMES.AGENT_COMMANDS],
 				},
 			].sort((a, b) => {
 				// Sort by last run timestamp (most recent first)

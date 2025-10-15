@@ -7,6 +7,14 @@ const url = require("node:url");
 // Connection registry by api_id
 const apiIdToSocket = new Map();
 
+// Connection metadata (secure/insecure)
+// Map<api_id, { ws: WebSocket, secure: boolean }>
+const connectionMetadata = new Map();
+
+// Subscribers for connection status changes (for SSE)
+// Map<api_id, Set<callback>>
+const connectionChangeSubscribers = new Map();
+
 let wss;
 let prisma;
 
@@ -46,10 +54,20 @@ function init(server, prismaClient) {
 
 			wss.handleUpgrade(request, socket, head, (ws) => {
 				ws.apiId = apiId;
+
+				// Detect if connection is secure (wss://) or not (ws://)
+				const isSecure =
+					socket.encrypted || request.headers["x-forwarded-proto"] === "https";
+
 				apiIdToSocket.set(apiId, ws);
+				connectionMetadata.set(apiId, { ws, secure: isSecure });
+
 				console.log(
-					`[agent-ws] connected api_id=${apiId} total=${apiIdToSocket.size}`,
+					`[agent-ws] connected api_id=${apiId} protocol=${isSecure ? "wss" : "ws"} total=${apiIdToSocket.size}`,
 				);
+
+				// Notify subscribers of connection
+				notifyConnectionChange(apiId, true);
 
 				ws.on("message", () => {
 					// Currently we don't need to handle agent->server messages
@@ -59,6 +77,9 @@ function init(server, prismaClient) {
 					const existing = apiIdToSocket.get(apiId);
 					if (existing === ws) {
 						apiIdToSocket.delete(apiId);
+						connectionMetadata.delete(apiId);
+						// Notify subscribers of disconnection
+						notifyConnectionChange(apiId, false);
 					}
 					console.log(
 						`[agent-ws] disconnected api_id=${apiId} total=${apiIdToSocket.size}`,
@@ -111,6 +132,39 @@ function pushSettingsUpdate(apiId, newInterval) {
 	);
 }
 
+// Notify all subscribers when connection status changes
+function notifyConnectionChange(apiId, connected) {
+	const subscribers = connectionChangeSubscribers.get(apiId);
+	if (subscribers) {
+		for (const callback of subscribers) {
+			try {
+				callback(connected);
+			} catch (err) {
+				console.error(`[agent-ws] error notifying subscriber:`, err);
+			}
+		}
+	}
+}
+
+// Subscribe to connection status changes for a specific api_id
+function subscribeToConnectionChanges(apiId, callback) {
+	if (!connectionChangeSubscribers.has(apiId)) {
+		connectionChangeSubscribers.set(apiId, new Set());
+	}
+	connectionChangeSubscribers.get(apiId).add(callback);
+
+	// Return unsubscribe function
+	return () => {
+		const subscribers = connectionChangeSubscribers.get(apiId);
+		if (subscribers) {
+			subscribers.delete(callback);
+			if (subscribers.size === 0) {
+				connectionChangeSubscribers.delete(apiId);
+			}
+		}
+	};
+}
+
 module.exports = {
 	init,
 	broadcastSettingsUpdate,
@@ -122,4 +176,15 @@ module.exports = {
 		const ws = apiIdToSocket.get(apiId);
 		return !!ws && ws.readyState === WebSocket.OPEN;
 	},
+	// Get connection info including protocol (ws/wss)
+	getConnectionInfo: (apiId) => {
+		const metadata = connectionMetadata.get(apiId);
+		if (!metadata) {
+			return { connected: false, secure: false };
+		}
+		const connected = metadata.ws.readyState === WebSocket.OPEN;
+		return { connected, secure: metadata.secure };
+	},
+	// Subscribe to connection status changes (for SSE)
+	subscribeToConnectionChanges,
 };

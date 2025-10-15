@@ -61,6 +61,8 @@ export const dashboardAPI = {
 		const url = `/dashboard/hosts/${hostId}/queue${queryString ? `?${queryString}` : ""}`;
 		return api.get(url);
 	},
+	getHostWsStatus: (hostId) => api.get(`/dashboard/hosts/${hostId}/ws-status`),
+	getWsStatusByApiId: (apiId) => api.get(`/ws/status/${apiId}`),
 	getPackageTrends: (params = {}) => {
 		const queryString = new URLSearchParams(params).toString();
 		const url = `/dashboard/package-trends${queryString ? `?${queryString}` : ""}`;

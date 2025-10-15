@@ -66,9 +66,8 @@ const autoEnrollmentRoutes = require("./routes/autoEnrollmentRoutes");
 const gethomepageRoutes = require("./routes/gethomepageRoutes");
 const automationRoutes = require("./routes/automationRoutes");
 const dockerRoutes = require("./routes/dockerRoutes");
-const updateScheduler = require("./services/updateScheduler");
+const wsRoutes = require("./routes/wsRoutes");
 const { initSettings } = require("./services/settingsService");
-const { cleanup_expired_sessions } = require("./utils/session_manager");
 const { queueManager } = require("./services/automation");
 const { authenticateToken, requireAdmin } = require("./middleware/auth");
 const { createBullBoard } = require("@bull-board/api");
@@ -442,6 +441,7 @@ app.use(
 app.use(`/api/${apiVersion}/gethomepage`, gethomepageRoutes);
 app.use(`/api/${apiVersion}/automation`, automationRoutes);
 app.use(`/api/${apiVersion}/docker`, dockerRoutes);
+app.use(`/api/${apiVersion}/ws`, wsRoutes);
 
 // Bull Board - will be populated after queue manager initializes
 let bullBoardRouter = null;
@@ -580,10 +580,6 @@ process.on("SIGINT", async () => {
 	if (process.env.ENABLE_LOGGING === "true") {
 		logger.info("SIGINT received, shutting down gracefully");
 	}
-	if (app.locals.session_cleanup_interval) {
-		clearInterval(app.locals.session_cleanup_interval);
-	}
-	updateScheduler.stop();
 	await queueManager.shutdown();
 	await disconnectPrisma(prisma);
 	process.exit(0);
@@ -593,10 +589,6 @@ process.on("SIGTERM", async () => {
 	if (process.env.ENABLE_LOGGING === "true") {
 		logger.info("SIGTERM received, shutting down gracefully");
 	}
-	if (app.locals.session_cleanup_interval) {
-		clearInterval(app.locals.session_cleanup_interval);
-	}
-	updateScheduler.stop();
 	await queueManager.shutdown();
 	await disconnectPrisma(prisma);
 	process.exit(0);
@@ -891,21 +883,6 @@ async function startServer() {
 		bullBoardRouter = serverAdapter.getRouter();
 		console.log("✅ Bull Board mounted at /admin/queues (secured)");
 
-		// Initial session cleanup
-		await cleanup_expired_sessions();
-
-		// Schedule session cleanup every hour
-		const session_cleanup_interval = setInterval(
-			async () => {
-				try {
-					await cleanup_expired_sessions();
-				} catch (error) {
-					console.error("Session cleanup error:", error);
-				}
-			},
-			60 * 60 * 1000,
-		); // Every hour
-
 		// Initialize WS layer with the underlying HTTP server
 		initAgentWs(server, prisma);
 
@@ -913,15 +890,8 @@ async function startServer() {
 			if (process.env.ENABLE_LOGGING === "true") {
 				logger.info(`Server running on port ${PORT}`);
 				logger.info(`Environment: ${process.env.NODE_ENV}`);
-				logger.info("✅ Session cleanup scheduled (every hour)");
 			}
-
-			// Start update scheduler
-			updateScheduler.start();
 		});
-
-		// Store interval for cleanup on shutdown
-		app.locals.session_cleanup_interval = session_cleanup_interval;
 	} catch (error) {
 		console.error("❌ Failed to start server:", error.message);
 		process.exit(1);

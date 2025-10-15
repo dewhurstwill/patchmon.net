@@ -70,6 +70,63 @@ const HostDetail = () => {
 		refetchOnWindowFocus: false, // Don't refetch when window regains focus
 	});
 
+	// WebSocket connection status using Server-Sent Events (SSE) for real-time push updates
+	const [wsStatus, setWsStatus] = useState(null);
+
+	useEffect(() => {
+		if (!host?.api_id) return;
+
+		const token = localStorage.getItem("token");
+		if (!token) return;
+
+		let eventSource = null;
+		let reconnectTimeout = null;
+		let isMounted = true;
+
+		const connect = () => {
+			if (!isMounted) return;
+
+			try {
+				// Create EventSource for SSE connection
+				eventSource = new EventSource(
+					`/api/v1/ws/status/${host.api_id}/stream?token=${encodeURIComponent(token)}`,
+				);
+
+				eventSource.onmessage = (event) => {
+					try {
+						const data = JSON.parse(event.data);
+						setWsStatus(data);
+					} catch (_err) {
+						// Silently handle parse errors
+					}
+				};
+
+				eventSource.onerror = (_err) => {
+					eventSource?.close();
+
+					// Automatic reconnection after 5 seconds
+					if (isMounted) {
+						reconnectTimeout = setTimeout(connect, 5000);
+					}
+				};
+			} catch (_err) {
+				// Silently handle connection errors
+			}
+		};
+
+		// Initial connection
+		connect();
+
+		// Cleanup on unmount or when api_id changes
+		return () => {
+			isMounted = false;
+			if (reconnectTimeout) clearTimeout(reconnectTimeout);
+			if (eventSource) {
+				eventSource.close();
+			}
+		};
+	}, [host?.api_id]);
+
 	// Fetch repository count for this host
 	const { data: repositories, isLoading: isLoadingRepos } = useQuery({
 		queryKey: ["host-repositories", hostId],
@@ -249,49 +306,67 @@ const HostDetail = () => {
 	return (
 		<div className="h-screen flex flex-col">
 			{/* Header */}
-			<div className="flex items-center justify-between mb-4 pb-4 border-b border-secondary-200 dark:border-secondary-600">
-				<div className="flex items-center gap-3">
+			<div className="flex items-start justify-between mb-4 pb-4 border-b border-secondary-200 dark:border-secondary-600">
+				<div className="flex items-start gap-3">
 					<Link
 						to="/hosts"
-						className="text-secondary-500 hover:text-secondary-700 dark:text-secondary-400 dark:hover:text-secondary-200"
+						className="text-secondary-500 hover:text-secondary-700 dark:text-secondary-400 dark:hover:text-secondary-200 mt-1"
 					>
 						<ArrowLeft className="h-5 w-5" />
 					</Link>
-					<h1 className="text-xl font-semibold text-secondary-900 dark:text-white">
-						{host.friendly_name}
-					</h1>
-					{host.system_uptime && (
-						<div className="flex items-center gap-1 text-sm text-secondary-600 dark:text-secondary-400">
-							<Clock className="h-4 w-4" />
-							<span className="text-xs font-medium">Uptime:</span>
-							<span>{host.system_uptime}</span>
+					<div className="flex flex-col gap-2">
+						{/* Title row with friendly name, badge, and status */}
+						<div className="flex items-center gap-3">
+							<h1 className="text-2xl font-semibold text-secondary-900 dark:text-white">
+								{host.friendly_name}
+							</h1>
+							{wsStatus && (
+								<span
+									className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold uppercase ${
+										wsStatus.connected
+											? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 animate-pulse"
+											: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
+									}`}
+									title={
+										wsStatus.connected
+											? `Agent connected via ${wsStatus.secure ? "WSS (secure)" : "WS"}`
+											: "Agent not connected"
+									}
+								>
+									{wsStatus.connected
+										? wsStatus.secure
+											? "WSS"
+											: "WS"
+										: "Offline"}
+								</span>
+							)}
+							<div
+								className={`flex items-center gap-2 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(isStale, host.stats.outdated_packages > 0)}`}
+							>
+								{getStatusIcon(isStale, host.stats.outdated_packages > 0)}
+								{getStatusText(isStale, host.stats.outdated_packages > 0)}
+							</div>
 						</div>
-					)}
-					<div className="flex items-center gap-1 text-sm text-secondary-600 dark:text-secondary-400">
-						<Clock className="h-4 w-4" />
-						<span className="text-xs font-medium">Last updated:</span>
-						<span>{formatRelativeTime(host.last_update)}</span>
-					</div>
-					<div
-						className={`flex items-center gap-2 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(isStale, host.stats.outdated_packages > 0)}`}
-					>
-						{getStatusIcon(isStale, host.stats.outdated_packages > 0)}
-						{getStatusText(isStale, host.stats.outdated_packages > 0)}
+						{/* Info row with uptime and last updated */}
+						<div className="flex items-center gap-4 text-sm text-secondary-600 dark:text-secondary-400">
+							{host.system_uptime && (
+								<div className="flex items-center gap-1">
+									<Clock className="h-3.5 w-3.5" />
+									<span className="text-xs font-medium">Uptime:</span>
+									<span className="text-xs">{host.system_uptime}</span>
+								</div>
+							)}
+							<div className="flex items-center gap-1">
+								<Clock className="h-3.5 w-3.5" />
+								<span className="text-xs font-medium">Last updated:</span>
+								<span className="text-xs">
+									{formatRelativeTime(host.last_update)}
+								</span>
+							</div>
+						</div>
 					</div>
 				</div>
 				<div className="flex items-center gap-2">
-					<button
-						type="button"
-						onClick={() => refetch()}
-						disabled={isFetching}
-						className="btn-outline flex items-center gap-2 text-sm"
-						title="Refresh host data"
-					>
-						<RefreshCw
-							className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`}
-						/>
-						{isFetching ? "Refreshing..." : "Refresh"}
-					</button>
 					<button
 						type="button"
 						onClick={() => setShowCredentialsModal(true)}
@@ -299,6 +374,17 @@ const HostDetail = () => {
 					>
 						<Key className="h-4 w-4" />
 						Deploy Agent
+					</button>
+					<button
+						type="button"
+						onClick={() => refetch()}
+						disabled={isFetching}
+						className="btn-outline flex items-center justify-center p-2 text-sm"
+						title="Refresh host data"
+					>
+						<RefreshCw
+							className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`}
+						/>
 					</button>
 					<button
 						type="button"
@@ -1765,7 +1851,7 @@ const AgentQueueTab = ({ hostId }) => {
 		<div className="space-y-6">
 			<div className="flex items-center justify-between">
 				<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
-					Agent Queue Status
+					Live Agent Queue Status
 				</h3>
 				<button
 					type="button"
@@ -1774,62 +1860,61 @@ const AgentQueueTab = ({ hostId }) => {
 					title="Refresh queue data"
 				>
 					<RefreshCw className="h-4 w-4" />
-					Refresh
 				</button>
 			</div>
 
 			{/* Queue Summary */}
 			<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-				<div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4">
-					<div className="flex items-center gap-3">
-						<Server className="h-8 w-8 text-blue-600 dark:text-blue-400" />
+				<div className="card p-4">
+					<div className="flex items-center">
+						<Server className="h-5 w-5 text-blue-600 mr-2" />
 						<div>
-							<p className="text-sm text-blue-600 dark:text-blue-400 font-medium">
+							<p className="text-sm text-secondary-500 dark:text-white">
 								Waiting
 							</p>
-							<p className="text-2xl font-bold text-blue-700 dark:text-blue-300">
+							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{waiting}
 							</p>
 						</div>
 					</div>
 				</div>
 
-				<div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-4">
-					<div className="flex items-center gap-3">
-						<Clock3 className="h-8 w-8 text-yellow-600 dark:text-yellow-400" />
+				<div className="card p-4">
+					<div className="flex items-center">
+						<Clock3 className="h-5 w-5 text-warning-600 mr-2" />
 						<div>
-							<p className="text-sm text-yellow-600 dark:text-yellow-400 font-medium">
+							<p className="text-sm text-secondary-500 dark:text-white">
 								Active
 							</p>
-							<p className="text-2xl font-bold text-yellow-700 dark:text-yellow-300">
+							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{active}
 							</p>
 						</div>
 					</div>
 				</div>
 
-				<div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4">
-					<div className="flex items-center gap-3">
-						<Clock className="h-8 w-8 text-purple-600 dark:text-purple-400" />
+				<div className="card p-4">
+					<div className="flex items-center">
+						<Clock className="h-5 w-5 text-primary-600 mr-2" />
 						<div>
-							<p className="text-sm text-purple-600 dark:text-purple-400 font-medium">
+							<p className="text-sm text-secondary-500 dark:text-white">
 								Delayed
 							</p>
-							<p className="text-2xl font-bold text-purple-700 dark:text-purple-300">
+							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{delayed}
 							</p>
 						</div>
 					</div>
 				</div>
 
-				<div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-4">
-					<div className="flex items-center gap-3">
-						<AlertCircle className="h-8 w-8 text-red-600 dark:text-red-400" />
+				<div className="card p-4">
+					<div className="flex items-center">
+						<AlertCircle className="h-5 w-5 text-danger-600 mr-2" />
 						<div>
-							<p className="text-sm text-red-600 dark:text-red-400 font-medium">
+							<p className="text-sm text-secondary-500 dark:text-white">
 								Failed
 							</p>
-							<p className="text-2xl font-bold text-red-700 dark:text-red-300">
+							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{failed}
 							</p>
 						</div>
