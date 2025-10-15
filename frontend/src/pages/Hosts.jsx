@@ -21,6 +21,7 @@ import {
 	Square,
 	Trash2,
 	Users,
+	Wifi,
 	X,
 } from "lucide-react";
 import { useEffect, useId, useMemo, useState } from "react";
@@ -403,6 +404,49 @@ const Hosts = () => {
 	// Track WebSocket status for all hosts
 	const [wsStatusMap, setWsStatusMap] = useState({});
 
+	// Fetch initial WebSocket status for all hosts
+	useEffect(() => {
+		if (!hosts || hosts.length === 0) return;
+
+		const token = localStorage.getItem("token");
+		if (!token) return;
+
+		// Fetch initial WebSocket status for all hosts
+		const fetchInitialStatus = async () => {
+			const statusPromises = hosts
+				.filter((host) => host.api_id)
+				.map(async (host) => {
+					try {
+						const response = await fetch(`/api/v1/ws/status/${host.api_id}`, {
+							headers: {
+								Authorization: `Bearer ${token}`,
+							},
+						});
+						if (response.ok) {
+							const data = await response.json();
+							return { apiId: host.api_id, status: data.data };
+						}
+					} catch (_error) {
+						// Silently handle errors
+					}
+					return {
+						apiId: host.api_id,
+						status: { connected: false, secure: false },
+					};
+				});
+
+			const results = await Promise.all(statusPromises);
+			const initialStatusMap = {};
+			results.forEach(({ apiId, status }) => {
+				initialStatusMap[apiId] = status;
+			});
+
+			setWsStatusMap(initialStatusMap);
+		};
+
+		fetchInitialStatus();
+	}, [hosts]);
+
 	// Subscribe to WebSocket status changes for all hosts via SSE
 	useEffect(() => {
 		if (!hosts || hosts.length === 0) return;
@@ -425,7 +469,10 @@ const Hosts = () => {
 					try {
 						const data = JSON.parse(event.data);
 						if (isMounted) {
-							setWsStatusMap((prev) => ({ ...prev, [apiId]: data }));
+							setWsStatusMap((prev) => {
+								const newMap = { ...prev, [apiId]: data };
+								return newMap;
+							});
 						}
 					} catch (_err) {
 						// Silently handle parse errors
@@ -451,6 +498,7 @@ const Hosts = () => {
 		for (const host of hosts) {
 			if (host.api_id) {
 				connectHost(host.api_id);
+			} else {
 			}
 		}
 
@@ -628,7 +676,7 @@ const Hosts = () => {
 				osFilter === "all" ||
 				host.os_type?.toLowerCase() === osFilter.toLowerCase();
 
-			// URL filter for hosts needing updates, inactive hosts, up-to-date hosts, or stale hosts
+			// URL filter for hosts needing updates, inactive hosts, up-to-date hosts, stale hosts, or offline hosts
 			const filter = searchParams.get("filter");
 			const matchesUrlFilter =
 				(filter !== "needsUpdates" ||
@@ -636,7 +684,8 @@ const Hosts = () => {
 				(filter !== "inactive" ||
 					(host.effectiveStatus || host.status) === "inactive") &&
 				(filter !== "upToDate" || (!host.isStale && host.updatesCount === 0)) &&
-				(filter !== "stale" || host.isStale);
+				(filter !== "stale" || host.isStale) &&
+				(filter !== "offline" || wsStatusMap[host.api_id]?.connected !== true);
 
 			// Hide stale filter
 			const matchesHideStale = !hideStale || !host.isStale;
@@ -721,6 +770,7 @@ const Hosts = () => {
 		sortDirection,
 		searchParams,
 		hideStale,
+		wsStatusMap,
 	]);
 
 	// Get unique OS types from hosts for dynamic dropdown
@@ -959,7 +1009,7 @@ const Hosts = () => {
 					<span
 						className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold uppercase ${
 							wsStatus.connected
-								? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 shadow-lg shadow-green-500/50 dark:shadow-green-500/30 animate-pulse"
+								? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 animate-pulse"
 								: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
 						}`}
 						title={
@@ -1067,13 +1117,13 @@ const Hosts = () => {
 		navigate(`/hosts?${newSearchParams.toString()}`, { replace: true });
 	};
 
-	const handleStaleClick = () => {
-		// Filter to show stale/inactive hosts
-		setStatusFilter("inactive");
+	const handleConnectionStatusClick = () => {
+		// Filter to show offline hosts (not connected via WebSocket)
+		setStatusFilter("all");
 		setShowFilters(true);
-		// We'll use the existing inactive URL filter logic
+		// Use a new URL filter for connection status
 		const newSearchParams = new URLSearchParams(window.location.search);
-		newSearchParams.set("filter", "inactive");
+		newSearchParams.set("filter", "offline");
 		navigate(`/hosts?${newSearchParams.toString()}`, { replace: true });
 	};
 
@@ -1202,17 +1252,46 @@ const Hosts = () => {
 				<button
 					type="button"
 					className="card p-4 cursor-pointer hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow duration-200 text-left w-full"
-					onClick={handleStaleClick}
+					onClick={handleConnectionStatusClick}
 				>
 					<div className="flex items-center">
-						<AlertTriangle className="h-5 w-5 text-danger-600 mr-2" />
-						<div>
-							<p className="text-sm text-secondary-500 dark:text-white">
-								Stale
+						<Wifi className="h-5 w-5 text-primary-600 mr-2" />
+						<div className="flex-1">
+							<p className="text-sm text-secondary-500 dark:text-white mb-1">
+								Connection Status
 							</p>
-							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
-								{hosts?.filter((h) => h.isStale).length || 0}
-							</p>
+							{(() => {
+								const connectedCount =
+									hosts?.filter(
+										(h) => wsStatusMap[h.api_id]?.connected === true,
+									).length || 0;
+								const offlineCount =
+									hosts?.filter(
+										(h) => wsStatusMap[h.api_id]?.connected !== true,
+									).length || 0;
+								return (
+									<div className="flex gap-4">
+										<div className="flex items-center gap-1">
+											<div className="w-2 h-2 bg-green-500 rounded-full"></div>
+											<span className="text-sm font-medium text-secondary-900 dark:text-white">
+												{connectedCount}
+											</span>
+											<span className="text-xs text-secondary-500 dark:text-secondary-400">
+												Connected
+											</span>
+										</div>
+										<div className="flex items-center gap-1">
+											<div className="w-2 h-2 bg-red-500 rounded-full"></div>
+											<span className="text-sm font-medium text-secondary-900 dark:text-white">
+												{offlineCount}
+											</span>
+											<span className="text-xs text-secondary-500 dark:text-secondary-400">
+												Offline
+											</span>
+										</div>
+									</div>
+								);
+							})()}
 						</div>
 					</div>
 				</button>

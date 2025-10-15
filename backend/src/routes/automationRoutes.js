@@ -333,7 +333,7 @@ router.get("/overview", authenticateToken, async (_req, res) => {
 				{
 					name: "Collect Host Statistics",
 					queue: QUEUE_NAMES.AGENT_COMMANDS,
-					description: "Collects package statistics from all connected agents",
+					description: "Collects package statistics from connected agents only",
 					schedule: `Every ${settings.update_interval} minutes (Agent-driven)`,
 					lastRun: recentJobs[3][0]?.finishedOn
 						? new Date(recentJobs[3][0].finishedOn).toLocaleString()

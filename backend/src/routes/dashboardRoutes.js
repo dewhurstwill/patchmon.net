@@ -201,6 +201,7 @@ router.get("/hosts", authenticateToken, requireViewHosts, async (_req, res) => {
 				agent_version: true,
 				auto_update: true,
 				notes: true,
+				api_id: true,
 				host_groups: {
 					select: {
 						id: true,
