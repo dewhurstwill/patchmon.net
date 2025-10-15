@@ -1161,7 +1161,7 @@ const Dashboard = () => {
 							try {
 								const date = new Date(`${label}:00:00`);
 								// Check if date is valid
-								if (isNaN(date.getTime())) {
+								if (Number.isNaN(date.getTime())) {
 									return label; // Return original label if date is invalid
 								}
 								return date.toLocaleDateString("en-US", {
@@ -1171,7 +1171,7 @@ const Dashboard = () => {
 									minute: "2-digit",
 									hour12: true,
 								});
-							} catch (error) {
+							} catch (_error) {
 								return label; // Return original label if parsing fails
 							}
 						}
@@ -1180,14 +1180,14 @@ const Dashboard = () => {
 						try {
 							const date = new Date(label);
 							// Check if date is valid
-							if (isNaN(date.getTime())) {
+							if (Number.isNaN(date.getTime())) {
 								return label; // Return original label if date is invalid
 							}
 							return date.toLocaleDateString("en-US", {
 								month: "short",
 								day: "numeric",
 							});
-						} catch (error) {
+						} catch (_error) {
 							return label; // Return original label if parsing fails
 						}
 					},
@@ -1222,7 +1222,7 @@ const Dashboard = () => {
 								const hourNum = parseInt(hour, 10);
 
 								// Validate hour number
-								if (isNaN(hourNum) || hourNum < 0 || hourNum > 23) {
+								if (Number.isNaN(hourNum) || hourNum < 0 || hourNum > 23) {
 									return hour; // Return original hour if invalid
 								}
 
@@ -1233,7 +1233,7 @@ const Dashboard = () => {
 										: hourNum === 12
 											? "12 PM"
 											: `${hourNum - 12} PM`;
-							} catch (error) {
+							} catch (_error) {
 								return label; // Return original label if parsing fails
 							}
 						}
@@ -1242,14 +1242,14 @@ const Dashboard = () => {
 						try {
 							const date = new Date(label);
 							// Check if date is valid
-							if (isNaN(date.getTime())) {
+							if (Number.isNaN(date.getTime())) {
 								return label; // Return original label if date is invalid
 							}
 							return date.toLocaleDateString("en-US", {
 								month: "short",
 								day: "numeric",
 							});
-						} catch (error) {
+						} catch (_error) {
 							return label; // Return original label if parsing fails
 						}
 					},

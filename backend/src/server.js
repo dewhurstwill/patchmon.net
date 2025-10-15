@@ -39,6 +39,7 @@ const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
+const cookieParser = require("cookie-parser");
 const {
 	createPrismaClient,
 	waitForDatabase,
@@ -69,6 +70,10 @@ const updateScheduler = require("./services/updateScheduler");
 const { initSettings } = require("./services/settingsService");
 const { cleanup_expired_sessions } = require("./utils/session_manager");
 const { queueManager } = require("./services/automation");
+const { authenticateToken, requireAdmin } = require("./middleware/auth");
+const { createBullBoard } = require("@bull-board/api");
+const { BullMQAdapter } = require("@bull-board/api/bullMQAdapter");
+const { ExpressAdapter } = require("@bull-board/express");
 
 // Initialize Prisma client with optimized connection pooling for multiple instances
 const prisma = createPrismaClient();
@@ -255,6 +260,9 @@ if (process.env.ENABLE_LOGGING === "true") {
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const http = require("node:http");
+const server = http.createServer(app);
+const { init: initAgentWs } = require("./services/agentWs");
 
 // Trust proxy (needed when behind reverse proxy) and remove X-Powered-By
 if (process.env.TRUST_PROXY) {
@@ -342,12 +350,17 @@ app.use(
 			// Allow non-browser/SSR tools with no origin
 			if (!origin) return callback(null, true);
 			if (allowedOrigins.includes(origin)) return callback(null, true);
+			// Allow same-origin requests (e.g., Bull Board accessing its own API)
+			// This allows http://hostname:3001 to make requests to http://hostname:3001
+			if (origin?.includes(":3001")) return callback(null, true);
 			return callback(new Error("Not allowed by CORS"));
 		},
 		credentials: true,
 	}),
 );
 app.use(limiter);
+// Cookie parser for Bull Board sessions
+app.use(cookieParser());
 // Reduce body size limits to reasonable defaults
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "5mb" }));
 app.use(
@@ -429,6 +442,122 @@ app.use(
 app.use(`/api/${apiVersion}/gethomepage`, gethomepageRoutes);
 app.use(`/api/${apiVersion}/automation`, automationRoutes);
 app.use(`/api/${apiVersion}/docker`, dockerRoutes);
+
+// Bull Board - will be populated after queue manager initializes
+let bullBoardRouter = null;
+const bullBoardSessions = new Map(); // Store authenticated sessions
+
+// Mount Bull Board at /admin instead of /api/v1/admin to avoid path conflicts
+app.use(`/admin/queues`, (_req, res, next) => {
+	// Relax COOP/COEP for Bull Board in non-production to avoid browser warnings
+	if (process.env.NODE_ENV !== "production") {
+		res.setHeader("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
+		res.setHeader("Cross-Origin-Embedder-Policy", "unsafe-none");
+	}
+
+	next();
+});
+
+// Authentication middleware for Bull Board
+app.use(`/admin/queues`, async (req, res, next) => {
+	// Skip authentication for static assets only
+	if (req.path.includes("/static/") || req.path.includes("/favicon")) {
+		return next();
+	}
+
+	// Check for bull-board-session cookie first
+	const sessionId = req.cookies["bull-board-session"];
+	if (sessionId) {
+		const session = bullBoardSessions.get(sessionId);
+		if (session && Date.now() - session.timestamp < 3600000) {
+			// 1 hour
+			// Valid session, extend it
+			session.timestamp = Date.now();
+			return next();
+		} else if (session) {
+			// Expired session, remove it
+			bullBoardSessions.delete(sessionId);
+		}
+	}
+
+	// No valid session, check for token
+	let token = req.query.token;
+	if (!token && req.headers.authorization) {
+		token = req.headers.authorization.replace("Bearer ", "");
+	}
+
+	// If no token, deny access
+	if (!token) {
+		return res.status(401).json({ error: "Access token required" });
+	}
+
+	// Add token to headers for authentication
+	req.headers.authorization = `Bearer ${token}`;
+
+	// Authenticate the user
+	return authenticateToken(req, res, (err) => {
+		if (err) {
+			return res.status(401).json({ error: "Authentication failed" });
+		}
+		return requireAdmin(req, res, (adminErr) => {
+			if (adminErr) {
+				return res.status(403).json({ error: "Admin access required" });
+			}
+
+			// Authentication successful - create a session
+			const newSessionId = require("node:crypto")
+				.randomBytes(32)
+				.toString("hex");
+			bullBoardSessions.set(newSessionId, {
+				timestamp: Date.now(),
+				userId: req.user.id,
+			});
+
+			// Set session cookie
+			res.cookie("bull-board-session", newSessionId, {
+				httpOnly: true,
+				secure: process.env.NODE_ENV === "production",
+				sameSite: "lax",
+				maxAge: 3600000, // 1 hour
+			});
+
+			// Clean up old sessions periodically
+			if (bullBoardSessions.size > 100) {
+				const now = Date.now();
+				for (const [sid, session] of bullBoardSessions.entries()) {
+					if (now - session.timestamp > 3600000) {
+						bullBoardSessions.delete(sid);
+					}
+				}
+			}
+
+			return next();
+		});
+	});
+});
+
+app.use(`/admin/queues`, (req, res, next) => {
+	if (bullBoardRouter) {
+		return bullBoardRouter(req, res, next);
+	}
+	return res.status(503).json({ error: "Bull Board not initialized yet" });
+});
+
+// Error handler specifically for Bull Board routes
+app.use("/admin/queues", (err, req, res, _next) => {
+	console.error("Bull Board error on", req.method, req.url);
+	console.error("Error details:", err.message);
+	console.error("Stack:", err.stack);
+	if (process.env.ENABLE_LOGGING === "true") {
+		logger.error(`Bull Board error on ${req.method} ${req.url}:`, err);
+	}
+	res.status(500).json({
+		error: "Internal server error",
+		message: err.message,
+		path: req.path,
+		url: req.url,
+	});
+});
 
 // Error handling middleware
 app.use((err, _req, res, _next) => {
@@ -743,6 +872,25 @@ async function startServer() {
 		// Schedule recurring jobs
 		await queueManager.scheduleAllJobs();
 
+		// Set up Bull Board for queue monitoring
+		const serverAdapter = new ExpressAdapter();
+		// Set basePath to match where we mount the router
+		serverAdapter.setBasePath("/admin/queues");
+
+		const { QUEUE_NAMES } = require("./services/automation");
+		const bullAdapters = Object.values(QUEUE_NAMES).map(
+			(queueName) => new BullMQAdapter(queueManager.queues[queueName]),
+		);
+
+		createBullBoard({
+			queues: bullAdapters,
+			serverAdapter: serverAdapter,
+		});
+
+		// Set the router for the Bull Board middleware (secured middleware above)
+		bullBoardRouter = serverAdapter.getRouter();
+		console.log("✅ Bull Board mounted at /admin/queues (secured)");
+
 		// Initial session cleanup
 		await cleanup_expired_sessions();
 
@@ -758,7 +906,10 @@ async function startServer() {
 			60 * 60 * 1000,
 		); // Every hour
 
-		app.listen(PORT, () => {
+		// Initialize WS layer with the underlying HTTP server
+		initAgentWs(server, prisma);
+
+		server.listen(PORT, () => {
 			if (process.env.ENABLE_LOGGING === "true") {
 				logger.info(`Server running on port ${PORT}`);
 				logger.info(`Environment: ${process.env.NODE_ENV}`);

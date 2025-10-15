@@ -13,7 +13,7 @@ class OrphanedRepoCleanup {
 	/**
 	 * Process orphaned repository cleanup job
 	 */
-	async process(job) {
+	async process(_job) {
 		const startTime = Date.now();
 		console.log("🧹 Starting orphaned repository cleanup...");
 

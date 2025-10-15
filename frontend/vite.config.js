@@ -37,6 +37,11 @@ export default defineConfig({
 							}
 						: undefined,
 			},
+			"/admin": {
+				target: `http://${process.env.BACKEND_HOST || "localhost"}:${process.env.BACKEND_PORT || "3001"}`,
+				changeOrigin: true,
+				secure: false,
+			},
 		},
 	},
 	build: {

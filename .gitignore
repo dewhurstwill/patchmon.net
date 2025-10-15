@@ -139,6 +139,7 @@ playwright-report/
 test-results.xml
 test_*.sh
 test-*.sh
+*.code-workspace
 
 # Package manager lock files (uncomment if you want to ignore them)
 # package-lock.json

@@ -1,11 +1,12 @@
 const express = require("express");
 const { queueManager, QUEUE_NAMES } = require("../services/automation");
+const { getConnectedApiIds } = require("../services/agentWs");
 const { authenticateToken } = require("../middleware/auth");
 
 const router = express.Router();
 
 // Get all queue statistics
-router.get("/stats", authenticateToken, async (req, res) => {
+router.get("/stats", authenticateToken, async (_req, res) => {
 	try {
 		const stats = await queueManager.getAllQueueStats();
 		res.json({
@@ -60,7 +61,10 @@ router.get("/jobs/:queueName", authenticateToken, async (req, res) => {
 			});
 		}
 
-		const jobs = await queueManager.getRecentJobs(queueName, parseInt(limit));
+		const jobs = await queueManager.getRecentJobs(
+			queueName,
+			parseInt(limit, 10),
+		);
 
 		// Format jobs for frontend
 		const formattedJobs = jobs.map((job) => ({
@@ -96,7 +100,7 @@ router.get("/jobs/:queueName", authenticateToken, async (req, res) => {
 });
 
 // Trigger manual GitHub update check
-router.post("/trigger/github-update", authenticateToken, async (req, res) => {
+router.post("/trigger/github-update", authenticateToken, async (_req, res) => {
 	try {
 		const job = await queueManager.triggerGitHubUpdateCheck();
 		res.json({
@@ -116,51 +120,61 @@ router.post("/trigger/github-update", authenticateToken, async (req, res) => {
 });
 
 // Trigger manual session cleanup
-router.post("/trigger/session-cleanup", authenticateToken, async (req, res) => {
-	try {
-		const job = await queueManager.triggerSessionCleanup();
-		res.json({
-			success: true,
-			data: {
-				jobId: job.id,
-				message: "Session cleanup triggered successfully",
-			},
-		});
-	} catch (error) {
-		console.error("Error triggering session cleanup:", error);
-		res.status(500).json({
-			success: false,
-			error: "Failed to trigger session cleanup",
-		});
-	}
-});
+router.post(
+	"/trigger/session-cleanup",
+	authenticateToken,
+	async (_req, res) => {
+		try {
+			const job = await queueManager.triggerSessionCleanup();
+			res.json({
+				success: true,
+				data: {
+					jobId: job.id,
+					message: "Session cleanup triggered successfully",
+				},
+			});
+		} catch (error) {
+			console.error("Error triggering session cleanup:", error);
+			res.status(500).json({
+				success: false,
+				error: "Failed to trigger session cleanup",
+			});
+		}
+	},
+);
 
-// Trigger manual echo hello
-router.post("/trigger/echo-hello", authenticateToken, async (req, res) => {
-	try {
-		const { message } = req.body;
-		const job = await queueManager.triggerEchoHello(message);
-		res.json({
-			success: true,
-			data: {
-				jobId: job.id,
-				message: "Echo hello triggered successfully",
-			},
-		});
-	} catch (error) {
-		console.error("Error triggering echo hello:", error);
-		res.status(500).json({
-			success: false,
-			error: "Failed to trigger echo hello",
-		});
-	}
-});
+// Trigger Agent Collection: enqueue report_now for connected agents only
+router.post(
+	"/trigger/agent-collection",
+	authenticateToken,
+	async (_req, res) => {
+		try {
+			const queue = queueManager.queues[QUEUE_NAMES.AGENT_COMMANDS];
+			const apiIds = getConnectedApiIds();
+			if (!apiIds || apiIds.length === 0) {
+				return res.json({ success: true, data: { enqueued: 0 } });
+			}
+			const jobs = apiIds.map((apiId) => ({
+				name: "report_now",
+				data: { api_id: apiId, type: "report_now" },
+				opts: { attempts: 3, backoff: { type: "fixed", delay: 2000 } },
+			}));
+			await queue.addBulk(jobs);
+			res.json({ success: true, data: { enqueued: jobs.length } });
+		} catch (error) {
+			console.error("Error triggering agent collection:", error);
+			res
+				.status(500)
+				.json({ success: false, error: "Failed to trigger agent collection" });
+		}
+	},
+);
 
 // Trigger manual orphaned repo cleanup
 router.post(
 	"/trigger/orphaned-repo-cleanup",
 	authenticateToken,
-	async (req, res) => {
+	async (_req, res) => {
 		try {
 			const job = await queueManager.triggerOrphanedRepoCleanup();
 			res.json({
@@ -181,7 +195,7 @@ router.post(
 );
 
 // Get queue health status
-router.get("/health", authenticateToken, async (req, res) => {
+router.get("/health", authenticateToken, async (_req, res) => {
 	try {
 		const stats = await queueManager.getAllQueueStats();
 		const totalJobs = Object.values(stats).reduce((sum, queueStats) => {
@@ -224,7 +238,7 @@ router.get("/health", authenticateToken, async (req, res) => {
 });
 
 // Get automation overview (for dashboard cards)
-router.get("/overview", authenticateToken, async (req, res) => {
+router.get("/overview", authenticateToken, async (_req, res) => {
 	try {
 		const stats = await queueManager.getAllQueueStats();
 
@@ -232,7 +246,6 @@ router.get("/overview", authenticateToken, async (req, res) => {
 		const recentJobs = await Promise.all([
 			queueManager.getRecentJobs(QUEUE_NAMES.GITHUB_UPDATE_CHECK, 1),
 			queueManager.getRecentJobs(QUEUE_NAMES.SESSION_CLEANUP, 1),
-			queueManager.getRecentJobs(QUEUE_NAMES.ECHO_HELLO, 1),
 			queueManager.getRecentJobs(QUEUE_NAMES.ORPHANED_REPO_CLEANUP, 1),
 		]);
 
@@ -241,22 +254,16 @@ router.get("/overview", authenticateToken, async (req, res) => {
 			scheduledTasks:
 				stats[QUEUE_NAMES.GITHUB_UPDATE_CHECK].delayed +
 				stats[QUEUE_NAMES.SESSION_CLEANUP].delayed +
-				stats[QUEUE_NAMES.SYSTEM_MAINTENANCE].delayed +
-				stats[QUEUE_NAMES.ECHO_HELLO].delayed +
 				stats[QUEUE_NAMES.ORPHANED_REPO_CLEANUP].delayed,
 
 			runningTasks:
 				stats[QUEUE_NAMES.GITHUB_UPDATE_CHECK].active +
 				stats[QUEUE_NAMES.SESSION_CLEANUP].active +
-				stats[QUEUE_NAMES.SYSTEM_MAINTENANCE].active +
-				stats[QUEUE_NAMES.ECHO_HELLO].active +
 				stats[QUEUE_NAMES.ORPHANED_REPO_CLEANUP].active,
 
 			failedTasks:
 				stats[QUEUE_NAMES.GITHUB_UPDATE_CHECK].failed +
 				stats[QUEUE_NAMES.SESSION_CLEANUP].failed +
-				stats[QUEUE_NAMES.SYSTEM_MAINTENANCE].failed +
-				stats[QUEUE_NAMES.ECHO_HELLO].failed +
 				stats[QUEUE_NAMES.ORPHANED_REPO_CLEANUP].failed,
 
 			totalAutomations: Object.values(stats).reduce((sum, queueStats) => {
@@ -305,10 +312,10 @@ router.get("/overview", authenticateToken, async (req, res) => {
 					stats: stats[QUEUE_NAMES.SESSION_CLEANUP],
 				},
 				{
-					name: "Echo Hello",
-					queue: QUEUE_NAMES.ECHO_HELLO,
-					description: "Simple test automation task",
-					schedule: "Manual only",
+					name: "Orphaned Repo Cleanup",
+					queue: QUEUE_NAMES.ORPHANED_REPO_CLEANUP,
+					description: "Removes repositories with no associated hosts",
+					schedule: "Daily at 2 AM",
 					lastRun: recentJobs[2][0]?.finishedOn
 						? new Date(recentJobs[2][0].finishedOn).toLocaleString()
 						: "Never",
@@ -316,22 +323,6 @@ router.get("/overview", authenticateToken, async (req, res) => {
 					status: recentJobs[2][0]?.failedReason
 						? "Failed"
 						: recentJobs[2][0]
-							? "Success"
-							: "Never run",
-					stats: stats[QUEUE_NAMES.ECHO_HELLO],
-				},
-				{
-					name: "Orphaned Repo Cleanup",
-					queue: QUEUE_NAMES.ORPHANED_REPO_CLEANUP,
-					description: "Removes repositories with no associated hosts",
-					schedule: "Daily at 2 AM",
-					lastRun: recentJobs[3][0]?.finishedOn
-						? new Date(recentJobs[3][0].finishedOn).toLocaleString()
-						: "Never",
-					lastRunTimestamp: recentJobs[3][0]?.finishedOn || 0,
-					status: recentJobs[3][0]?.failedReason
-						? "Failed"
-						: recentJobs[3][0]
 							? "Success"
 							: "Never run",
 					stats: stats[QUEUE_NAMES.ORPHANED_REPO_CLEANUP],

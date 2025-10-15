@@ -1,11 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	Activity,
+	AlertCircle,
 	AlertTriangle,
 	ArrowLeft,
 	Calendar,
 	CheckCircle,
+	CheckCircle2,
 	Clock,
+	Clock3,
 	Copy,
 	Cpu,
 	Database,
@@ -46,6 +49,7 @@ const HostDetail = () => {
 	const [activeTab, setActiveTab] = useState("host");
 	const [historyPage, setHistoryPage] = useState(0);
 	const [historyLimit] = useState(10);
+	const [notes, setNotes] = useState("");
 
 	const {
 		data: host,
@@ -84,6 +88,13 @@ const HostDetail = () => {
 	useEffect(() => {
 		if (host && host.status === "pending") {
 			setShowCredentialsModal(true);
+		}
+	}, [host]);
+
+	// Sync notes state with host data
+	useEffect(() => {
+		if (host) {
+			setNotes(host.notes || "");
 		}
 	}, [host]);
 
@@ -292,10 +303,10 @@ const HostDetail = () => {
 					<button
 						type="button"
 						onClick={() => setShowDeleteModal(true)}
-						className="btn-danger flex items-center gap-2 text-sm"
+						className="btn-danger flex items-center justify-center p-2 text-sm"
+						title="Delete host"
 					>
 						<Trash2 className="h-4 w-4" />
-						Delete
 					</button>
 				</div>
 			</div>
@@ -426,7 +437,18 @@ const HostDetail = () => {
 									: "text-secondary-500 dark:text-secondary-400 hover:text-secondary-700 dark:hover:text-secondary-300"
 							}`}
 						>
-							Agent History
+							Package Reports
+						</button>
+						<button
+							type="button"
+							onClick={() => handleTabChange("queue")}
+							className={`px-4 py-2 text-sm font-medium ${
+								activeTab === "queue"
+									? "text-primary-600 dark:text-primary-400 border-b-2 border-primary-500"
+									: "text-secondary-500 dark:text-secondary-400 hover:text-secondary-700 dark:hover:text-secondary-300"
+							}`}
+						>
+							Agent Queue
 						</button>
 						<button
 							type="button"
@@ -1097,12 +1119,8 @@ const HostDetail = () => {
 								</div>
 								<div className="bg-secondary-50 dark:bg-secondary-700 rounded-lg p-4">
 									<textarea
-										value={host.notes || ""}
-										onChange={(e) => {
-											// Update local state immediately for better UX
-											const updatedHost = { ...host, notes: e.target.value };
-											queryClient.setQueryData(["host", hostId], updatedHost);
-										}}
+										value={notes}
+										onChange={(e) => setNotes(e.target.value)}
 										placeholder="Add notes about this host... (e.g., purpose, special configurations, maintenance notes)"
 										className="w-full h-32 p-3 border border-secondary-200 dark:border-secondary-600 rounded-lg bg-white dark:bg-secondary-800 text-secondary-900 dark:text-white placeholder-secondary-500 dark:placeholder-secondary-400 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 resize-none"
 										maxLength={1000}
@@ -1114,14 +1132,14 @@ const HostDetail = () => {
 										</p>
 										<div className="flex items-center gap-2">
 											<span className="text-xs text-secondary-400 dark:text-secondary-500">
-												{(host.notes || "").length}/1000
+												{notes.length}/1000
 											</span>
 											<button
 												type="button"
 												onClick={() => {
 													updateNotesMutation.mutate({
 														hostId: host.id,
-														notes: host.notes || "",
+														notes: notes,
 													});
 												}}
 												disabled={updateNotesMutation.isPending}
@@ -1136,6 +1154,9 @@ const HostDetail = () => {
 								</div>
 							</div>
 						)}
+
+						{/* Agent Queue */}
+						{activeTab === "queue" && <AgentQueueTab hostId={hostId} />}
 					</div>
 				</div>
 			</div>
@@ -1654,6 +1675,252 @@ const DeleteConfirmationModal = ({
 						{isLoading ? "Deleting..." : "Delete Host"}
 					</button>
 				</div>
+			</div>
+		</div>
+	);
+};
+
+// Agent Queue Tab Component
+const AgentQueueTab = ({ hostId }) => {
+	const {
+		data: queueData,
+		isLoading,
+		error,
+		refetch,
+	} = useQuery({
+		queryKey: ["host-queue", hostId],
+		queryFn: () => dashboardAPI.getHostQueue(hostId).then((res) => res.data),
+		staleTime: 30 * 1000, // 30 seconds
+		refetchInterval: 30 * 1000, // Auto-refresh every 30 seconds
+	});
+
+	if (isLoading) {
+		return (
+			<div className="flex items-center justify-center h-32">
+				<RefreshCw className="h-6 w-6 animate-spin text-primary-600" />
+			</div>
+		);
+	}
+
+	if (error) {
+		return (
+			<div className="text-center py-8">
+				<AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+				<p className="text-red-600 dark:text-red-400">
+					Failed to load queue data
+				</p>
+				<button
+					type="button"
+					onClick={() => refetch()}
+					className="mt-2 px-4 py-2 text-sm bg-primary-600 text-white rounded-md hover:bg-primary-700"
+				>
+					Retry
+				</button>
+			</div>
+		);
+	}
+
+	const { waiting, active, delayed, failed, jobHistory } = queueData.data;
+
+	const getStatusIcon = (status) => {
+		switch (status) {
+			case "completed":
+				return <CheckCircle2 className="h-4 w-4 text-green-500" />;
+			case "failed":
+				return <AlertCircle className="h-4 w-4 text-red-500" />;
+			case "active":
+				return <Clock3 className="h-4 w-4 text-blue-500" />;
+			default:
+				return <Clock className="h-4 w-4 text-gray-500" />;
+		}
+	};
+
+	const getStatusColor = (status) => {
+		switch (status) {
+			case "completed":
+				return "text-green-600 dark:text-green-400";
+			case "failed":
+				return "text-red-600 dark:text-red-400";
+			case "active":
+				return "text-blue-600 dark:text-blue-400";
+			default:
+				return "text-gray-600 dark:text-gray-400";
+		}
+	};
+
+	const formatJobType = (type) => {
+		switch (type) {
+			case "settings_update":
+				return "Settings Update";
+			case "report_now":
+				return "Report Now";
+			case "update_agent":
+				return "Agent Update";
+			default:
+				return type;
+		}
+	};
+
+	return (
+		<div className="space-y-6">
+			<div className="flex items-center justify-between">
+				<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
+					Agent Queue Status
+				</h3>
+				<button
+					type="button"
+					onClick={() => refetch()}
+					className="btn-outline flex items-center gap-2"
+					title="Refresh queue data"
+				>
+					<RefreshCw className="h-4 w-4" />
+					Refresh
+				</button>
+			</div>
+
+			{/* Queue Summary */}
+			<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+				<div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4">
+					<div className="flex items-center gap-3">
+						<Server className="h-8 w-8 text-blue-600 dark:text-blue-400" />
+						<div>
+							<p className="text-sm text-blue-600 dark:text-blue-400 font-medium">
+								Waiting
+							</p>
+							<p className="text-2xl font-bold text-blue-700 dark:text-blue-300">
+								{waiting}
+							</p>
+						</div>
+					</div>
+				</div>
+
+				<div className="bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-4">
+					<div className="flex items-center gap-3">
+						<Clock3 className="h-8 w-8 text-yellow-600 dark:text-yellow-400" />
+						<div>
+							<p className="text-sm text-yellow-600 dark:text-yellow-400 font-medium">
+								Active
+							</p>
+							<p className="text-2xl font-bold text-yellow-700 dark:text-yellow-300">
+								{active}
+							</p>
+						</div>
+					</div>
+				</div>
+
+				<div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4">
+					<div className="flex items-center gap-3">
+						<Clock className="h-8 w-8 text-purple-600 dark:text-purple-400" />
+						<div>
+							<p className="text-sm text-purple-600 dark:text-purple-400 font-medium">
+								Delayed
+							</p>
+							<p className="text-2xl font-bold text-purple-700 dark:text-purple-300">
+								{delayed}
+							</p>
+						</div>
+					</div>
+				</div>
+
+				<div className="bg-red-50 dark:bg-red-900/20 rounded-lg p-4">
+					<div className="flex items-center gap-3">
+						<AlertCircle className="h-8 w-8 text-red-600 dark:text-red-400" />
+						<div>
+							<p className="text-sm text-red-600 dark:text-red-400 font-medium">
+								Failed
+							</p>
+							<p className="text-2xl font-bold text-red-700 dark:text-red-300">
+								{failed}
+							</p>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			{/* Job History */}
+			<div>
+				{jobHistory.length === 0 ? (
+					<div className="text-center py-8">
+						<Server className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+						<p className="text-gray-500 dark:text-gray-400">
+							No job history found
+						</p>
+					</div>
+				) : (
+					<div className="overflow-x-auto">
+						<table className="min-w-full divide-y divide-secondary-200 dark:divide-secondary-600">
+							<thead className="bg-secondary-50 dark:bg-secondary-700">
+								<tr>
+									<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
+										Job ID
+									</th>
+									<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
+										Job Name
+									</th>
+									<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
+										Status
+									</th>
+									<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
+										Attempt
+									</th>
+									<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
+										Date/Time
+									</th>
+									<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
+										Error/Output
+									</th>
+								</tr>
+							</thead>
+							<tbody className="bg-white dark:bg-secondary-800 divide-y divide-secondary-200 dark:divide-secondary-600">
+								{jobHistory.map((job) => (
+									<tr
+										key={job.id}
+										className="hover:bg-secondary-50 dark:hover:bg-secondary-700"
+									>
+										<td className="px-4 py-2 whitespace-nowrap text-xs font-mono text-secondary-900 dark:text-white">
+											{job.job_id}
+										</td>
+										<td className="px-4 py-2 whitespace-nowrap text-xs text-secondary-900 dark:text-white">
+											{formatJobType(job.job_name)}
+										</td>
+										<td className="px-4 py-2 whitespace-nowrap">
+											<div className="flex items-center gap-2">
+												{getStatusIcon(job.status)}
+												<span
+													className={`text-xs font-medium ${getStatusColor(job.status)}`}
+												>
+													{job.status.charAt(0).toUpperCase() +
+														job.status.slice(1)}
+												</span>
+											</div>
+										</td>
+										<td className="px-4 py-2 whitespace-nowrap text-xs text-secondary-900 dark:text-white">
+											{job.attempt_number}
+										</td>
+										<td className="px-4 py-2 whitespace-nowrap text-xs text-secondary-900 dark:text-white">
+											{new Date(job.created_at).toLocaleString()}
+										</td>
+										<td className="px-4 py-2 text-xs">
+											{job.error_message ? (
+												<span className="text-red-600 dark:text-red-400">
+													{job.error_message}
+												</span>
+											) : job.output ? (
+												<span className="text-green-600 dark:text-green-400">
+													{JSON.stringify(job.output)}
+												</span>
+											) : (
+												<span className="text-secondary-500 dark:text-secondary-400">
+													-
+												</span>
+											)}
+										</td>
+									</tr>
+								))}
+							</tbody>
+						</table>
+					</div>
+				)}
 			</div>
 		</div>
 	);

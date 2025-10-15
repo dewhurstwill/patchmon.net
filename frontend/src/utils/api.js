@@ -56,6 +56,11 @@ export const dashboardAPI = {
 		const url = `/dashboard/hosts/${hostId}${queryString ? `?${queryString}` : ""}`;
 		return api.get(url);
 	},
+	getHostQueue: (hostId, params = {}) => {
+		const queryString = new URLSearchParams(params).toString();
+		const url = `/dashboard/hosts/${hostId}/queue${queryString ? `?${queryString}` : ""}`;
+		return api.get(url);
+	},
 	getPackageTrends: (params = {}) => {
 		const queryString = new URLSearchParams(params).toString();
 		const url = `/dashboard/package-trends${queryString ? `?${queryString}` : ""}`;

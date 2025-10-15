@@ -14,11 +14,12 @@
 		"db:studio": "prisma studio"
 	},
 	"dependencies": {
-		"@bull-board/api": "^6.13.0",
-		"@bull-board/express": "^6.13.0",
+		"@bull-board/api": "^6.13.1",
+		"@bull-board/express": "^6.13.1",
 		"@prisma/client": "^6.1.0",
 		"bcryptjs": "^2.4.3",
 		"bullmq": "^5.61.0",
+		"cookie-parser": "^1.4.7",
 		"cors": "^2.8.5",
 		"dotenv": "^16.4.7",
 		"express": "^4.21.2",
@@ -31,7 +32,8 @@
 		"qrcode": "^1.5.4",
 		"speakeasy": "^2.0.0",
 		"uuid": "^11.0.3",
-		"winston": "^3.17.0"
+		"winston": "^3.17.0",
+		"ws": "^8.18.0"
 	},
 	"devDependencies": {
 		"@types/bcryptjs": "^2.4.6",

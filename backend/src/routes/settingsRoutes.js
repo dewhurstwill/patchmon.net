@@ -8,102 +8,9 @@ const { getSettings, updateSettings } = require("../services/settingsService");
 const router = express.Router();
 const prisma = new PrismaClient();
 
-// Function to trigger crontab updates on all hosts with auto-update enabled
-async function triggerCrontabUpdates() {
-	try {
-		console.log(
-			"Triggering crontab updates on all hosts with auto-update enabled...",
-		);
-
-		// Get current settings for server URL
-		const settings = await getSettings();
-		const serverUrl = settings.server_url;
-
-		// Get all hosts that have auto-update enabled
-		const hosts = await prisma.hosts.findMany({
-			where: {
-				auto_update: true,
-				status: "active", // Only update active hosts
-			},
-			select: {
-				id: true,
-				friendly_name: true,
-				api_id: true,
-				api_key: true,
-			},
-		});
-
-		console.log(`Found ${hosts.length} hosts with auto-update enabled`);
-
-		// For each host, we'll send a special update command that triggers crontab update
-		// This is done by sending a ping with a special flag
-		for (const host of hosts) {
-			try {
-				console.log(
-					`Triggering crontab update for host: ${host.friendly_name}`,
-				);
-
-				// We'll use the existing ping endpoint but add a special parameter
-				// The agent will detect this and run update-crontab command
-				const http = require("node:http");
-				const https = require("node:https");
-
-				const url = new URL(`${serverUrl}/api/v1/hosts/ping`);
-				const isHttps = url.protocol === "https:";
-				const client = isHttps ? https : http;
-
-				const postData = JSON.stringify({
-					triggerCrontabUpdate: true,
-					message: "Update interval changed, please update your crontab",
-				});
-
-				const options = {
-					hostname: url.hostname,
-					port: url.port || (isHttps ? 443 : 80),
-					path: url.pathname,
-					method: "POST",
-					headers: {
-						"Content-Type": "application/json",
-						"Content-Length": Buffer.byteLength(postData),
-						"X-API-ID": host.api_id,
-						"X-API-KEY": host.api_key,
-					},
-				};
-
-				const req = client.request(options, (res) => {
-					if (res.statusCode === 200) {
-						console.log(
-							`Successfully triggered crontab update for ${host.friendly_name}`,
-						);
-					} else {
-						console.error(
-							`Failed to trigger crontab update for ${host.friendly_name}: ${res.statusCode}`,
-						);
-					}
-				});
-
-				req.on("error", (error) => {
-					console.error(
-						`Error triggering crontab update for ${host.friendly_name}:`,
-						error.message,
-					);
-				});
-
-				req.write(postData);
-				req.end();
-			} catch (error) {
-				console.error(
-					`Error triggering crontab update for ${host.friendly_name}:`,
-					error.message,
-				);
-			}
-		}
-
-		console.log("Crontab update trigger completed");
-	} catch (error) {
-		console.error("Error in triggerCrontabUpdates:", error);
-	}
-}
+// WebSocket broadcaster for agent policy updates
+const { broadcastSettingsUpdate } = require("../services/agentWs");
+const { queueManager, QUEUE_NAMES } = require("../services/automation");
 
 // Helpers
 function normalizeUpdateInterval(minutes) {
@@ -290,15 +197,37 @@ router.put(
 
 			console.log("Settings updated successfully:", updatedSettings);
 
-			// If update interval changed, trigger crontab updates on all hosts with auto-update enabled
+			// If update interval changed, enqueue persistent jobs for agents
 			if (
 				updateInterval !== undefined &&
 				oldUpdateInterval !== updateData.update_interval
 			) {
 				console.log(
-					`Update interval changed from ${oldUpdateInterval} to ${updateData.update_interval} minutes. Triggering crontab updates...`,
+					`Update interval changed from ${oldUpdateInterval} to ${updateData.update_interval} minutes. Enqueueing agent settings updates...`,
 				);
-				await triggerCrontabUpdates();
+
+				const hosts = await prisma.hosts.findMany({
+					where: { status: "active" },
+					select: { api_id: true },
+				});
+
+				const queue = queueManager.queues[QUEUE_NAMES.AGENT_COMMANDS];
+				const jobs = hosts.map((h) => ({
+					name: "settings_update",
+					data: {
+						api_id: h.api_id,
+						type: "settings_update",
+						update_interval: updateData.update_interval,
+					},
+					opts: { attempts: 10, backoff: { type: "exponential", delay: 5000 } },
+				}));
+
+				// Bulk add jobs
+				await queue.addBulk(jobs);
+
+				// Also broadcast immediately to currently connected agents (best-effort)
+				// This ensures agents receive the change even if their host status isn't active yet
+				broadcastSettingsUpdate(updateData.update_interval);
 			}
 
 			res.json({

@@ -406,7 +406,7 @@ router.post(
 					// Process packages in batches using createMany/updateMany
 					const packagesToCreate = [];
 					const packagesToUpdate = [];
-					const hostPackagesToUpsert = [];
+					const _hostPackagesToUpsert = [];
 
 					// First pass: identify what needs to be created/updated
 					const existingPackages = await tx.packages.findMany({

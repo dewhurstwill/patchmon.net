@@ -14,7 +14,7 @@ class GitHubUpdateCheck {
 	/**
 	 * Process GitHub update check job
 	 */
-	async process(job) {
+	async process(_job) {
 		const startTime = Date.now();
 		console.log("🔍 Starting GitHub update check...");
 

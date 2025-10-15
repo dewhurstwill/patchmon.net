@@ -8,6 +8,7 @@ const {
 	requireViewPackages,
 	requireViewUsers,
 } = require("../middleware/permissions");
+const { queueManager } = require("../services/automation");
 
 const router = express.Router();
 const prisma = new PrismaClient();
@@ -409,6 +410,51 @@ router.get(
 		} catch (error) {
 			console.error("Error fetching host details:", error);
 			res.status(500).json({ error: "Failed to fetch host details" });
+		}
+	},
+);
+
+// Get agent queue status for a specific host
+router.get(
+	"/hosts/:hostId/queue",
+	authenticateToken,
+	requireViewHosts,
+	async (req, res) => {
+		try {
+			const { hostId } = req.params;
+			const { limit = 20 } = req.query;
+
+			// Get the host to find its API ID
+			const host = await prisma.hosts.findUnique({
+				where: { id: hostId },
+				select: { api_id: true, friendly_name: true },
+			});
+
+			if (!host) {
+				return res.status(404).json({ error: "Host not found" });
+			}
+
+			// Get queue jobs for this host
+			const queueData = await queueManager.getHostJobs(
+				host.api_id,
+				parseInt(limit, 10),
+			);
+
+			res.json({
+				success: true,
+				data: {
+					hostId,
+					apiId: host.api_id,
+					friendlyName: host.friendly_name,
+					...queueData,
+				},
+			});
+		} catch (error) {
+			console.error("Error fetching host queue status:", error);
+			res.status(500).json({
+				success: false,
+				error: "Failed to fetch host queue status",
+			});
 		}
 	},
 );

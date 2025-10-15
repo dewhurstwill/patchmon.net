@@ -101,6 +101,7 @@ model hosts {
   host_repositories  host_repositories[]
   host_groups        host_groups?        @relation(fields: [host_group_id], references: [id])
   update_history     update_history[]
+  job_history        job_history[]
 
   @@index([machine_id])
   @@index([friendly_name])
@@ -323,4 +324,28 @@ model docker_image_updates {
   @@unique([image_id, available_tag])
   @@index([image_id])
   @@index([is_security_update])
+}
+
+model job_history {
+  id            String   @id
+  job_id        String
+  queue_name    String
+  job_name      String
+  host_id       String?
+  api_id        String?
+  status        String
+  attempt_number Int     @default(1)
+  error_message String?
+  output        Json?
+  created_at    DateTime @default(now())
+  updated_at    DateTime
+  completed_at  DateTime?
+  hosts         hosts?   @relation(fields: [host_id], references: [id], onDelete: SetNull)
+
+  @@index([job_id])
+  @@index([queue_name])
+  @@index([host_id])
+  @@index([api_id])
+  @@index([status])
+  @@index([created_at])
 }
