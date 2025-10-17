@@ -68,6 +68,11 @@ export const dashboardAPI = {
 		const url = `/dashboard/package-trends${queryString ? `?${queryString}` : ""}`;
 		return api.get(url);
 	},
+	getPackageSpikeAnalysis: (params = {}) => {
+		const queryString = new URLSearchParams(params).toString();
+		const url = `/dashboard/package-spike-analysis${queryString ? `?${queryString}` : ""}`;
+		return api.get(url);
+	},
 	getRecentUsers: () => api.get("/dashboard/recent-users"),
 	getRecentCollection: () => api.get("/dashboard/recent-collection"),
 };
@@ -82,8 +87,12 @@ export const adminHostsAPI = {
 		api.post(`/hosts/${hostId}/regenerate-credentials`),
 	updateGroup: (hostId, hostGroupId) =>
 		api.put(`/hosts/${hostId}/group`, { hostGroupId }),
+	updateGroups: (hostId, groupIds) =>
+		api.put(`/hosts/${hostId}/groups`, { groupIds }),
 	bulkUpdateGroup: (hostIds, hostGroupId) =>
 		api.put("/hosts/bulk/group", { hostIds, hostGroupId }),
+	bulkUpdateGroups: (hostIds, groupIds) =>
+		api.put("/hosts/bulk/groups", { hostIds, groupIds }),
 	toggleAutoUpdate: (hostId, autoUpdate) =>
 		api.patch(`/hosts/${hostId}/auto-update`, { auto_update: autoUpdate }),
 	updateFriendlyName: (hostId, friendlyName) =>

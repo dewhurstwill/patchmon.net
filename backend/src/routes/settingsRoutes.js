@@ -8,8 +8,8 @@ const { getSettings, updateSettings } = require("../services/settingsService");
 const router = express.Router();
 const prisma = new PrismaClient();
 
-// WebSocket broadcaster for agent policy updates
-const { broadcastSettingsUpdate } = require("../services/agentWs");
+// WebSocket broadcaster for agent policy updates (no longer used - queue-based delivery preferred)
+// const { broadcastSettingsUpdate } = require("../services/agentWs");
 const { queueManager, QUEUE_NAMES } = require("../services/automation");
 
 // Helpers
@@ -225,9 +225,8 @@ router.put(
 				// Bulk add jobs
 				await queue.addBulk(jobs);
 
-				// Also broadcast immediately to currently connected agents (best-effort)
-				// This ensures agents receive the change even if their host status isn't active yet
-				broadcastSettingsUpdate(updateData.update_interval);
+				// Note: Queue-based delivery handles retries and ensures reliable delivery
+				// No need for immediate broadcast as it would cause duplicate messages
 			}
 
 			res.json({

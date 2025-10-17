@@ -30,11 +30,13 @@ import {
 import { useEffect, useId, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import InlineEdit from "../components/InlineEdit";
+import InlineMultiGroupEdit from "../components/InlineMultiGroupEdit";
 import {
 	adminHostsAPI,
 	dashboardAPI,
 	formatDate,
 	formatRelativeTime,
+	hostGroupsAPI,
 	repositoryAPI,
 	settingsAPI,
 } from "../utils/api";
@@ -101,7 +103,8 @@ const HostDetail = () => {
 					}
 				};
 
-				eventSource.onerror = (_err) => {
+				eventSource.onerror = (_error) => {
+					console.log(`[SSE] Connection error for ${host.api_id}, retrying...`);
 					eventSource?.close();
 
 					// Automatic reconnection after 5 seconds
@@ -134,6 +137,14 @@ const HostDetail = () => {
 		staleTime: 5 * 60 * 1000, // 5 minutes - data stays fresh longer
 		refetchOnWindowFocus: false, // Don't refetch when window regains focus
 		enabled: !!hostId,
+	});
+
+	// Fetch host groups for multi-select
+	const { data: hostGroups } = useQuery({
+		queryKey: ["host-groups"],
+		queryFn: () => hostGroupsAPI.list().then((res) => res.data),
+		staleTime: 5 * 60 * 1000, // 5 minutes - data stays fresh longer
+		refetchOnWindowFocus: false, // Don't refetch when window regains focus
 	});
 
 	// Tab change handler
@@ -180,6 +191,15 @@ const HostDetail = () => {
 			adminHostsAPI
 				.updateFriendlyName(hostId, friendlyName)
 				.then((res) => res.data),
+		onSuccess: () => {
+			queryClient.invalidateQueries(["host", hostId]);
+			queryClient.invalidateQueries(["hosts"]);
+		},
+	});
+
+	const updateHostGroupsMutation = useMutation({
+		mutationFn: ({ hostId, groupIds }) =>
+			adminHostsAPI.updateGroups(hostId, groupIds).then((res) => res.data),
 		onSuccess: () => {
 			queryClient.invalidateQueries(["host", hostId]);
 			queryClient.invalidateQueries(["hosts"]);
@@ -601,20 +621,30 @@ const HostDetail = () => {
 
 									<div>
 										<p className="text-xs text-secondary-500 dark:text-secondary-300 mb-1.5">
-											Host Group
+											Host Groups
 										</p>
-										{host.host_groups ? (
-											<span
-												className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-white"
-												style={{ backgroundColor: host.host_groups.color }}
-											>
-												{host.host_groups.name}
-											</span>
-										) : (
-											<span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-secondary-100 dark:bg-secondary-700 text-secondary-800 dark:text-secondary-200">
-												Ungrouped
-											</span>
-										)}
+										{/* Extract group IDs from the new many-to-many structure */}
+										{(() => {
+											const groupIds =
+												host.host_group_memberships?.map(
+													(membership) => membership.host_groups.id,
+												) || [];
+											return (
+												<InlineMultiGroupEdit
+													key={`${host.id}-${groupIds.join(",")}`}
+													value={groupIds}
+													onSave={(newGroupIds) =>
+														updateHostGroupsMutation.mutate({
+															hostId: host.id,
+															groupIds: newGroupIds,
+														})
+													}
+													options={hostGroups || []}
+													placeholder="Select groups..."
+													className="w-full"
+												/>
+											);
+										})()}
 									</div>
 
 									<div>
@@ -1275,8 +1305,10 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 	const [showApiKey, setShowApiKey] = useState(false);
 	const [activeTab, setActiveTab] = useState("quick-install");
 	const [forceInstall, setForceInstall] = useState(false);
+	const [architecture, setArchitecture] = useState("amd64");
 	const apiIdInputId = useId();
 	const apiKeyInputId = useId();
+	const architectureSelectId = useId();
 
 	const { data: serverUrlData } = useQuery({
 		queryKey: ["serverUrl"],
@@ -1296,10 +1328,13 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 		return settings?.ignore_ssl_self_signed ? "-sk" : "-s";
 	};
 
-	// Helper function to build installation URL with optional force flag
+	// Helper function to build installation URL with optional force flag and architecture
 	const getInstallUrl = () => {
 		const baseUrl = `${serverUrl}/api/v1/hosts/install`;
-		return forceInstall ? `${baseUrl}?force=true` : baseUrl;
+		const params = new URLSearchParams();
+		if (forceInstall) params.append("force", "true");
+		params.append("arch", architecture);
+		return `${baseUrl}?${params.toString()}`;
 	};
 
 	const copyToClipboard = async (text) => {
@@ -1415,6 +1450,29 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 								</p>
 							</div>
 
+							{/* Architecture Selection */}
+							<div className="mb-3">
+								<label
+									htmlFor={architectureSelectId}
+									className="block text-sm font-medium text-primary-800 dark:text-primary-200 mb-2"
+								>
+									Target Architecture
+								</label>
+								<select
+									id={architectureSelectId}
+									value={architecture}
+									onChange={(e) => setArchitecture(e.target.value)}
+									className="px-3 py-2 border border-primary-300 dark:border-primary-600 rounded-md bg-white dark:bg-secondary-800 text-sm text-secondary-900 dark:text-white focus:ring-primary-500 focus:border-primary-500"
+								>
+									<option value="amd64">AMD64 (x86_64) - Default</option>
+									<option value="386">386 (i386) - 32-bit</option>
+									<option value="arm64">ARM64 (aarch64) - ARM</option>
+								</select>
+								<p className="text-xs text-primary-600 dark:text-primary-400 mt-1">
+									Select the architecture of the target host
+								</p>
+							</div>
+
 							<div className="flex items-center gap-2">
 								<input
 									type="text"
@@ -1471,12 +1529,12 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 
 								<div className="bg-white dark:bg-secondary-800 rounded-md p-3 border border-secondary-200 dark:border-secondary-600">
 									<h5 className="text-sm font-medium text-secondary-900 dark:text-white mb-2">
-										2. Download and Install Agent Script
+										2. Download and Install Agent Binary
 									</h5>
 									<div className="flex items-center gap-2">
 										<input
 											type="text"
-											value={`curl ${getCurlFlags()} -o /usr/local/bin/patchmon-agent.sh ${serverUrl}/api/v1/hosts/agent/download -H "X-API-ID: ${host.api_id}" -H "X-API-KEY: ${host.api_key}" && sudo chmod +x /usr/local/bin/patchmon-agent.sh`}
+											value={`curl ${getCurlFlags()} -o /usr/local/bin/patchmon-agent ${serverUrl}/api/v1/hosts/agent/download?arch=${architecture} -H "X-API-ID: ${host.api_id}" -H "X-API-KEY: ${host.api_key}" && sudo chmod +x /usr/local/bin/patchmon-agent`}
 											readOnly
 											className="flex-1 px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-sm font-mono text-secondary-900 dark:text-white"
 										/>
@@ -1484,7 +1542,7 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 											type="button"
 											onClick={() =>
 												copyToClipboard(
-													`curl ${getCurlFlags()} -o /usr/local/bin/patchmon-agent.sh ${serverUrl}/api/v1/hosts/agent/download -H "X-API-ID: ${host.api_id}" -H "X-API-KEY: ${host.api_key}" && sudo chmod +x /usr/local/bin/patchmon-agent.sh`,
+													`curl ${getCurlFlags()} -o /usr/local/bin/patchmon-agent ${serverUrl}/api/v1/hosts/agent/download?arch=${architecture} -H "X-API-ID: ${host.api_id}" -H "X-API-KEY: ${host.api_key}" && sudo chmod +x /usr/local/bin/patchmon-agent`,
 												)
 											}
 											className="btn-secondary flex items-center gap-1"
@@ -1502,7 +1560,7 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 									<div className="flex items-center gap-2">
 										<input
 											type="text"
-											value={`sudo /usr/local/bin/patchmon-agent.sh configure "${host.api_id}" "${host.api_key}" "${serverUrl}"`}
+											value={`sudo /usr/local/bin/patchmon-agent config set-api "${host.api_id}" "${host.api_key}" "${serverUrl}"`}
 											readOnly
 											className="flex-1 px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-sm font-mono text-secondary-900 dark:text-white"
 										/>
@@ -1510,7 +1568,7 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 											type="button"
 											onClick={() =>
 												copyToClipboard(
-													`sudo /usr/local/bin/patchmon-agent.sh configure "${host.api_id}" "${host.api_key}" "${serverUrl}"`,
+													`sudo /usr/local/bin/patchmon-agent config set-api "${host.api_id}" "${host.api_key}" "${serverUrl}"`,
 												)
 											}
 											className="btn-secondary flex items-center gap-1"
@@ -1528,7 +1586,7 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 									<div className="flex items-center gap-2">
 										<input
 											type="text"
-											value="sudo /usr/local/bin/patchmon-agent.sh test"
+											value="sudo /usr/local/bin/patchmon-agent ping"
 											readOnly
 											className="flex-1 px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-sm font-mono text-secondary-900 dark:text-white"
 										/>
@@ -1536,7 +1594,7 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 											type="button"
 											onClick={() =>
 												copyToClipboard(
-													"sudo /usr/local/bin/patchmon-agent.sh test",
+													"sudo /usr/local/bin/patchmon-agent ping",
 												)
 											}
 											className="btn-secondary flex items-center gap-1"
@@ -1554,7 +1612,7 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 									<div className="flex items-center gap-2">
 										<input
 											type="text"
-											value="sudo /usr/local/bin/patchmon-agent.sh update"
+											value="sudo /usr/local/bin/patchmon-agent report"
 											readOnly
 											className="flex-1 px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-sm font-mono text-secondary-900 dark:text-white"
 										/>
@@ -1562,7 +1620,7 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 											type="button"
 											onClick={() =>
 												copyToClipboard(
-													"sudo /usr/local/bin/patchmon-agent.sh update",
+													"sudo /usr/local/bin/patchmon-agent report",
 												)
 											}
 											className="btn-secondary flex items-center gap-1"
@@ -1575,12 +1633,33 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 
 								<div className="bg-white dark:bg-secondary-800 rounded-md p-3 border border-secondary-200 dark:border-secondary-600">
 									<h5 className="text-sm font-medium text-secondary-900 dark:text-white mb-2">
-										6. Setup Crontab (Optional)
+										6. Create Systemd Service File
 									</h5>
 									<div className="flex items-center gap-2">
 										<input
 											type="text"
-											value={`(sudo crontab -l 2>/dev/null | grep -v "patchmon-agent.sh update"; echo "${new Date().getMinutes()} * * * * /usr/local/bin/patchmon-agent.sh update >/dev/null 2>&1") | sudo crontab -`}
+											value={`sudo tee /etc/systemd/system/patchmon-agent.service > /dev/null << 'EOF'
+[Unit]
+Description=PatchMon Agent Service
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/patchmon-agent serve
+Restart=always
+RestartSec=10
+WorkingDirectory=/etc/patchmon
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=patchmon-agent
+
+[Install]
+WantedBy=multi-user.target
+EOF`}
 											readOnly
 											className="flex-1 px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-sm font-mono text-secondary-900 dark:text-white"
 										/>
@@ -1588,7 +1667,28 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 											type="button"
 											onClick={() =>
 												copyToClipboard(
-													`(sudo crontab -l 2>/dev/null | grep -v "patchmon-agent.sh update"; echo "${new Date().getMinutes()} * * * * /usr/local/bin/patchmon-agent.sh update >/dev/null 2>&1") | sudo crontab -`,
+													`sudo tee /etc/systemd/system/patchmon-agent.service > /dev/null << 'EOF'
+[Unit]
+Description=PatchMon Agent Service
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/patchmon-agent serve
+Restart=always
+RestartSec=10
+WorkingDirectory=/etc/patchmon
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=patchmon-agent
+
+[Install]
+WantedBy=multi-user.target
+EOF`,
 												)
 											}
 											className="btn-secondary flex items-center gap-1"
@@ -1597,6 +1697,64 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 											Copy
 										</button>
 									</div>
+								</div>
+
+								<div className="bg-white dark:bg-secondary-800 rounded-md p-3 border border-secondary-200 dark:border-secondary-600">
+									<h5 className="text-sm font-medium text-secondary-900 dark:text-white mb-2">
+										7. Enable and Start Service
+									</h5>
+									<div className="flex items-center gap-2">
+										<input
+											type="text"
+											value="sudo systemctl daemon-reload && sudo systemctl enable patchmon-agent && sudo systemctl start patchmon-agent"
+											readOnly
+											className="flex-1 px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-sm font-mono text-secondary-900 dark:text-white"
+										/>
+										<button
+											type="button"
+											onClick={() =>
+												copyToClipboard(
+													"sudo systemctl daemon-reload && sudo systemctl enable patchmon-agent && sudo systemctl start patchmon-agent",
+												)
+											}
+											className="btn-secondary flex items-center gap-1"
+										>
+											<Copy className="h-4 w-4" />
+											Copy
+										</button>
+									</div>
+									<p className="text-xs text-secondary-600 dark:text-secondary-400 mt-2">
+										This will start the agent service and establish WebSocket
+										connection for real-time communication
+									</p>
+								</div>
+
+								<div className="bg-white dark:bg-secondary-800 rounded-md p-3 border border-secondary-200 dark:border-secondary-600">
+									<h5 className="text-sm font-medium text-secondary-900 dark:text-white mb-2">
+										8. Verify Service Status
+									</h5>
+									<div className="flex items-center gap-2">
+										<input
+											type="text"
+											value="sudo systemctl status patchmon-agent"
+											readOnly
+											className="flex-1 px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-sm font-mono text-secondary-900 dark:text-white"
+										/>
+										<button
+											type="button"
+											onClick={() =>
+												copyToClipboard("sudo systemctl status patchmon-agent")
+											}
+											className="btn-secondary flex items-center gap-1"
+										>
+											<Copy className="h-4 w-4" />
+											Copy
+										</button>
+									</div>
+									<p className="text-xs text-secondary-600 dark:text-secondary-400 mt-2">
+										Check that the service is running and WebSocket connection
+										is established
+									</p>
 								</div>
 							</div>
 						</div>

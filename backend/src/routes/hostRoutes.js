@@ -14,7 +14,7 @@ const {
 const router = express.Router();
 const prisma = new PrismaClient();
 
-// Secure endpoint to download the agent script (requires API authentication)
+// Secure endpoint to download the agent binary (requires API authentication)
 router.get("/agent/download", async (req, res) => {
 	try {
 		// Verify API credentials
@@ -34,46 +34,50 @@ router.get("/agent/download", async (req, res) => {
 			return res.status(401).json({ error: "Invalid API credentials" });
 		}
 
-		// Serve agent script directly from file system
+		// Get architecture parameter (default to amd64)
+		const architecture = req.query.arch || "amd64";
+
+		// Validate architecture
+		const validArchitectures = ["amd64", "386", "arm64"];
+		if (!validArchitectures.includes(architecture)) {
+			return res.status(400).json({
+				error: "Invalid architecture. Must be one of: amd64, 386, arm64",
+			});
+		}
+
+		// Serve agent binary directly from file system
 		const fs = require("node:fs");
 		const path = require("node:path");
 
-		const agentPath = path.join(__dirname, "../../../agents/patchmon-agent.sh");
+		const binaryName = `patchmon-agent-linux-${architecture}`;
+		const binaryPath = path.join(__dirname, "../../../agents", binaryName);
 
-		if (!fs.existsSync(agentPath)) {
-			return res.status(404).json({ error: "Agent script not found" });
+		if (!fs.existsSync(binaryPath)) {
+			return res.status(404).json({
+				error: `Agent binary not found for architecture: ${architecture}`,
+			});
 		}
 
-		// Read file and convert line endings
-		let scriptContent = fs
-			.readFileSync(agentPath, "utf8")
-			.replace(/\r\n/g, "\n")
-			.replace(/\r/g, "\n");
-
-		// Determine curl flags dynamically from settings for consistency
-		let curlFlags = "-s";
-		try {
-			const settings = await prisma.settings.findFirst();
-			if (settings && settings.ignore_ssl_self_signed === true) {
-				curlFlags = "-sk";
-			}
-		} catch (_) {}
-
-		// Inject the curl flags into the script
-		scriptContent = scriptContent.replace(
-			'CURL_FLAGS=""',
-			`CURL_FLAGS="${curlFlags}"`,
-		);
-
-		res.setHeader("Content-Type", "application/x-shellscript");
+		// Set appropriate headers for binary download
+		res.setHeader("Content-Type", "application/octet-stream");
 		res.setHeader(
 			"Content-Disposition",
-			'attachment; filename="patchmon-agent.sh"',
+			`attachment; filename="${binaryName}"`,
 		);
-		res.send(scriptContent);
+
+		// Stream the binary file
+		const fileStream = fs.createReadStream(binaryPath);
+		fileStream.pipe(res);
+
+		fileStream.on("error", (error) => {
+			console.error("Binary stream error:", error);
+			if (!res.headersSent) {
+				res.status(500).json({ error: "Failed to stream agent binary" });
+			}
+		});
 	} catch (error) {
 		console.error("Agent download error:", error);
-		res.status(500).json({ error: "Failed to download agent script" });
+		res.status(500).json({ error: "Failed to serve agent binary" });
 	}
 });
 
@@ -158,7 +162,14 @@ router.post(
 		body("friendly_name")
 			.isLength({ min: 1 })
 			.withMessage("Friendly name is required"),
-		body("hostGroupId").optional(),
+		body("hostGroupIds")
+			.optional()
+			.isArray()
+			.withMessage("Host group IDs must be an array"),
+		body("hostGroupIds.*")
+			.optional()
+			.isUUID()
+			.withMessage("Each host group ID must be a valid UUID"),
 	],
 	async (req, res) => {
 		try {
@@ -167,19 +178,21 @@ router.post(
 				return res.status(400).json({ errors: errors.array() });
 			}
 
-			const { friendly_name, hostGroupId } = req.body;
+			const { friendly_name, hostGroupIds } = req.body;
 
 			// Generate unique API credentials for this host
 			const { apiId, apiKey } = generateApiCredentials();
 
-			// If hostGroupId is provided, verify the group exists
-			if (hostGroupId) {
-				const hostGroup = await prisma.host_groups.findUnique({
-					where: { id: hostGroupId },
+			// If hostGroupIds is provided, verify all groups exist
+			if (hostGroupIds && hostGroupIds.length > 0) {
+				const hostGroups = await prisma.host_groups.findMany({
+					where: { id: { in: hostGroupIds } },
 				});
 
-				if (!hostGroup) {
-					return res.status(400).json({ error: "Host group not found" });
+				if (hostGroups.length !== hostGroupIds.length) {
+					return res
+						.status(400)
+						.json({ error: "One or more host groups not found" });
 				}
 			}
 
@@ -195,16 +208,31 @@ router.post(
 					architecture: null, // Will be updated when agent connects
 					api_id: apiId,
 					api_key: apiKey,
-					host_group_id: hostGroupId || null,
 					status: "pending", // Will change to 'active' when agent connects
 					updated_at: new Date(),
+					// Create host group memberships if hostGroupIds are provided
+					host_group_memberships:
+						hostGroupIds && hostGroupIds.length > 0
+							? {
+									create: hostGroupIds.map((groupId) => ({
+										id: uuidv4(),
+										host_groups: {
+											connect: { id: groupId },
+										},
+									})),
+								}
+							: undefined,
 				},
 				include: {
-					host_groups: {
-						select: {
-							id: true,
-							name: true,
-							color: true,
+					host_group_memberships: {
+						include: {
+							host_groups: {
+								select: {
+									id: true,
+									name: true,
+									color: true,
+								},
+							},
 						},
 					},
 				},
@@ -216,7 +244,10 @@ router.post(
 				friendlyName: host.friendly_name,
 				apiId: host.api_id,
 				apiKey: host.api_key,
-				hostGroup: host.host_groups,
+				hostGroups:
+					host.host_group_memberships?.map(
+						(membership) => membership.host_groups,
+					) || [],
 				instructions:
 					"Use these credentials in your patchmon agent configuration. System information will be automatically detected when the agent connects.",
 			});
@@ -732,18 +763,96 @@ router.post(
 	},
 );
 
-// Admin endpoint to bulk update host groups
+// TODO: Admin endpoint to bulk update host groups - needs to be rewritten for many-to-many relationship
+// router.put(
+// 	"/bulk/group",
+// 	authenticateToken,
+// 	requireManageHosts,
+// 	[
+// 		body("hostIds").isArray().withMessage("Host IDs must be an array"),
+// 		body("hostIds.*")
+// 			.isLength({ min: 1 })
+// 			.withMessage("Each host ID must be provided"),
+// 		body("hostGroupId").optional(),
+// 	],
+// 	async (req, res) => {
+// 		try {
+// 			const errors = validationResult(req);
+// 			if (!errors.isEmpty()) {
+// 				return res.status(400).json({ errors: errors.array() });
+// 			}
+
+// 			const { hostIds, hostGroupId } = req.body;
+
+// 			// If hostGroupId is provided, verify the group exists
+// 			if (hostGroupId) {
+// 				const hostGroup = await prisma.host_groups.findUnique({
+// 					where: { id: hostGroupId },
+// 				});
+
+// 				if (!hostGroup) {
+// 					return res.status(400).json({ error: "Host group not found" });
+// 				}
+// 			}
+
+// 			// Check if all hosts exist
+// 			const existingHosts = await prisma.hosts.findMany({
+// 				where: { id: { in: hostIds } },
+// 				select: { id: true, friendly_name: true },
+// 			});
+
+// 			if (existingHosts.length !== hostIds.length) {
+// 				const foundIds = existingHosts.map((h) => h.id);
+// 				const missingIds = hostIds.filter((id) => !foundIds.includes(id));
+// 				return res.status(400).json({
+// 					error: "Some hosts not found",
+// 					missingHostIds: missingIds,
+// 				});
+// 			}
+
+// 			// Bulk update host groups
+// 			const updateResult = await prisma.hosts.updateMany({
+// 				where: { id: { in: hostIds } },
+// 				data: {
+// 					host_group_id: hostGroupId || null,
+// 					updated_at: new Date(),
+// 				},
+// 			});
+
+// 			// Get updated hosts with group information
+// 			const updatedHosts = await prisma.hosts.findMany({
+// 				where: { id: { in: hostIds } },
+// 				select: {
+// 					id: true,
+// 					friendly_name: true,
+// 					host_groups: {
+// 						select: {
+// 							id: true,
+// 							name: true,
+// 							color: true,
+// 						},
+// 					},
+// 				},
+// 			});
+
+// 			res.json({
+// 				message: `Successfully updated ${updateResult.count} host${updateResult.count !== 1 ? "s" : ""}`,
+// 				updatedCount: updateResult.count,
+// 				hosts: updatedHosts,
+// 			});
+// 		} catch (error) {
+// 			console.error("Bulk host group update error:", error);
+// 			res.status(500).json({ error: "Failed to update host groups" });
+// 		}
+// 	},
+// );
+
+// Admin endpoint to update host groups (many-to-many)
 router.put(
-	"/bulk/group",
+	"/:hostId/groups",
 	authenticateToken,
 	requireManageHosts,
-	[
-		body("hostIds").isArray().withMessage("Host IDs must be an array"),
-		body("hostIds.*")
-			.isLength({ min: 1 })
-			.withMessage("Each host ID must be provided"),
-		body("hostGroupId").optional(),
-	],
+	[body("groupIds").isArray().optional()],
 	async (req, res) => {
 		try {
 			const errors = validationResult(req);
@@ -751,72 +860,83 @@ router.put(
 				return res.status(400).json({ errors: errors.array() });
 			}
 
-			const { hostIds, hostGroupId } = req.body;
+			const { hostId } = req.params;
+			const { groupIds = [] } = req.body;
 
-			// If hostGroupId is provided, verify the group exists
-			if (hostGroupId) {
-				const hostGroup = await prisma.host_groups.findUnique({
-					where: { id: hostGroupId },
+			// Check if host exists
+			const host = await prisma.hosts.findUnique({
+				where: { id: hostId },
+			});
+
+			if (!host) {
+				return res.status(404).json({ error: "Host not found" });
+			}
+
+			// Verify all groups exist
+			if (groupIds.length > 0) {
+				const existingGroups = await prisma.host_groups.findMany({
+					where: { id: { in: groupIds } },
+					select: { id: true },
 				});
 
-				if (!hostGroup) {
-					return res.status(400).json({ error: "Host group not found" });
+				if (existingGroups.length !== groupIds.length) {
+					return res.status(400).json({
+						error: "One or more host groups not found",
+						provided: groupIds,
+						found: existingGroups.map((g) => g.id),
+					});
 				}
 			}
 
-			// Check if all hosts exist
-			const existingHosts = await prisma.hosts.findMany({
-				where: { id: { in: hostIds } },
-				select: { id: true, friendly_name: true },
-			});
-
-			if (existingHosts.length !== hostIds.length) {
-				const foundIds = existingHosts.map((h) => h.id);
-				const missingIds = hostIds.filter((id) => !foundIds.includes(id));
-				return res.status(400).json({
-					error: "Some hosts not found",
-					missingHostIds: missingIds,
+			// Use transaction to update group memberships
+			const updatedHost = await prisma.$transaction(async (tx) => {
+				// Remove existing memberships
+				await tx.host_group_memberships.deleteMany({
+					where: { host_id: hostId },
 				});
-			}
 
-			// Bulk update host groups
-			const updateResult = await prisma.hosts.updateMany({
-				where: { id: { in: hostIds } },
-				data: {
-					host_group_id: hostGroupId || null,
-					updated_at: new Date(),
-				},
-			});
+				// Add new memberships
+				if (groupIds.length > 0) {
+					await tx.host_group_memberships.createMany({
+						data: groupIds.map((groupId) => ({
+							id: crypto.randomUUID(),
+							host_id: hostId,
+							host_group_id: groupId,
+						})),
+					});
+				}
 
-			// Get updated hosts with group information
-			const updatedHosts = await prisma.hosts.findMany({
-				where: { id: { in: hostIds } },
-				select: {
-					id: true,
-					friendly_name: true,
-					host_groups: {
-						select: {
-							id: true,
-							name: true,
-							color: true,
+				// Return updated host with groups
+				return await tx.hosts.findUnique({
+					where: { id: hostId },
+					include: {
+						host_group_memberships: {
+							include: {
+								host_groups: {
+									select: {
+										id: true,
+										name: true,
+										color: true,
+									},
+								},
+							},
 						},
 					},
-				},
+				});
 			});
 
 			res.json({
-				message: `Successfully updated ${updateResult.count} host${updateResult.count !== 1 ? "s" : ""}`,
-				updatedCount: updateResult.count,
-				hosts: updatedHosts,
+				message: "Host groups updated successfully",
+				host: updatedHost,
 			});
 		} catch (error) {
-			console.error("Bulk host group update error:", error);
+			console.error("Host groups update error:", error);
 			res.status(500).json({ error: "Failed to update host groups" });
 		}
 	},
 );
 
-// Admin endpoint to update host group
+// Legacy endpoint to update single host group (for backward compatibility)
 router.put(
 	"/:hostId/group",
 	authenticateToken,
@@ -832,6 +952,9 @@ router.put(
 			const { hostId } = req.params;
 			const { hostGroupId } = req.body;
 
+			// Convert single group to array and use the new endpoint logic
+			const _groupIds = hostGroupId ? [hostGroupId] : [];
+
 			// Check if host exists
 			const host = await prisma.hosts.findUnique({
 				where: { id: hostId },
@@ -841,7 +964,7 @@ router.put(
 				return res.status(404).json({ error: "Host not found" });
 			}
 
-			// If hostGroupId is provided, verify the group exists
+			// Verify group exists if provided
 			if (hostGroupId) {
 				const hostGroup = await prisma.host_groups.findUnique({
 					where: { id: hostGroupId },
@@ -852,22 +975,41 @@ router.put(
 				}
 			}
 
-			// Update host group
-			const updatedHost = await prisma.hosts.update({
-				where: { id: hostId },
-				data: {
-					host_group_id: hostGroupId || null,
-					updated_at: new Date(),
-				},
-				include: {
-					host_groups: {
-						select: {
-							id: true,
-							name: true,
-							color: true,
+			// Use transaction to update group memberships
+			const updatedHost = await prisma.$transaction(async (tx) => {
+				// Remove existing memberships
+				await tx.host_group_memberships.deleteMany({
+					where: { host_id: hostId },
+				});
+
+				// Add new membership if group provided
+				if (hostGroupId) {
+					await tx.host_group_memberships.create({
+						data: {
+							id: crypto.randomUUID(),
+							host_id: hostId,
+							host_group_id: hostGroupId,
+						},
+					});
+				}
+
+				// Return updated host with groups
+				return await tx.hosts.findUnique({
+					where: { id: hostId },
+					include: {
+						host_group_memberships: {
+							include: {
+								host_groups: {
+									select: {
+										id: true,
+										name: true,
+										color: true,
+									},
+								},
+							},
 						},
 					},
-				},
+				});
 			});
 
 			res.json({
@@ -903,13 +1045,16 @@ router.get(
 					agent_version: true,
 					auto_update: true,
 					created_at: true,
-					host_group_id: true,
 					notes: true,
-					host_groups: {
-						select: {
-							id: true,
-							name: true,
-							color: true,
+					host_group_memberships: {
+						include: {
+							host_groups: {
+								select: {
+									id: true,
+									name: true,
+									color: true,
+								},
+							},
 						},
 					},
 				},
@@ -1175,13 +1320,17 @@ router.get("/install", async (req, res) => {
 		// Check for --force parameter
 		const forceInstall = req.query.force === "true" || req.query.force === "1";
 
-		// Inject the API credentials, server URL, curl flags, and force flag into the script
+		// Get architecture parameter (default to amd64)
+		const architecture = req.query.arch || "amd64";
+
+		// Inject the API credentials, server URL, curl flags, force flag, and architecture into the script
 		const envVars = `#!/bin/bash
 export PATCHMON_URL="${serverUrl}"
 export API_ID="${host.api_id}"
 export API_KEY="${host.api_key}"
 export CURL_FLAGS="${curlFlags}"
 export FORCE_INSTALL="${forceInstall ? "true" : "false"}"
+export ARCHITECTURE="${architecture}"
 
 `;
 
@@ -1558,16 +1707,16 @@ router.patch(
 					architecture: true,
 					last_update: true,
 					status: true,
-					host_group_id: true,
-					agent_version: true,
-					auto_update: true,
-					created_at: true,
 					updated_at: true,
-					host_groups: {
-						select: {
-							id: true,
-							name: true,
-							color: true,
+					host_group_memberships: {
+						include: {
+							host_groups: {
+								select: {
+									id: true,
+									name: true,
+									color: true,
+								},
+							},
 						},
 					},
 				},
@@ -1631,17 +1780,16 @@ router.patch(
 					architecture: true,
 					last_update: true,
 					status: true,
-					host_group_id: true,
-					agent_version: true,
-					auto_update: true,
-					created_at: true,
-					updated_at: true,
 					notes: true,
-					host_groups: {
-						select: {
-							id: true,
-							name: true,
-							color: true,
+					host_group_memberships: {
+						include: {
+							host_groups: {
+								select: {
+									id: true,
+									name: true,
+									color: true,
+								},
+							},
 						},
 					},
 				},

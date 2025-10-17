@@ -194,6 +194,30 @@ router.post(
 	},
 );
 
+// Trigger manual orphaned package cleanup
+router.post(
+	"/trigger/orphaned-package-cleanup",
+	authenticateToken,
+	async (_req, res) => {
+		try {
+			const job = await queueManager.triggerOrphanedPackageCleanup();
+			res.json({
+				success: true,
+				data: {
+					jobId: job.id,
+					message: "Orphaned package cleanup triggered successfully",
+				},
+			});
+		} catch (error) {
+			console.error("Error triggering orphaned package cleanup:", error);
+			res.status(500).json({
+				success: false,
+				error: "Failed to trigger orphaned package cleanup",
+			});
+		}
+	},
+);
+
 // Get queue health status
 router.get("/health", authenticateToken, async (_req, res) => {
 	try {
@@ -249,6 +273,7 @@ router.get("/overview", authenticateToken, async (_req, res) => {
 			queueManager.getRecentJobs(QUEUE_NAMES.GITHUB_UPDATE_CHECK, 1),
 			queueManager.getRecentJobs(QUEUE_NAMES.SESSION_CLEANUP, 1),
 			queueManager.getRecentJobs(QUEUE_NAMES.ORPHANED_REPO_CLEANUP, 1),
+			queueManager.getRecentJobs(QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP, 1),
 			queueManager.getRecentJobs(QUEUE_NAMES.AGENT_COMMANDS, 1),
 		]);
 
@@ -257,17 +282,20 @@ router.get("/overview", authenticateToken, async (_req, res) => {
 			scheduledTasks:
 				stats[QUEUE_NAMES.GITHUB_UPDATE_CHECK].delayed +
 				stats[QUEUE_NAMES.SESSION_CLEANUP].delayed +
-				stats[QUEUE_NAMES.ORPHANED_REPO_CLEANUP].delayed,
+				stats[QUEUE_NAMES.ORPHANED_REPO_CLEANUP].delayed +
+				stats[QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP].delayed,
 
 			runningTasks:
 				stats[QUEUE_NAMES.GITHUB_UPDATE_CHECK].active +
 				stats[QUEUE_NAMES.SESSION_CLEANUP].active +
-				stats[QUEUE_NAMES.ORPHANED_REPO_CLEANUP].active,
+				stats[QUEUE_NAMES.ORPHANED_REPO_CLEANUP].active +
+				stats[QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP].active,
 
 			failedTasks:
 				stats[QUEUE_NAMES.GITHUB_UPDATE_CHECK].failed +
 				stats[QUEUE_NAMES.SESSION_CLEANUP].failed +
-				stats[QUEUE_NAMES.ORPHANED_REPO_CLEANUP].failed,
+				stats[QUEUE_NAMES.ORPHANED_REPO_CLEANUP].failed +
+				stats[QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP].failed,
 
 			totalAutomations: Object.values(stats).reduce((sum, queueStats) => {
 				return (
@@ -331,10 +359,10 @@ router.get("/overview", authenticateToken, async (_req, res) => {
 					stats: stats[QUEUE_NAMES.ORPHANED_REPO_CLEANUP],
 				},
 				{
-					name: "Collect Host Statistics",
-					queue: QUEUE_NAMES.AGENT_COMMANDS,
-					description: "Collects package statistics from connected agents only",
-					schedule: `Every ${settings.update_interval} minutes (Agent-driven)`,
+					name: "Orphaned Package Cleanup",
+					queue: QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP,
+					description: "Removes packages with no associated hosts",
+					schedule: "Daily at 3 AM",
 					lastRun: recentJobs[3][0]?.finishedOn
 						? new Date(recentJobs[3][0].finishedOn).toLocaleString()
 						: "Never",
@@ -342,6 +370,22 @@ router.get("/overview", authenticateToken, async (_req, res) => {
 					status: recentJobs[3][0]?.failedReason
 						? "Failed"
 						: recentJobs[3][0]
+							? "Success"
+							: "Never run",
+					stats: stats[QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP],
+				},
+				{
+					name: "Collect Host Statistics",
+					queue: QUEUE_NAMES.AGENT_COMMANDS,
+					description: "Collects package statistics from connected agents only",
+					schedule: `Every ${settings.update_interval} minutes (Agent-driven)`,
+					lastRun: recentJobs[4][0]?.finishedOn
+						? new Date(recentJobs[4][0].finishedOn).toLocaleString()
+						: "Never",
+					lastRunTimestamp: recentJobs[4][0]?.finishedOn || 0,
+					status: recentJobs[4][0]?.failedReason
+						? "Failed"
+						: recentJobs[4][0]
 							? "Success"
 							: "Never run",
 					stats: stats[QUEUE_NAMES.AGENT_COMMANDS],

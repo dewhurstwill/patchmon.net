@@ -26,7 +26,7 @@ const AgentManagementTab = () => {
 	});
 
 	// Helper function to get curl flags based on settings
-	const getCurlFlags = () => {
+	const _getCurlFlags = () => {
 		return settings?.ignore_ssl_self_signed ? "-sk" : "-s";
 	};
 
@@ -177,29 +177,40 @@ const AgentManagementTab = () => {
 									Agent Uninstall Command
 								</h3>
 								<div className="mt-2 text-sm text-red-700 dark:text-red-300">
-									<p className="mb-2">
+									<p className="mb-3">
 										To completely remove PatchMon from a host:
 									</p>
-									<div className="flex items-center gap-2">
-										<div className="bg-red-100 dark:bg-red-800 rounded p-2 font-mono text-xs flex-1">
-											curl {getCurlFlags()} {window.location.origin}
-											/api/v1/hosts/remove | sudo bash
+
+									{/* Go Agent Uninstall */}
+									<div className="mb-3">
+										<div className="space-y-2">
+											<div className="flex items-center gap-2">
+												<div className="bg-red-100 dark:bg-red-800 rounded p-2 font-mono text-xs flex-1">
+													sudo patchmon-agent uninstall
+												</div>
+												<button
+													type="button"
+													onClick={() => {
+														navigator.clipboard.writeText(
+															"sudo patchmon-agent uninstall",
+														);
+													}}
+													className="px-2 py-1 bg-red-200 dark:bg-red-700 text-red-800 dark:text-red-200 rounded text-xs hover:bg-red-300 dark:hover:bg-red-600 transition-colors"
+												>
+													Copy
+												</button>
+											</div>
+											<div className="text-xs text-red-600 dark:text-red-400">
+												Options: <code>--remove-config</code>,{" "}
+												<code>--remove-logs</code>, <code>--remove-all</code>,{" "}
+												<code>--force</code>
+											</div>
 										</div>
-										<button
-											type="button"
-											onClick={() => {
-												const command = `curl ${getCurlFlags()} ${window.location.origin}/api/v1/hosts/remove | sudo bash`;
-												navigator.clipboard.writeText(command);
-												// You could add a toast notification here
-											}}
-											className="px-2 py-1 bg-red-200 dark:bg-red-700 text-red-800 dark:text-red-200 rounded text-xs hover:bg-red-300 dark:hover:bg-red-600 transition-colors"
-										>
-											Copy
-										</button>
 									</div>
+
 									<p className="mt-2 text-xs">
-										⚠️ This will remove all PatchMon files, configuration, and
-										crontab entries
+										⚠️ This command will remove all PatchMon files,
+										configuration, and crontab entries
 									</p>
 								</div>
 							</div>

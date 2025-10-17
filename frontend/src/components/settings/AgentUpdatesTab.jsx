@@ -446,6 +446,53 @@ const AgentUpdatesTab = () => {
 					</div>
 				)}
 			</form>
+
+			{/* Uninstall Instructions */}
+			<div className="bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700 rounded-md p-4">
+				<div className="flex">
+					<Shield className="h-5 w-5 text-red-400 dark:text-red-300" />
+					<div className="ml-3">
+						<h3 className="text-sm font-medium text-red-800 dark:text-red-200">
+							Agent Uninstall Command
+						</h3>
+						<div className="mt-2 text-sm text-red-700 dark:text-red-300">
+							<p className="mb-3">To completely remove PatchMon from a host:</p>
+
+							{/* Go Agent Uninstall */}
+							<div className="mb-3">
+								<div className="space-y-2">
+									<div className="flex items-center gap-2">
+										<div className="bg-red-100 dark:bg-red-800 rounded p-2 font-mono text-xs flex-1">
+											sudo patchmon-agent uninstall
+										</div>
+										<button
+											type="button"
+											onClick={() => {
+												navigator.clipboard.writeText(
+													"sudo patchmon-agent uninstall",
+												);
+											}}
+											className="px-2 py-1 bg-red-200 dark:bg-red-700 text-red-800 dark:text-red-200 rounded text-xs hover:bg-red-300 dark:hover:bg-red-600 transition-colors"
+										>
+											Copy
+										</button>
+									</div>
+									<div className="text-xs text-red-600 dark:text-red-400">
+										Options: <code>--remove-config</code>,{" "}
+										<code>--remove-logs</code>, <code>--remove-all</code>,{" "}
+										<code>--force</code>
+									</div>
+								</div>
+							</div>
+
+							<p className="mt-2 text-xs">
+								⚠️ This command will remove all PatchMon files, configuration,
+								and crontab entries
+							</p>
+						</div>
+					</div>
+				</div>
+			</div>
 		</div>
 	);
 };

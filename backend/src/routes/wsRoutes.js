@@ -4,6 +4,10 @@ const {
 	getConnectionInfo,
 	subscribeToConnectionChanges,
 } = require("../services/agentWs");
+const {
+	validate_session,
+	update_session_activity,
+} = require("../utils/session_manager");
 
 const router = express.Router();
 
@@ -41,12 +45,25 @@ router.get("/status/:apiId/stream", async (req, res) => {
 			return res.status(401).json({ error: "Authentication required" });
 		}
 
-		// Verify token manually
+		// Verify token manually with session validation
 		const jwt = require("jsonwebtoken");
 		try {
 			const decoded = jwt.verify(token, process.env.JWT_SECRET);
-			req.user = decoded;
-		} catch (_err) {
+
+			// Validate session (same as regular auth middleware)
+			const validation = await validate_session(decoded.sessionId, token);
+			if (!validation.valid) {
+				console.error("[SSE] Session validation failed:", validation.reason);
+				console.error("[SSE] Invalid session for api_id:", apiId);
+				return res.status(401).json({ error: "Invalid or expired session" });
+			}
+
+			// Update session activity to prevent inactivity timeout
+			await update_session_activity(decoded.sessionId);
+
+			req.user = validation.user;
+		} catch (err) {
+			console.error("[SSE] JWT verification failed:", err.message);
 			console.error("[SSE] Invalid token for api_id:", apiId);
 			return res.status(401).json({ error: "Invalid or expired token" });
 		}
@@ -95,9 +112,23 @@ router.get("/status/:apiId/stream", async (req, res) => {
 			unsubscribe();
 		});
 
-		// Handle errors
+		// Handle errors - distinguish between different error types
 		req.on("error", (err) => {
-			console.error("[SSE] Request error:", err);
+			// Only log non-connection-reset errors to reduce noise
+			if (err.code !== "ECONNRESET" && err.code !== "EPIPE") {
+				console.error("[SSE] Request error:", err);
+			} else {
+				console.log("[SSE] Client connection reset for api_id:", apiId);
+			}
+			clearInterval(heartbeat);
+			unsubscribe();
+		});
+
+		// Handle response errors
+		res.on("error", (err) => {
+			if (err.code !== "ECONNRESET" && err.code !== "EPIPE") {
+				console.error("[SSE] Response error:", err);
+			}
 			clearInterval(heartbeat);
 			unsubscribe();
 		});

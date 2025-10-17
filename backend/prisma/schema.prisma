@@ -27,8 +27,21 @@ model host_groups {
   color                   String?                   @default("#3B82F6")
   created_at              DateTime                  @default(now())
   updated_at              DateTime
-  hosts                   hosts[]
+  host_group_memberships  host_group_memberships[]
   auto_enrollment_tokens  auto_enrollment_tokens[]
+}
+
+model host_group_memberships {
+  id            String      @id
+  host_id       String
+  host_group_id String
+  created_at    DateTime    @default(now())
+  hosts         hosts       @relation(fields: [host_id], references: [id], onDelete: Cascade)
+  host_groups   host_groups @relation(fields: [host_group_id], references: [id], onDelete: Cascade)
+
+  @@unique([host_id, host_group_id])
+  @@index([host_id])
+  @@index([host_group_id])
 }
 
 model host_packages {
@@ -67,41 +80,40 @@ model host_repositories {
 }
 
 model hosts {
-  id                 String              @id
-  machine_id         String              @unique
-  friendly_name      String
-  ip                 String?
-  os_type            String
-  os_version         String
-  architecture       String?
-  last_update        DateTime            @default(now())
-  status             String              @default("active")
-  created_at         DateTime            @default(now())
-  updated_at         DateTime
-  api_id             String              @unique
-  api_key            String              @unique
-  host_group_id      String?
-  agent_version      String?
-  auto_update        Boolean             @default(true)
-  cpu_cores          Int?
-  cpu_model          String?
-  disk_details       Json?
-  dns_servers        Json?
-  gateway_ip         String?
-  hostname           String?
-  kernel_version     String?
-  load_average       Json?
-  network_interfaces Json?
-  ram_installed      Int?
-  selinux_status     String?
-  swap_size          Int?
-  system_uptime      String?
-  notes              String?
-  host_packages      host_packages[]
-  host_repositories  host_repositories[]
-  host_groups        host_groups?        @relation(fields: [host_group_id], references: [id])
-  update_history     update_history[]
-  job_history        job_history[]
+  id                      String                    @id
+  machine_id              String                    @unique
+  friendly_name           String
+  ip                      String?
+  os_type                 String
+  os_version              String
+  architecture            String?
+  last_update             DateTime                  @default(now())
+  status                  String                    @default("active")
+  created_at              DateTime                  @default(now())
+  updated_at              DateTime
+  api_id                  String                    @unique
+  api_key                 String                    @unique
+  agent_version           String?
+  auto_update             Boolean                   @default(true)
+  cpu_cores               Int?
+  cpu_model               String?
+  disk_details            Json?
+  dns_servers             Json?
+  gateway_ip              String?
+  hostname                String?
+  kernel_version          String?
+  load_average             Json?
+  network_interfaces      Json?
+  ram_installed           Int?
+  selinux_status          String?
+  swap_size               Int?
+  system_uptime           String?
+  notes                   String?
+  host_packages           host_packages[]
+  host_repositories       host_repositories[]
+  host_group_memberships  host_group_memberships[]
+  update_history          update_history[]
+  job_history             job_history[]
 
   @@index([machine_id])
   @@index([friendly_name])

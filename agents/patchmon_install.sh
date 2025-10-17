@@ -97,13 +97,22 @@ verify_datetime
 # Clean up old files (keep only last 3 of each type)
 cleanup_old_files() {
     # Clean up old credential backups
-    ls -t /etc/patchmon/credentials.backup.* 2>/dev/null | tail -n +4 | xargs -r rm -f
+    ls -t /etc/patchmon/credentials.yml.backup.* 2>/dev/null | tail -n +4 | xargs -r rm -f
+    
+    # Clean up old config backups
+    ls -t /etc/patchmon/config.yml.backup.* 2>/dev/null | tail -n +4 | xargs -r rm -f
     
     # Clean up old agent backups
-    ls -t /usr/local/bin/patchmon-agent.sh.backup.* 2>/dev/null | tail -n +4 | xargs -r rm -f
+    ls -t /usr/local/bin/patchmon-agent.backup.* 2>/dev/null | tail -n +4 | xargs -r rm -f
     
     # Clean up old log files
-    ls -t /var/log/patchmon-agent.log.old.* 2>/dev/null | tail -n +4 | xargs -r rm -f
+    ls -t /etc/patchmon/logs/patchmon-agent.log.old.* 2>/dev/null | tail -n +4 | xargs -r rm -f
+    
+    # Clean up old shell script backups (if any exist)
+    ls -t /usr/local/bin/patchmon-agent.sh.backup.* 2>/dev/null | tail -n +4 | xargs -r rm -f
+    
+    # Clean up old credentials backups (if any exist)
+    ls -t /etc/patchmon/credentials.backup.* 2>/dev/null | tail -n +4 | xargs -r rm -f
 }
 
 # Run cleanup at start
@@ -127,6 +136,12 @@ if [[ -z "$PATCHMON_URL" ]] || [[ -z "$API_ID" ]] || [[ -z "$API_KEY" ]]; then
     error "Missing required parameters. This script should be called via the PatchMon web interface."
 fi
 
+# Parse architecture parameter (default to amd64)
+ARCHITECTURE="${ARCHITECTURE:-amd64}"
+if [[ "$ARCHITECTURE" != "amd64" && "$ARCHITECTURE" != "386" && "$ARCHITECTURE" != "arm64" ]]; then
+    error "Invalid architecture '$ARCHITECTURE'. Must be one of: amd64, 386, arm64"
+fi
+
 # Check if --force flag is set (for bypassing broken packages)
 FORCE_INSTALL="${FORCE_INSTALL:-false}"
 if [[ "$*" == *"--force"* ]] || [[ "$FORCE_INSTALL" == "true" ]]; then
@@ -142,6 +157,7 @@ info "🚀 Starting PatchMon Agent Installation..."
 info "📋 Server: $PATCHMON_URL"
 info "🔑 API ID: ${API_ID:0:16}..."
 info "🆔 Machine ID: ${MACHINE_ID:0:16}..."
+info "🏗️  Architecture: $ARCHITECTURE"
 
 # Display diagnostic information
 echo ""
@@ -150,6 +166,7 @@ echo "   • URL: $PATCHMON_URL"
 echo "   • CURL FLAGS: $CURL_FLAGS"
 echo "   • API ID: ${API_ID:0:16}..."
 echo "   • API Key: ${API_KEY:0:16}..."
+echo "   • Architecture: $ARCHITECTURE"
 echo ""
 
 # Install required dependencies
@@ -294,67 +311,117 @@ else
     mkdir -p /etc/patchmon
 fi
 
-# Step 2: Create credentials file
-info "🔐 Creating API credentials file..."
+# Step 2: Create configuration files
+info "🔐 Creating configuration files..."
+
+# Check if config file already exists
+if [[ -f "/etc/patchmon/config.yml" ]]; then
+    warning "⚠️  Config file already exists at /etc/patchmon/config.yml"
+    warning "⚠️  Moving existing file out of the way for fresh installation"
+    
+    # Clean up old config backups (keep only last 3)
+    ls -t /etc/patchmon/config.yml.backup.* 2>/dev/null | tail -n +4 | xargs -r rm -f
+    
+    # Move existing file out of the way
+    mv /etc/patchmon/config.yml /etc/patchmon/config.yml.backup.$(date +%Y%m%d_%H%M%S)
+    info "📋 Moved existing config to: /etc/patchmon/config.yml.backup.$(date +%Y%m%d_%H%M%S)"
+fi
 
 # Check if credentials file already exists
-if [[ -f "/etc/patchmon/credentials" ]]; then
-    warning "⚠️  Credentials file already exists at /etc/patchmon/credentials"
+if [[ -f "/etc/patchmon/credentials.yml" ]]; then
+    warning "⚠️  Credentials file already exists at /etc/patchmon/credentials.yml"
     warning "⚠️  Moving existing file out of the way for fresh installation"
     
     # Clean up old credential backups (keep only last 3)
-    ls -t /etc/patchmon/credentials.backup.* 2>/dev/null | tail -n +4 | xargs -r rm -f
+    ls -t /etc/patchmon/credentials.yml.backup.* 2>/dev/null | tail -n +4 | xargs -r rm -f
     
     # Move existing file out of the way
-    mv /etc/patchmon/credentials /etc/patchmon/credentials.backup.$(date +%Y%m%d_%H%M%S)
-    info "📋 Moved existing credentials to: /etc/patchmon/credentials.backup.$(date +%Y%m%d_%H%M%S)"
+    mv /etc/patchmon/credentials.yml /etc/patchmon/credentials.yml.backup.$(date +%Y%m%d_%H%M%S)
+    info "📋 Moved existing credentials to: /etc/patchmon/credentials.yml.backup.$(date +%Y%m%d_%H%M%S)"
 fi
 
-cat > /etc/patchmon/credentials << EOF
+# Clean up old credentials file if it exists (from previous installations)
+if [[ -f "/etc/patchmon/credentials" ]]; then
+    warning "⚠️  Found old credentials file, removing it..."
+    rm -f /etc/patchmon/credentials
+    info "📋 Removed old credentials file"
+fi
+
+# Create main config file
+cat > /etc/patchmon/config.yml << EOF
+# PatchMon Agent Configuration
+# Generated on $(date)
+patchmon_server: "$PATCHMON_URL"
+api_version: "v1"
+credentials_file: "/etc/patchmon/credentials.yml"
+log_file: "/etc/patchmon/logs/patchmon-agent.log"
+log_level: "info"
+EOF
+
+# Create credentials file
+cat > /etc/patchmon/credentials.yml << EOF
 # PatchMon API Credentials
 # Generated on $(date)
-PATCHMON_URL="$PATCHMON_URL"
-API_ID="$API_ID"
-API_KEY="$API_KEY"
+api_id: "$API_ID"
+api_key: "$API_KEY"
 EOF
-chmod 600 /etc/patchmon/credentials
 
-# Step 3: Download the agent script using API credentials
-info "📥 Downloading PatchMon agent script..."
+chmod 600 /etc/patchmon/config.yml
+chmod 600 /etc/patchmon/credentials.yml
 
-# Check if agent script already exists
-if [[ -f "/usr/local/bin/patchmon-agent.sh" ]]; then
-    warning "⚠️  Agent script already exists at /usr/local/bin/patchmon-agent.sh"
+# Step 3: Download the PatchMon agent binary using API credentials
+info "📥 Downloading PatchMon agent binary..."
+
+# Determine the binary filename based on architecture
+BINARY_NAME="patchmon-agent-linux-${ARCHITECTURE}"
+
+# Check if agent binary already exists
+if [[ -f "/usr/local/bin/patchmon-agent" ]]; then
+    warning "⚠️  Agent binary already exists at /usr/local/bin/patchmon-agent"
     warning "⚠️  Moving existing file out of the way for fresh installation"
     
     # Clean up old agent backups (keep only last 3)
-    ls -t /usr/local/bin/patchmon-agent.sh.backup.* 2>/dev/null | tail -n +4 | xargs -r rm -f
+    ls -t /usr/local/bin/patchmon-agent.backup.* 2>/dev/null | tail -n +4 | xargs -r rm -f
     
     # Move existing file out of the way
-    mv /usr/local/bin/patchmon-agent.sh /usr/local/bin/patchmon-agent.sh.backup.$(date +%Y%m%d_%H%M%S)
-    info "📋 Moved existing agent to: /usr/local/bin/patchmon-agent.sh.backup.$(date +%Y%m%d_%H%M%S)"
+    mv /usr/local/bin/patchmon-agent /usr/local/bin/patchmon-agent.backup.$(date +%Y%m%d_%H%M%S)
+    info "📋 Moved existing agent to: /usr/local/bin/patchmon-agent.backup.$(date +%Y%m%d_%H%M%S)"
 fi
 
+# Clean up old shell script if it exists (from previous installations)
+if [[ -f "/usr/local/bin/patchmon-agent.sh" ]]; then
+    warning "⚠️  Found old shell script agent, removing it..."
+    rm -f /usr/local/bin/patchmon-agent.sh
+    info "📋 Removed old shell script agent"
+fi
+
+# Download the binary
 curl $CURL_FLAGS \
     -H "X-API-ID: $API_ID" \
     -H "X-API-KEY: $API_KEY" \
-    "$PATCHMON_URL/api/v1/hosts/agent/download" \
-    -o /usr/local/bin/patchmon-agent.sh
+    "$PATCHMON_URL/api/v1/hosts/agent/download?arch=$ARCHITECTURE" \
+    -o /usr/local/bin/patchmon-agent
 
-chmod +x /usr/local/bin/patchmon-agent.sh
+chmod +x /usr/local/bin/patchmon-agent
 
-# Get the agent version from the downloaded script
-AGENT_VERSION=$(grep '^AGENT_VERSION=' /usr/local/bin/patchmon-agent.sh | cut -d'"' -f2 2>/dev/null || echo "Unknown")
+# Get the agent version from the binary
+AGENT_VERSION=$(/usr/local/bin/patchmon-agent version 2>/dev/null || echo "Unknown")
 info "📋 Agent version: $AGENT_VERSION"
 
+# Handle existing log files and create log directory
+info "📁 Setting up log directory..."
+
+# Create log directory if it doesn't exist
+mkdir -p /etc/patchmon/logs
+
 # Handle existing log files
-if [[ -f "/var/log/patchmon-agent.log" ]]; then
-    warning "⚠️  Existing log file found at /var/log/patchmon-agent.log"
+if [[ -f "/etc/patchmon/logs/patchmon-agent.log" ]]; then
+    warning "⚠️  Existing log file found at /etc/patchmon/logs/patchmon-agent.log"
     warning "⚠️  Rotating log file for fresh start"
     
     # Rotate the log file
-    mv /var/log/patchmon-agent.log /var/log/patchmon-agent.log.old.$(date +%Y%m%d_%H%M%S)
-    info "📋 Log file rotated to: /var/log/patchmon-agent.log.old.$(date +%Y%m%d_%H%M%S)"
+    mv /etc/patchmon/logs/patchmon-agent.log /etc/patchmon/logs/patchmon-agent.log.old.$(date +%Y%m%d_%H%M%S)
+    info "📋 Log file rotated to: /etc/patchmon/logs/patchmon-agent.log.old.$(date +%Y%m%d_%H%M%S)"
 fi
 
 # Step 4: Test the configuration
@@ -386,19 +453,76 @@ if [[ "$http_code" == "200" ]]; then
 fi
 
 info "🧪 Testing API credentials and connectivity..."
-if /usr/local/bin/patchmon-agent.sh test; then
+if /usr/local/bin/patchmon-agent ping; then
     success "✅ TEST: API credentials are valid and server is reachable"
 else
     error "❌ Failed to validate API credentials or reach server"
 fi
 
-# Step 5: Send initial data and setup automated updates
+# Step 5: Send initial data and setup systemd service
 info "📊 Sending initial package data to server..."
-if /usr/local/bin/patchmon-agent.sh update; then
+if /usr/local/bin/patchmon-agent report; then
     success "✅ UPDATE: Initial package data sent successfully"
-    info "✅ Automated updates configured by agent"
 else
-    warning "⚠️  Failed to send initial data. You can retry later with: /usr/local/bin/patchmon-agent.sh update"
+    warning "⚠️  Failed to send initial data. You can retry later with: /usr/local/bin/patchmon-agent report"
+fi
+
+# Step 6: Setup systemd service for WebSocket connection
+info "🔧 Setting up systemd service..."
+
+# Stop and disable existing service if it exists
+if systemctl is-active --quiet patchmon-agent.service 2>/dev/null; then
+    warning "⚠️  Stopping existing PatchMon agent service..."
+    systemctl stop patchmon-agent.service
+fi
+
+if systemctl is-enabled --quiet patchmon-agent.service 2>/dev/null; then
+    warning "⚠️  Disabling existing PatchMon agent service..."
+    systemctl disable patchmon-agent.service
+fi
+
+# Create systemd service file
+cat > /etc/systemd/system/patchmon-agent.service << EOF
+[Unit]
+Description=PatchMon Agent Service
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/patchmon-agent serve
+Restart=always
+RestartSec=10
+WorkingDirectory=/etc/patchmon
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=patchmon-agent
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Clean up old crontab entries if they exist (from previous installations)
+if crontab -l 2>/dev/null | grep -q "patchmon-agent"; then
+    warning "⚠️  Found old crontab entries, removing them..."
+    crontab -l 2>/dev/null | grep -v "patchmon-agent" | crontab -
+    info "📋 Removed old crontab entries"
+fi
+
+# Reload systemd and enable/start the service
+systemctl daemon-reload
+systemctl enable patchmon-agent.service
+systemctl start patchmon-agent.service
+
+# Check if service started successfully
+if systemctl is-active --quiet patchmon-agent.service; then
+    success "✅ PatchMon Agent service started successfully"
+    info "🔗 WebSocket connection established"
+else
+    warning "⚠️  Service may have failed to start. Check status with: systemctl status patchmon-agent"
 fi
 
 # Installation complete
@@ -406,14 +530,16 @@ success "🎉 PatchMon Agent installation completed successfully!"
 echo ""
 echo -e "${GREEN}📋 Installation Summary:${NC}"
 echo "   • Configuration directory: /etc/patchmon"
-echo "   • Agent installed: /usr/local/bin/patchmon-agent.sh"
+echo "   • Agent binary installed: /usr/local/bin/patchmon-agent"
+echo "   • Architecture: $ARCHITECTURE"
 echo "   • Dependencies installed: jq, curl, bc"
-echo "   • Automated updates configured via crontab"
+echo "   • Systemd service configured and running"
 echo "   • API credentials configured and tested"
-echo "   • Update schedule managed by agent"
+echo "   • WebSocket connection established"
+echo "   • Logs directory: /etc/patchmon/logs"
 
 # Check for moved files and show them
-MOVED_FILES=$(ls /etc/patchmon/credentials.backup.* /usr/local/bin/patchmon-agent.sh.backup.* /var/log/patchmon-agent.log.old.* 2>/dev/null || true)
+MOVED_FILES=$(ls /etc/patchmon/credentials.yml.backup.* /etc/patchmon/config.yml.backup.* /usr/local/bin/patchmon-agent.backup.* /etc/patchmon/logs/patchmon-agent.log.old.* /usr/local/bin/patchmon-agent.sh.backup.* /etc/patchmon/credentials.backup.* 2>/dev/null || true)
 if [[ -n "$MOVED_FILES" ]]; then
     echo ""
     echo -e "${YELLOW}📋 Files Moved for Fresh Installation:${NC}"
@@ -426,8 +552,11 @@ fi
 
 echo ""
 echo -e "${BLUE}🔧 Management Commands:${NC}"
-echo "   • Test connection: /usr/local/bin/patchmon-agent.sh test"
-echo "   • Manual update: /usr/local/bin/patchmon-agent.sh update"
-echo "   • Check status: /usr/local/bin/patchmon-agent.sh diagnostics"
+echo "   • Test connection: /usr/local/bin/patchmon-agent ping"
+echo "   • Manual report: /usr/local/bin/patchmon-agent report"
+echo "   • Check status: /usr/local/bin/patchmon-agent diagnostics"
+echo "   • Service status: systemctl status patchmon-agent"
+echo "   • Service logs: journalctl -u patchmon-agent -f"
+echo "   • Restart service: systemctl restart patchmon-agent"
 echo ""
 success "✅ Your system is now being monitored by PatchMon!"

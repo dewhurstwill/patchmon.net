@@ -7,12 +7,14 @@ const agentWs = require("../agentWs");
 const GitHubUpdateCheck = require("./githubUpdateCheck");
 const SessionCleanup = require("./sessionCleanup");
 const OrphanedRepoCleanup = require("./orphanedRepoCleanup");
+const OrphanedPackageCleanup = require("./orphanedPackageCleanup");
 
 // Queue names
 const QUEUE_NAMES = {
 	GITHUB_UPDATE_CHECK: "github-update-check",
 	SESSION_CLEANUP: "session-cleanup",
 	ORPHANED_REPO_CLEANUP: "orphaned-repo-cleanup",
+	ORPHANED_PACKAGE_CLEANUP: "orphaned-package-cleanup",
 	AGENT_COMMANDS: "agent-commands",
 };
 
@@ -87,6 +89,8 @@ class QueueManager {
 		this.automations[QUEUE_NAMES.SESSION_CLEANUP] = new SessionCleanup(this);
 		this.automations[QUEUE_NAMES.ORPHANED_REPO_CLEANUP] =
 			new OrphanedRepoCleanup(this);
+		this.automations[QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP] =
+			new OrphanedPackageCleanup(this);
 
 		console.log("✅ All automation classes initialized");
 	}
@@ -124,6 +128,18 @@ class QueueManager {
 			QUEUE_NAMES.ORPHANED_REPO_CLEANUP,
 			this.automations[QUEUE_NAMES.ORPHANED_REPO_CLEANUP].process.bind(
 				this.automations[QUEUE_NAMES.ORPHANED_REPO_CLEANUP],
+			),
+			{
+				connection: redisConnection,
+				concurrency: 1,
+			},
+		);
+
+		// Orphaned Package Cleanup Worker
+		this.workers[QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP] = new Worker(
+			QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP,
+			this.automations[QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP].process.bind(
+				this.automations[QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP],
 			),
 			{
 				connection: redisConnection,
@@ -317,6 +333,7 @@ class QueueManager {
 		await this.automations[QUEUE_NAMES.GITHUB_UPDATE_CHECK].schedule();
 		await this.automations[QUEUE_NAMES.SESSION_CLEANUP].schedule();
 		await this.automations[QUEUE_NAMES.ORPHANED_REPO_CLEANUP].schedule();
+		await this.automations[QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP].schedule();
 	}
 
 	/**
@@ -332,6 +349,12 @@ class QueueManager {
 
 	async triggerOrphanedRepoCleanup() {
 		return this.automations[QUEUE_NAMES.ORPHANED_REPO_CLEANUP].triggerManual();
+	}
+
+	async triggerOrphanedPackageCleanup() {
+		return this.automations[
+			QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP
+		].triggerManual();
 	}
 
 	/**
