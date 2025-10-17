@@ -15,7 +15,7 @@ router.get("/", authenticateToken, async (_req, res) => {
 			include: {
 				_count: {
 					select: {
-						hosts: true,
+						host_group_memberships: true,
 					},
 				},
 			},
@@ -39,16 +39,20 @@ router.get("/:id", authenticateToken, async (req, res) => {
 		const hostGroup = await prisma.host_groups.findUnique({
 			where: { id },
 			include: {
-				hosts: {
-					select: {
-						id: true,
-						friendly_name: true,
-						hostname: true,
-						ip: true,
-						os_type: true,
-						os_version: true,
-						status: true,
-						last_update: true,
+				host_group_memberships: {
+					include: {
+						hosts: {
+							select: {
+								id: true,
+								friendly_name: true,
+								hostname: true,
+								ip: true,
+								os_type: true,
+								os_version: true,
+								status: true,
+								last_update: true,
+							},
+						},
 					},
 				},
 			},
@@ -195,7 +199,7 @@ router.delete(
 				include: {
 					_count: {
 						select: {
-							hosts: true,
+							host_group_memberships: true,
 						},
 					},
 				},
@@ -205,11 +209,10 @@ router.delete(
 				return res.status(404).json({ error: "Host group not found" });
 			}
 
-			// If host group has hosts, ungroup them first
-			if (existingGroup._count.hosts > 0) {
-				await prisma.hosts.updateMany({
+			// If host group has memberships, remove them first
+			if (existingGroup._count.host_group_memberships > 0) {
+				await prisma.host_group_memberships.deleteMany({
 					where: { host_group_id: id },
-					data: { host_group_id: null },
 				});
 			}
 
@@ -231,7 +234,13 @@ router.get("/:id/hosts", authenticateToken, async (req, res) => {
 		const { id } = req.params;
 
 		const hosts = await prisma.hosts.findMany({
-			where: { host_group_id: id },
+			where: {
+				host_group_memberships: {
+					some: {
+						host_group_id: id,
+					},
+				},
+			},
 			select: {
 				id: true,
 				friendly_name: true,

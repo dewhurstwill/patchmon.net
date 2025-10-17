@@ -21,12 +21,13 @@ import {
 	Square,
 	Trash2,
 	Users,
+	Wifi,
 	X,
 } from "lucide-react";
 import { useEffect, useId, useMemo, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import InlineEdit from "../components/InlineEdit";
-import InlineGroupEdit from "../components/InlineGroupEdit";
+import InlineMultiGroupEdit from "../components/InlineMultiGroupEdit";
 import InlineToggle from "../components/InlineToggle";
 import {
 	adminHostsAPI,
@@ -34,14 +35,14 @@ import {
 	formatRelativeTime,
 	hostGroupsAPI,
 } from "../utils/api";
-import { OSIcon } from "../utils/osIcons.jsx";
+import { getOSDisplayName, OSIcon } from "../utils/osIcons.jsx";
 
 // Add Host Modal Component
 const AddHostModal = ({ isOpen, onClose, onSuccess }) => {
 	const friendlyNameId = useId();
 	const [formData, setFormData] = useState({
 		friendly_name: "",
-		hostGroupId: "",
+		hostGroupIds: [], // Changed to array for multiple selection
 	});
 	const [isSubmitting, setIsSubmitting] = useState(false);
 	const [error, setError] = useState("");
@@ -64,7 +65,7 @@ const AddHostModal = ({ isOpen, onClose, onSuccess }) => {
 			const response = await adminHostsAPI.create(formData);
 			console.log("Host created successfully:", formData.friendly_name);
 			onSuccess(response.data);
-			setFormData({ friendly_name: "", hostGroupId: "" });
+			setFormData({ friendly_name: "", hostGroupIds: [] });
 			onClose();
 		} catch (err) {
 			console.error("Full error object:", err);
@@ -134,68 +135,56 @@ const AddHostModal = ({ isOpen, onClose, onSuccess }) => {
 
 					<div>
 						<span className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-3">
-							Host Group
+							Host Groups
 						</span>
-						<div className="grid grid-cols-3 gap-2">
-							{/* No Group Option */}
-							<button
-								type="button"
-								onClick={() => setFormData({ ...formData, hostGroupId: "" })}
-								className={`flex flex-col items-center justify-center px-2 py-3 text-center border-2 rounded-lg transition-all duration-200 relative min-h-[80px] ${
-									formData.hostGroupId === ""
-										? "border-primary-500 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300"
-										: "border-secondary-300 dark:border-secondary-600 bg-white dark:bg-secondary-700 text-secondary-700 dark:text-secondary-200 hover:border-secondary-400 dark:hover:border-secondary-500"
-								}`}
-							>
-								<div className="text-xs font-medium">No Group</div>
-								<div className="text-xs text-secondary-500 dark:text-secondary-400 mt-1">
-									Ungrouped
-								</div>
-								{formData.hostGroupId === "" && (
-									<div className="absolute top-2 right-2 w-3 h-3 rounded-full bg-primary-500 flex items-center justify-center">
-										<div className="w-1.5 h-1.5 rounded-full bg-white"></div>
-									</div>
-								)}
-							</button>
-
+						<div className="space-y-2 max-h-48 overflow-y-auto">
 							{/* Host Group Options */}
 							{hostGroups?.map((group) => (
-								<button
+								<label
 									key={group.id}
-									type="button"
-									onClick={() =>
-										setFormData({ ...formData, hostGroupId: group.id })
-									}
-									className={`flex flex-col items-center justify-center px-2 py-3 text-center border-2 rounded-lg transition-all duration-200 relative min-h-[80px] ${
-										formData.hostGroupId === group.id
-											? "border-primary-500 bg-primary-50 dark:bg-primary-900/30 text-primary-700 dark:text-primary-300"
-											: "border-secondary-300 dark:border-secondary-600 bg-white dark:bg-secondary-700 text-secondary-700 dark:text-secondary-200 hover:border-secondary-400 dark:hover:border-secondary-500"
+									className={`flex items-center gap-3 p-3 border-2 rounded-lg transition-all duration-200 cursor-pointer ${
+										formData.hostGroupIds.includes(group.id)
+											? "border-primary-500 bg-primary-50 dark:bg-primary-900/30"
+											: "border-secondary-300 dark:border-secondary-600 bg-white dark:bg-secondary-700 hover:border-secondary-400 dark:hover:border-secondary-500"
 									}`}
 								>
-									<div className="flex items-center gap-1 mb-1 w-full justify-center">
+									<input
+										type="checkbox"
+										checked={formData.hostGroupIds.includes(group.id)}
+										onChange={(e) => {
+											if (e.target.checked) {
+												setFormData({
+													...formData,
+													hostGroupIds: [...formData.hostGroupIds, group.id],
+												});
+											} else {
+												setFormData({
+													...formData,
+													hostGroupIds: formData.hostGroupIds.filter(
+														(id) => id !== group.id,
+													),
+												});
+											}
+										}}
+										className="w-4 h-4 text-primary-600 bg-gray-100 border-gray-300 rounded focus:ring-primary-500 dark:focus:ring-primary-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+									/>
+									<div className="flex items-center gap-2 flex-1">
 										{group.color && (
 											<div
 												className="w-3 h-3 rounded-full border border-secondary-300 dark:border-secondary-500 flex-shrink-0"
 												style={{ backgroundColor: group.color }}
 											></div>
 										)}
-										<div className="text-xs font-medium truncate max-w-full">
+										<div className="text-sm font-medium text-secondary-700 dark:text-secondary-200">
 											{group.name}
 										</div>
 									</div>
-									<div className="text-xs text-secondary-500 dark:text-secondary-400">
-										Group
-									</div>
-									{formData.hostGroupId === group.id && (
-										<div className="absolute top-2 right-2 w-3 h-3 rounded-full bg-primary-500 flex items-center justify-center">
-											<div className="w-1.5 h-1.5 rounded-full bg-white"></div>
-										</div>
-									)}
-								</button>
+								</label>
 							))}
 						</div>
 						<p className="mt-2 text-sm text-secondary-500 dark:text-secondary-400">
-							Optional: Assign this host to a group for better organization.
+							Optional: Select one or more groups to assign this host to for
+							better organization.
 						</p>
 					</div>
 
@@ -328,22 +317,24 @@ const Hosts = () => {
 		const defaultConfig = [
 			{ id: "select", label: "Select", visible: true, order: 0 },
 			{ id: "host", label: "Friendly Name", visible: true, order: 1 },
-			{ id: "ip", label: "IP Address", visible: false, order: 2 },
-			{ id: "group", label: "Group", visible: true, order: 3 },
-			{ id: "os", label: "OS", visible: true, order: 4 },
-			{ id: "os_version", label: "OS Version", visible: false, order: 5 },
-			{ id: "agent_version", label: "Agent Version", visible: true, order: 6 },
+			{ id: "hostname", label: "System Hostname", visible: true, order: 2 },
+			{ id: "ip", label: "IP Address", visible: false, order: 3 },
+			{ id: "group", label: "Group", visible: true, order: 4 },
+			{ id: "os", label: "OS", visible: true, order: 5 },
+			{ id: "os_version", label: "OS Version", visible: false, order: 6 },
+			{ id: "agent_version", label: "Agent Version", visible: true, order: 7 },
 			{
 				id: "auto_update",
 				label: "Agent Auto-Update",
 				visible: true,
-				order: 7,
+				order: 8,
 			},
-			{ id: "status", label: "Status", visible: true, order: 8 },
-			{ id: "updates", label: "Updates", visible: true, order: 9 },
-			{ id: "notes", label: "Notes", visible: false, order: 10 },
-			{ id: "last_update", label: "Last Update", visible: true, order: 11 },
-			{ id: "actions", label: "Actions", visible: true, order: 12 },
+			{ id: "ws_status", label: "Connection", visible: true, order: 9 },
+			{ id: "status", label: "Status", visible: true, order: 10 },
+			{ id: "updates", label: "Updates", visible: true, order: 11 },
+			{ id: "notes", label: "Notes", visible: false, order: 12 },
+			{ id: "last_update", label: "Last Update", visible: true, order: 13 },
+			{ id: "actions", label: "Actions", visible: true, order: 14 },
 		];
 
 		const saved = localStorage.getItem("hosts-column-config");
@@ -365,8 +356,11 @@ const Hosts = () => {
 					localStorage.removeItem("hosts-column-config");
 					return defaultConfig;
 				} else {
-					// Use the existing configuration
-					return savedConfig;
+					// Ensure ws_status column is visible in saved config
+					const updatedConfig = savedConfig.map((col) =>
+						col.id === "ws_status" ? { ...col, visible: true } : col,
+					);
+					return updatedConfig;
 				}
 			} catch {
 				// If there's an error parsing the config, clear it and use default
@@ -397,6 +391,118 @@ const Hosts = () => {
 		queryKey: ["hostGroups"],
 		queryFn: () => hostGroupsAPI.list().then((res) => res.data),
 	});
+
+	// Track WebSocket status for all hosts
+	const [wsStatusMap, setWsStatusMap] = useState({});
+
+	// Fetch initial WebSocket status for all hosts
+	useEffect(() => {
+		if (!hosts || hosts.length === 0) return;
+
+		const token = localStorage.getItem("token");
+		if (!token) return;
+
+		// Fetch initial WebSocket status for all hosts
+		const fetchInitialStatus = async () => {
+			const statusPromises = hosts
+				.filter((host) => host.api_id)
+				.map(async (host) => {
+					try {
+						const response = await fetch(`/api/v1/ws/status/${host.api_id}`, {
+							headers: {
+								Authorization: `Bearer ${token}`,
+							},
+						});
+						if (response.ok) {
+							const data = await response.json();
+							return { apiId: host.api_id, status: data.data };
+						}
+					} catch (_error) {
+						// Silently handle errors
+					}
+					return {
+						apiId: host.api_id,
+						status: { connected: false, secure: false },
+					};
+				});
+
+			const results = await Promise.all(statusPromises);
+			const initialStatusMap = {};
+			results.forEach(({ apiId, status }) => {
+				initialStatusMap[apiId] = status;
+			});
+
+			setWsStatusMap(initialStatusMap);
+		};
+
+		fetchInitialStatus();
+	}, [hosts]);
+
+	// Subscribe to WebSocket status changes for all hosts via SSE
+	useEffect(() => {
+		if (!hosts || hosts.length === 0) return;
+
+		const token = localStorage.getItem("token");
+		if (!token) return;
+
+		const eventSources = new Map();
+		let isMounted = true;
+
+		const connectHost = (apiId) => {
+			if (!isMounted || eventSources.has(apiId)) return;
+
+			try {
+				const es = new EventSource(
+					`/api/v1/ws/status/${apiId}/stream?token=${encodeURIComponent(token)}`,
+				);
+
+				es.onmessage = (event) => {
+					try {
+						const data = JSON.parse(event.data);
+						if (isMounted) {
+							setWsStatusMap((prev) => {
+								const newMap = { ...prev, [apiId]: data };
+								return newMap;
+							});
+						}
+					} catch (_err) {
+						// Silently handle parse errors
+					}
+				};
+
+				es.onerror = (_error) => {
+					console.log(`[SSE] Connection error for ${apiId}, retrying...`);
+					es?.close();
+					eventSources.delete(apiId);
+					if (isMounted) {
+						// Retry connection after 5 seconds with exponential backoff
+						setTimeout(() => connectHost(apiId), 5000);
+					}
+				};
+
+				eventSources.set(apiId, es);
+			} catch (_err) {
+				// Silently handle connection errors
+			}
+		};
+
+		// Connect to all hosts
+		for (const host of hosts) {
+			if (host.api_id) {
+				connectHost(host.api_id);
+			} else {
+			}
+		}
+
+		// Cleanup function
+		return () => {
+			isMounted = false;
+			for (const es of eventSources.values()) {
+				es.close();
+			}
+			eventSources.clear();
+		};
+	}, [hosts]);
 
 	const bulkUpdateGroupMutation = useMutation({
 		mutationFn: ({ hostIds, hostGroupId }) =>
@@ -439,7 +545,7 @@ const Hosts = () => {
 		},
 	});
 
-	const updateHostGroupMutation = useMutation({
+	const _updateHostGroupMutation = useMutation({
 		mutationFn: ({ hostId, hostGroupId }) => {
 			console.log("updateHostGroupMutation called with:", {
 				hostId,
@@ -482,6 +588,46 @@ const Hosts = () => {
 		},
 		onError: (error) => {
 			console.error("updateHostGroupMutation error:", error);
+		},
+	});
+
+	const updateHostGroupsMutation = useMutation({
+		mutationFn: ({ hostId, groupIds }) => {
+			console.log("updateHostGroupsMutation called with:", {
+				hostId,
+				groupIds,
+			});
+			return adminHostsAPI.updateGroups(hostId, groupIds).then((res) => {
+				console.log("updateGroups API response:", res);
+				return res.data;
+			});
+		},
+		onSuccess: (data) => {
+			// Update the cache with the new host data
+			queryClient.setQueryData(["hosts"], (oldData) => {
+				console.log("Old cache data before update:", oldData);
+				if (!oldData) return oldData;
+				const updatedData = oldData.map((host) => {
+					if (host.id === data.host.id) {
+						console.log(
+							"Updating host in cache:",
+							host.id,
+							"with new data:",
+							data.host,
+						);
+						return data.host;
+					}
+					return host;
+				});
+				console.log("New cache data after update:", updatedData);
+				return updatedData;
+			});
+
+			// Also invalidate to ensure consistency
+			queryClient.invalidateQueries(["hosts"]);
+		},
+		onError: (error) => {
+			console.error("updateHostGroupsMutation error:", error);
 		},
 	});
 
@@ -562,7 +708,7 @@ const Hosts = () => {
 				osFilter === "all" ||
 				host.os_type?.toLowerCase() === osFilter.toLowerCase();
 
-			// URL filter for hosts needing updates, inactive hosts, up-to-date hosts, or stale hosts
+			// URL filter for hosts needing updates, inactive hosts, up-to-date hosts, stale hosts, or offline hosts
 			const filter = searchParams.get("filter");
 			const matchesUrlFilter =
 				(filter !== "needsUpdates" ||
@@ -570,7 +716,8 @@ const Hosts = () => {
 				(filter !== "inactive" ||
 					(host.effectiveStatus || host.status) === "inactive") &&
 				(filter !== "upToDate" || (!host.isStale && host.updatesCount === 0)) &&
-				(filter !== "stale" || host.isStale);
+				(filter !== "stale" || host.isStale) &&
+				(filter !== "offline" || wsStatusMap[host.api_id]?.connected !== true);
 
 			// Hide stale filter
 			const matchesHideStale = !hideStale || !host.isStale;
@@ -655,6 +802,7 @@ const Hosts = () => {
 		sortDirection,
 		searchParams,
 		hideStale,
+		wsStatusMap,
 	]);
 
 	// Get unique OS types from hosts for dynamic dropdown
@@ -756,10 +904,19 @@ const Hosts = () => {
 			{ id: "group", label: "Group", visible: true, order: 4 },
 			{ id: "os", label: "OS", visible: true, order: 5 },
 			{ id: "os_version", label: "OS Version", visible: false, order: 6 },
-			{ id: "status", label: "Status", visible: true, order: 7 },
-			{ id: "updates", label: "Updates", visible: true, order: 8 },
-			{ id: "last_update", label: "Last Update", visible: true, order: 9 },
-			{ id: "actions", label: "Actions", visible: true, order: 10 },
+			{ id: "agent_version", label: "Agent Version", visible: true, order: 7 },
+			{
+				id: "auto_update",
+				label: "Agent Auto-Update",
+				visible: true,
+				order: 8,
+			},
+			{ id: "ws_status", label: "Connection", visible: true, order: 9 },
+			{ id: "status", label: "Status", visible: true, order: 10 },
+			{ id: "updates", label: "Updates", visible: true, order: 11 },
+			{ id: "notes", label: "Notes", visible: false, order: 12 },
+			{ id: "last_update", label: "Last Update", visible: true, order: 13 },
+			{ id: "actions", label: "Actions", visible: true, order: 14 },
 		];
 		updateColumnConfig(defaultConfig);
 	};
@@ -822,27 +979,33 @@ const Hosts = () => {
 						{host.ip || "N/A"}
 					</div>
 				);
-			case "group":
+			case "group": {
+				// Extract group IDs from the new many-to-many structure
+				const groupIds =
+					host.host_group_memberships?.map(
+						(membership) => membership.host_groups.id,
+					) || [];
 				return (
-					<InlineGroupEdit
-						key={`${host.id}-${host.host_groups?.id || "ungrouped"}-${host.host_groups?.name || "ungrouped"}`}
-						value={host.host_groups?.id}
-						onSave={(newGroupId) =>
-							updateHostGroupMutation.mutate({
+					<InlineMultiGroupEdit
+						key={`${host.id}-${groupIds.join(",")}`}
+						value={groupIds}
+						onSave={(newGroupIds) =>
+							updateHostGroupsMutation.mutate({
 								hostId: host.id,
-								hostGroupId: newGroupId,
+								groupIds: newGroupIds,
 							})
 						}
 						options={hostGroups || []}
-						placeholder="Select group..."
+						placeholder="Select groups..."
 						className="w-full"
 					/>
 				);
+			}
 			case "os":
 				return (
 					<div className="flex items-center gap-2 text-sm text-secondary-900 dark:text-white">
 						<OSIcon osType={host.os_type} className="h-4 w-4" />
-						<span>{host.os_type}</span>
+						<span>{getOSDisplayName(host.os_type)}</span>
 					</div>
 				);
 			case "os_version":
@@ -871,6 +1034,38 @@ const Hosts = () => {
 						falseLabel="No"
 					/>
 				);
+			case "ws_status": {
+				const wsStatus = wsStatusMap[host.api_id];
+				if (!wsStatus) {
+					return (
+						<span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">
+							<div className="w-2 h-2 bg-gray-400 rounded-full mr-1.5"></div>
+							Unknown
+						</span>
+					);
+				}
+				return (
+					<span
+						className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+							wsStatus.connected
+								? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+								: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
+						}`}
+						title={
+							wsStatus.connected
+								? `Agent connected via ${wsStatus.secure ? "WSS (secure)" : "WS (insecure)"}`
+								: "Agent not connected"
+						}
+					>
+						<div
+							className={`w-2 h-2 rounded-full mr-1.5 ${
+								wsStatus.connected ? "bg-green-500 animate-pulse" : "bg-red-500"
+							}`}
+						></div>
+						{wsStatus.connected ? (wsStatus.secure ? "WSS" : "WS") : "Offline"}
+					</span>
+				);
+			}
 			case "status":
 				return (
 					<div className="text-sm text-secondary-900 dark:text-white">
@@ -966,13 +1161,13 @@ const Hosts = () => {
 		navigate(`/hosts?${newSearchParams.toString()}`, { replace: true });
 	};
 
-	const handleStaleClick = () => {
-		// Filter to show stale/inactive hosts
-		setStatusFilter("inactive");
+	const handleConnectionStatusClick = () => {
+		// Filter to show offline hosts (not connected via WebSocket)
+		setStatusFilter("all");
 		setShowFilters(true);
-		// We'll use the existing inactive URL filter logic
+		// Use a new URL filter for connection status
 		const newSearchParams = new URLSearchParams(window.location.search);
-		newSearchParams.set("filter", "inactive");
+		newSearchParams.set("filter", "offline");
 		navigate(`/hosts?${newSearchParams.toString()}`, { replace: true });
 	};
 
@@ -1026,13 +1221,12 @@ const Hosts = () => {
 						type="button"
 						onClick={() => refetch()}
 						disabled={isFetching}
-						className="btn-outline flex items-center gap-2"
+						className="btn-outline flex items-center justify-center p-2"
 						title="Refresh hosts data"
 					>
 						<RefreshCw
 							className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`}
 						/>
-						{isFetching ? "Refreshing..." : "Refresh"}
 					</button>
 					<button
 						type="button"
@@ -1102,17 +1296,46 @@ const Hosts = () => {
 				<button
 					type="button"
 					className="card p-4 cursor-pointer hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow duration-200 text-left w-full"
-					onClick={handleStaleClick}
+					onClick={handleConnectionStatusClick}
 				>
 					<div className="flex items-center">
-						<AlertTriangle className="h-5 w-5 text-danger-600 mr-2" />
-						<div>
-							<p className="text-sm text-secondary-500 dark:text-white">
-								Stale
+						<Wifi className="h-5 w-5 text-primary-600 mr-2" />
+						<div className="flex-1">
+							<p className="text-sm text-secondary-500 dark:text-white mb-1">
+								Connection Status
 							</p>
-							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
-								{hosts?.filter((h) => h.isStale).length || 0}
-							</p>
+							{(() => {
+								const connectedCount =
+									hosts?.filter(
+										(h) => wsStatusMap[h.api_id]?.connected === true,
+									).length || 0;
+								const offlineCount =
+									hosts?.filter(
+										(h) => wsStatusMap[h.api_id]?.connected !== true,
+									).length || 0;
+								return (
+									<div className="flex gap-4">
+										<div className="flex items-center gap-1">
+											<div className="w-2 h-2 bg-green-500 rounded-full"></div>
+											<span className="text-sm font-medium text-secondary-900 dark:text-white">
+												{connectedCount}
+											</span>
+											<span className="text-xs text-secondary-500 dark:text-secondary-400">
+												Connected
+											</span>
+										</div>
+										<div className="flex items-center gap-1">
+											<div className="w-2 h-2 bg-red-500 rounded-full"></div>
+											<span className="text-sm font-medium text-secondary-900 dark:text-white">
+												{offlineCount}
+											</span>
+											<span className="text-xs text-secondary-500 dark:text-secondary-400">
+												Offline
+											</span>
+										</div>
+									</div>
+								);
+							})()}
 						</div>
 					</div>
 				</button>
@@ -1435,6 +1658,11 @@ const Hosts = () => {
 																			</button>
 																		) : column.id === "auto_update" ? (
 																			<div className="flex items-center gap-2 font-normal text-xs text-secondary-500 dark:text-secondary-300 normal-case tracking-wider">
+																				{column.label}
+																			</div>
+																		) : column.id === "ws_status" ? (
+																			<div className="flex items-center gap-2 font-normal text-xs text-secondary-500 dark:text-secondary-300 normal-case tracking-wider">
+																				<Wifi className="h-3 w-3" />
 																				{column.label}
 																			</div>
 																		) : column.id === "status" ? (
@@ -1785,9 +2013,10 @@ const ColumnSettingsModal = ({
 	};
 
 	return (
-		<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-			<div className="bg-white dark:bg-secondary-800 rounded-lg shadow-xl max-w-md w-full mx-4">
-				<div className="px-6 py-4 border-b border-secondary-200 dark:border-secondary-600">
+		<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+			<div className="bg-white dark:bg-secondary-800 rounded-lg shadow-xl max-w-lg w-full max-h-[85vh] flex flex-col">
+				{/* Header */}
+				<div className="px-6 py-4 border-b border-secondary-200 dark:border-secondary-600 flex-shrink-0">
 					<div className="flex items-center justify-between">
 						<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
 							Column Settings
@@ -1800,14 +2029,14 @@ const ColumnSettingsModal = ({
 							<X className="h-5 w-5" />
 						</button>
 					</div>
-				</div>
-
-				<div className="px-6 py-4">
-					<p className="text-sm text-secondary-600 dark:text-secondary-300 mb-4">
+					<p className="text-sm text-secondary-600 dark:text-secondary-300 mt-2">
 						Drag to reorder columns or toggle visibility
 					</p>
+				</div>
 
-					<div className="space-y-2">
+				{/* Scrollable content */}
+				<div className="px-6 py-4 flex-1 overflow-y-auto">
+					<div className="space-y-1">
 						{columnConfig.map((column, index) => (
 							<button
 								key={column.id}
@@ -1824,22 +2053,22 @@ const ColumnSettingsModal = ({
 										// Focus handling for keyboard users
 									}
 								}}
-								className={`flex items-center justify-between p-3 border rounded-lg cursor-move w-full text-left ${
+								className={`flex items-center justify-between p-2.5 border rounded-lg cursor-move w-full text-left transition-colors ${
 									draggedIndex === index
 										? "opacity-50"
 										: "hover:bg-secondary-50 dark:hover:bg-secondary-700"
 								} border-secondary-200 dark:border-secondary-600`}
 							>
-								<div className="flex items-center gap-3">
-									<GripVertical className="h-4 w-4 text-secondary-400 dark:text-secondary-500" />
-									<span className="text-sm font-medium text-secondary-900 dark:text-white">
+								<div className="flex items-center gap-2.5">
+									<GripVertical className="h-4 w-4 text-secondary-400 dark:text-secondary-500 flex-shrink-0" />
+									<span className="text-sm font-medium text-secondary-900 dark:text-white truncate">
 										{column.label}
 									</span>
 								</div>
 								<button
 									type="button"
 									onClick={() => onToggleVisibility(column.id)}
-									className={`p-1 rounded ${
+									className={`p-1 rounded transition-colors flex-shrink-0 ${
 										column.visible
 											? "text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300"
 											: "text-secondary-400 hover:text-secondary-600 dark:text-secondary-500 dark:hover:text-secondary-300"
@@ -1854,8 +2083,11 @@ const ColumnSettingsModal = ({
 							</button>
 						))}
 					</div>
+				</div>
 
-					<div className="flex justify-between mt-6">
+				{/* Footer */}
+				<div className="px-6 py-4 border-t border-secondary-200 dark:border-secondary-600 flex-shrink-0">
+					<div className="flex justify-between">
 						<button type="button" onClick={onReset} className="btn-outline">
 							Reset to Default
 						</button>

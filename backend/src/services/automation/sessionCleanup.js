@@ -1,5 +1,4 @@
 const { prisma } = require("./shared/prisma");
-const { cleanup_expired_sessions } = require("../../utils/session_manager");
 
 /**
  * Session Cleanup Automation
@@ -14,7 +13,7 @@ class SessionCleanup {
 	/**
 	 * Process session cleanup job
 	 */
-	async process(job) {
+	async process(_job) {
 		const startTime = Date.now();
 		console.log("🧹 Starting session cleanup...");
 

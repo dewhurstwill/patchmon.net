@@ -1,20 +1,17 @@
 import { useQuery } from "@tanstack/react-query";
 import {
 	Activity,
-	AlertCircle,
 	ArrowDown,
 	ArrowUp,
 	ArrowUpDown,
-	Bot,
 	CheckCircle,
 	Clock,
 	Play,
-	RefreshCw,
 	Settings,
 	XCircle,
 	Zap,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import api from "../utils/api";
 
 const Automation = () => {
@@ -33,7 +30,7 @@ const Automation = () => {
 	});
 
 	// Fetch queue statistics
-	const { data: queueStats, isLoading: statsLoading } = useQuery({
+	useQuery({
 		queryKey: ["automation-stats"],
 		queryFn: async () => {
 			const response = await api.get("/automation/stats");
@@ -43,7 +40,7 @@ const Automation = () => {
 	});
 
 	// Fetch recent jobs
-	const { data: recentJobs, isLoading: jobsLoading } = useQuery({
+	useQuery({
 		queryKey: ["automation-jobs"],
 		queryFn: async () => {
 			const jobs = await Promise.all([
@@ -62,7 +59,7 @@ const Automation = () => {
 		refetchInterval: 30000,
 	});
 
-	const getStatusIcon = (status) => {
+	const _getStatusIcon = (status) => {
 		switch (status) {
 			case "completed":
 				return <CheckCircle className="h-4 w-4 text-green-500" />;
@@ -75,7 +72,7 @@ const Automation = () => {
 		}
 	};
 
-	const getStatusColor = (status) => {
+	const _getStatusColor = (status) => {
 		switch (status) {
 			case "completed":
 				return "bg-green-100 text-green-800";
@@ -88,12 +85,12 @@ const Automation = () => {
 		}
 	};
 
-	const formatDate = (dateString) => {
+	const _formatDate = (dateString) => {
 		if (!dateString) return "N/A";
 		return new Date(dateString).toLocaleString();
 	};
 
-	const formatDuration = (ms) => {
+	const _formatDuration = (ms) => {
 		if (!ms) return "N/A";
 		return `${ms}ms`;
 	};
@@ -127,8 +124,9 @@ const Automation = () => {
 		}
 	};
 
-	const getNextRunTime = (schedule, lastRun) => {
+	const getNextRunTime = (schedule, _lastRun) => {
 		if (schedule === "Manual only") return "Manual trigger only";
+		if (schedule.includes("Agent-driven")) return "Agent-driven (automatic)";
 		if (schedule === "Daily at midnight") {
 			const now = new Date();
 			const tomorrow = new Date(now);
@@ -148,6 +146,20 @@ const Automation = () => {
 			const tomorrow = new Date(now);
 			tomorrow.setDate(tomorrow.getDate() + 1);
 			tomorrow.setHours(2, 0, 0, 0);
+			return tomorrow.toLocaleString([], {
+				hour12: true,
+				hour: "numeric",
+				minute: "2-digit",
+				day: "numeric",
+				month: "numeric",
+				year: "numeric",
+			});
+		}
+		if (schedule === "Daily at 3 AM") {
+			const now = new Date();
+			const tomorrow = new Date(now);
+			tomorrow.setDate(tomorrow.getDate() + 1);
+			tomorrow.setHours(3, 0, 0, 0);
 			return tomorrow.toLocaleString([], {
 				hour12: true,
 				hour: "numeric",
@@ -175,6 +187,7 @@ const Automation = () => {
 
 	const getNextRunTimestamp = (schedule) => {
 		if (schedule === "Manual only") return Number.MAX_SAFE_INTEGER; // Manual tasks go to bottom
+		if (schedule.includes("Agent-driven")) return Number.MAX_SAFE_INTEGER - 1; // Agent-driven tasks near bottom but above manual
 		if (schedule === "Daily at midnight") {
 			const now = new Date();
 			const tomorrow = new Date(now);
@@ -189,6 +202,13 @@ const Automation = () => {
 			tomorrow.setHours(2, 0, 0, 0);
 			return tomorrow.getTime();
 		}
+		if (schedule === "Daily at 3 AM") {
+			const now = new Date();
+			const tomorrow = new Date(now);
+			tomorrow.setDate(tomorrow.getDate() + 1);
+			tomorrow.setHours(3, 0, 0, 0);
+			return tomorrow.getTime();
+		}
 		if (schedule === "Every hour") {
 			const now = new Date();
 			const nextHour = new Date(now);
@@ -196,6 +216,19 @@ const Automation = () => {
 			return nextHour.getTime();
 		}
 		return Number.MAX_SAFE_INTEGER; // Unknown schedules go to bottom
+	};
+
+	const openBullBoard = () => {
+		const token = localStorage.getItem("token");
+		if (!token) {
+			alert("Please log in to access the Queue Monitor");
+			return;
+		}
+
+		// Use the proxied URL through the frontend (port 3000)
+		// This avoids CORS issues as everything goes through the same origin
+		const url = `/admin/queues?token=${encodeURIComponent(token)}`;
+		window.open(url, "_blank", "width=1200,height=800");
 	};
 
 	const triggerManualJob = async (jobType, data = {}) => {
@@ -206,13 +239,15 @@ const Automation = () => {
 				endpoint = "/automation/trigger/github-update";
 			} else if (jobType === "sessions") {
 				endpoint = "/automation/trigger/session-cleanup";
-			} else if (jobType === "echo") {
-				endpoint = "/automation/trigger/echo-hello";
 			} else if (jobType === "orphaned-repos") {
 				endpoint = "/automation/trigger/orphaned-repo-cleanup";
+			} else if (jobType === "orphaned-packages") {
+				endpoint = "/automation/trigger/orphaned-package-cleanup";
+			} else if (jobType === "agent-collection") {
+				endpoint = "/automation/trigger/agent-collection";
 			}
 
-			const response = await api.post(endpoint, data);
+			const _response = await api.post(endpoint, data);
 
 			// Refresh data
 			window.location.reload();
@@ -303,34 +338,40 @@ const Automation = () => {
 				<div className="flex items-center gap-3">
 					<button
 						type="button"
-						onClick={() => triggerManualJob("github")}
+						onClick={openBullBoard}
 						className="btn-outline flex items-center gap-2"
-						title="Trigger manual GitHub update check"
+						title="Open Bull Board Queue Monitor"
 					>
-						<RefreshCw className="h-4 w-4" />
-						Check Updates
-					</button>
-					<button
-						type="button"
-						onClick={() => triggerManualJob("sessions")}
-						className="btn-outline flex items-center gap-2"
-						title="Trigger manual session cleanup"
-					>
-						<RefreshCw className="h-4 w-4" />
-						Clean Sessions
-					</button>
-					<button
-						type="button"
-						onClick={() =>
-							triggerManualJob("echo", {
-								message: "Hello from Automation Page!",
-							})
-						}
-						className="btn-outline flex items-center gap-2"
-						title="Trigger echo hello task"
-					>
-						<RefreshCw className="h-4 w-4" />
-						Echo Hello
+						<svg
+							className="h-4 w-4"
+							xmlns="http://www.w3.org/2000/svg"
+							viewBox="0 0 36 36"
+							role="img"
+							aria-label="Bull Board"
+						>
+							<circle fill="#DD2E44" cx="18" cy="18" r="18" />
+							<circle fill="#FFF" cx="18" cy="18" r="13.5" />
+							<circle fill="#DD2E44" cx="18" cy="18" r="10" />
+							<circle fill="#FFF" cx="18" cy="18" r="6" />
+							<circle fill="#DD2E44" cx="18" cy="18" r="3" />
+							<path
+								opacity=".2"
+								d="M18.24 18.282l13.144 11.754s-2.647 3.376-7.89 5.109L17.579 18.42l.661-.138z"
+							/>
+							<path
+								fill="#FFAC33"
+								d="M18.294 19a.994.994 0 01-.704-1.699l.563-.563a.995.995 0 011.408 1.407l-.564.563a.987.987 0 01-.703.292z"
+							/>
+							<path
+								fill="#55ACEE"
+								d="M24.016 6.981c-.403 2.079 0 4.691 0 4.691l7.054-7.388c.291-1.454-.528-3.932-1.718-4.238-1.19-.306-4.079.803-5.336 6.935zm5.003 5.003c-2.079.403-4.691 0-4.691 0l7.388-7.054c1.454-.291 3.932.528 4.238 1.718.306 1.19-.803 4.079-6.935 5.336z"
+							/>
+							<path
+								fill="#3A87C2"
+								d="M32.798 4.485L21.176 17.587c-.362.362-1.673.882-2.51.046-.836-.836-.419-2.08-.057-2.443L31.815 3.501s.676-.635 1.159-.152-.176 1.136-.176 1.136z"
+							/>
+						</svg>
+						Queue Monitor
 					</button>
 				</div>
 			</div>
@@ -509,14 +550,18 @@ const Automation = () => {
 																triggerManualJob("github");
 															} else if (automation.queue.includes("session")) {
 																triggerManualJob("sessions");
-															} else if (automation.queue.includes("echo")) {
-																triggerManualJob("echo", {
-																	message: "Manual trigger from table",
-																});
 															} else if (
 																automation.queue.includes("orphaned-repo")
 															) {
 																triggerManualJob("orphaned-repos");
+															} else if (
+																automation.queue.includes("orphaned-package")
+															) {
+																triggerManualJob("orphaned-packages");
+															} else if (
+																automation.queue.includes("agent-commands")
+															) {
+																triggerManualJob("agent-collection");
 															}
 														}}
 														className="inline-flex items-center justify-center w-6 h-6 border border-transparent rounded text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors duration-200"
@@ -525,20 +570,7 @@ const Automation = () => {
 														<Play className="h-3 w-3" />
 													</button>
 												) : (
-													<button
-														type="button"
-														onClick={() => {
-															if (automation.queue.includes("echo")) {
-																triggerManualJob("echo", {
-																	message: "Manual trigger from table",
-																});
-															}
-														}}
-														className="inline-flex items-center justify-center w-6 h-6 border border-transparent rounded text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors duration-200"
-														title="Trigger"
-													>
-														<Play className="h-3 w-3" />
-													</button>
+													<span className="text-gray-400 text-xs">Manual</span>
 												)}
 											</td>
 											<td className="px-4 py-2 whitespace-nowrap">

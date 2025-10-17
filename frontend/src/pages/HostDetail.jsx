@@ -1,11 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	Activity,
+	AlertCircle,
 	AlertTriangle,
 	ArrowLeft,
 	Calendar,
 	CheckCircle,
+	CheckCircle2,
 	Clock,
+	Clock3,
 	Copy,
 	Cpu,
 	Database,
@@ -27,11 +30,13 @@ import {
 import { useEffect, useId, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import InlineEdit from "../components/InlineEdit";
+import InlineMultiGroupEdit from "../components/InlineMultiGroupEdit";
 import {
 	adminHostsAPI,
 	dashboardAPI,
 	formatDate,
 	formatRelativeTime,
+	hostGroupsAPI,
 	repositoryAPI,
 	settingsAPI,
 } from "../utils/api";
@@ -46,6 +51,7 @@ const HostDetail = () => {
 	const [activeTab, setActiveTab] = useState("host");
 	const [historyPage, setHistoryPage] = useState(0);
 	const [historyLimit] = useState(10);
+	const [notes, setNotes] = useState("");
 
 	const {
 		data: host,
@@ -66,6 +72,64 @@ const HostDetail = () => {
 		refetchOnWindowFocus: false, // Don't refetch when window regains focus
 	});
 
+	// WebSocket connection status using Server-Sent Events (SSE) for real-time push updates
+	const [wsStatus, setWsStatus] = useState(null);
+
+	useEffect(() => {
+		if (!host?.api_id) return;
+
+		const token = localStorage.getItem("token");
+		if (!token) return;
+
+		let eventSource = null;
+		let reconnectTimeout = null;
+		let isMounted = true;
+
+		const connect = () => {
+			if (!isMounted) return;
+
+			try {
+				// Create EventSource for SSE connection
+				eventSource = new EventSource(
+					`/api/v1/ws/status/${host.api_id}/stream?token=${encodeURIComponent(token)}`,
+				);
+
+				eventSource.onmessage = (event) => {
+					try {
+						const data = JSON.parse(event.data);
+						setWsStatus(data);
+					} catch (_err) {
+						// Silently handle parse errors
+					}
+				};
+
+				eventSource.onerror = (_error) => {
+					console.log(`[SSE] Connection error for ${host.api_id}, retrying...`);
+					eventSource?.close();
+
+					// Automatic reconnection after 5 seconds
+					if (isMounted) {
+						reconnectTimeout = setTimeout(connect, 5000);
+					}
+				};
+			} catch (_err) {
+				// Silently handle connection errors
+			}
+		};
+
+		// Initial connection
+		connect();
+
+		// Cleanup on unmount or when api_id changes
+		return () => {
+			isMounted = false;
+			if (reconnectTimeout) clearTimeout(reconnectTimeout);
+			if (eventSource) {
+				eventSource.close();
+			}
+		};
+	}, [host?.api_id]);
+
 	// Fetch repository count for this host
 	const { data: repositories, isLoading: isLoadingRepos } = useQuery({
 		queryKey: ["host-repositories", hostId],
@@ -73,6 +137,14 @@ const HostDetail = () => {
 		staleTime: 5 * 60 * 1000, // 5 minutes - data stays fresh longer
 		refetchOnWindowFocus: false, // Don't refetch when window regains focus
 		enabled: !!hostId,
+	});
+
+	// Fetch host groups for multi-select
+	const { data: hostGroups } = useQuery({
+		queryKey: ["host-groups"],
+		queryFn: () => hostGroupsAPI.list().then((res) => res.data),
+		staleTime: 5 * 60 * 1000, // 5 minutes - data stays fresh longer
+		refetchOnWindowFocus: false, // Don't refetch when window regains focus
 	});
 
 	// Tab change handler
@@ -84,6 +156,13 @@ const HostDetail = () => {
 	useEffect(() => {
 		if (host && host.status === "pending") {
 			setShowCredentialsModal(true);
+		}
+	}, [host]);
+
+	// Sync notes state with host data
+	useEffect(() => {
+		if (host) {
+			setNotes(host.notes || "");
 		}
 	}, [host]);
 
@@ -112,6 +191,15 @@ const HostDetail = () => {
 			adminHostsAPI
 				.updateFriendlyName(hostId, friendlyName)
 				.then((res) => res.data),
+		onSuccess: () => {
+			queryClient.invalidateQueries(["host", hostId]);
+			queryClient.invalidateQueries(["hosts"]);
+		},
+	});
+
+	const updateHostGroupsMutation = useMutation({
+		mutationFn: ({ hostId, groupIds }) =>
+			adminHostsAPI.updateGroups(hostId, groupIds).then((res) => res.data),
 		onSuccess: () => {
 			queryClient.invalidateQueries(["host", hostId]);
 			queryClient.invalidateQueries(["hosts"]);
@@ -238,49 +326,67 @@ const HostDetail = () => {
 	return (
 		<div className="h-screen flex flex-col">
 			{/* Header */}
-			<div className="flex items-center justify-between mb-4 pb-4 border-b border-secondary-200 dark:border-secondary-600">
-				<div className="flex items-center gap-3">
+			<div className="flex items-start justify-between mb-4 pb-4 border-b border-secondary-200 dark:border-secondary-600">
+				<div className="flex items-start gap-3">
 					<Link
 						to="/hosts"
-						className="text-secondary-500 hover:text-secondary-700 dark:text-secondary-400 dark:hover:text-secondary-200"
+						className="text-secondary-500 hover:text-secondary-700 dark:text-secondary-400 dark:hover:text-secondary-200 mt-1"
 					>
 						<ArrowLeft className="h-5 w-5" />
 					</Link>
-					<h1 className="text-xl font-semibold text-secondary-900 dark:text-white">
-						{host.friendly_name}
-					</h1>
-					{host.system_uptime && (
-						<div className="flex items-center gap-1 text-sm text-secondary-600 dark:text-secondary-400">
-							<Clock className="h-4 w-4" />
-							<span className="text-xs font-medium">Uptime:</span>
-							<span>{host.system_uptime}</span>
+					<div className="flex flex-col gap-2">
+						{/* Title row with friendly name, badge, and status */}
+						<div className="flex items-center gap-3">
+							<h1 className="text-2xl font-semibold text-secondary-900 dark:text-white">
+								{host.friendly_name}
+							</h1>
+							{wsStatus && (
+								<span
+									className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold uppercase ${
+										wsStatus.connected
+											? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200 animate-pulse"
+											: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
+									}`}
+									title={
+										wsStatus.connected
+											? `Agent connected via ${wsStatus.secure ? "WSS (secure)" : "WS"}`
+											: "Agent not connected"
+									}
+								>
+									{wsStatus.connected
+										? wsStatus.secure
+											? "WSS"
+											: "WS"
+										: "Offline"}
+								</span>
+							)}
+							<div
+								className={`flex items-center gap-2 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(isStale, host.stats.outdated_packages > 0)}`}
+							>
+								{getStatusIcon(isStale, host.stats.outdated_packages > 0)}
+								{getStatusText(isStale, host.stats.outdated_packages > 0)}
+							</div>
 						</div>
-					)}
-					<div className="flex items-center gap-1 text-sm text-secondary-600 dark:text-secondary-400">
-						<Clock className="h-4 w-4" />
-						<span className="text-xs font-medium">Last updated:</span>
-						<span>{formatRelativeTime(host.last_update)}</span>
-					</div>
-					<div
-						className={`flex items-center gap-2 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(isStale, host.stats.outdated_packages > 0)}`}
-					>
-						{getStatusIcon(isStale, host.stats.outdated_packages > 0)}
-						{getStatusText(isStale, host.stats.outdated_packages > 0)}
+						{/* Info row with uptime and last updated */}
+						<div className="flex items-center gap-4 text-sm text-secondary-600 dark:text-secondary-400">
+							{host.system_uptime && (
+								<div className="flex items-center gap-1">
+									<Clock className="h-3.5 w-3.5" />
+									<span className="text-xs font-medium">Uptime:</span>
+									<span className="text-xs">{host.system_uptime}</span>
+								</div>
+							)}
+							<div className="flex items-center gap-1">
+								<Clock className="h-3.5 w-3.5" />
+								<span className="text-xs font-medium">Last updated:</span>
+								<span className="text-xs">
+									{formatRelativeTime(host.last_update)}
+								</span>
+							</div>
+						</div>
 					</div>
 				</div>
 				<div className="flex items-center gap-2">
-					<button
-						type="button"
-						onClick={() => refetch()}
-						disabled={isFetching}
-						className="btn-outline flex items-center gap-2 text-sm"
-						title="Refresh host data"
-					>
-						<RefreshCw
-							className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`}
-						/>
-						{isFetching ? "Refreshing..." : "Refresh"}
-					</button>
 					<button
 						type="button"
 						onClick={() => setShowCredentialsModal(true)}
@@ -291,11 +397,22 @@ const HostDetail = () => {
 					</button>
 					<button
 						type="button"
+						onClick={() => refetch()}
+						disabled={isFetching}
+						className="btn-outline flex items-center justify-center p-2 text-sm"
+						title="Refresh host data"
+					>
+						<RefreshCw
+							className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`}
+						/>
+					</button>
+					<button
+						type="button"
 						onClick={() => setShowDeleteModal(true)}
-						className="btn-danger flex items-center gap-2 text-sm"
+						className="btn-danger flex items-center justify-center p-2 text-sm"
+						title="Delete host"
 					>
 						<Trash2 className="h-4 w-4" />
-						Delete
 					</button>
 				</div>
 			</div>
@@ -426,7 +543,18 @@ const HostDetail = () => {
 									: "text-secondary-500 dark:text-secondary-400 hover:text-secondary-700 dark:hover:text-secondary-300"
 							}`}
 						>
-							Agent History
+							Package Reports
+						</button>
+						<button
+							type="button"
+							onClick={() => handleTabChange("queue")}
+							className={`px-4 py-2 text-sm font-medium ${
+								activeTab === "queue"
+									? "text-primary-600 dark:text-primary-400 border-b-2 border-primary-500"
+									: "text-secondary-500 dark:text-secondary-400 hover:text-secondary-700 dark:hover:text-secondary-300"
+							}`}
+						>
+							Agent Queue
 						</button>
 						<button
 							type="button"
@@ -493,20 +621,30 @@ const HostDetail = () => {
 
 									<div>
 										<p className="text-xs text-secondary-500 dark:text-secondary-300 mb-1.5">
-											Host Group
+											Host Groups
 										</p>
-										{host.host_groups ? (
-											<span
-												className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium text-white"
-												style={{ backgroundColor: host.host_groups.color }}
-											>
-												{host.host_groups.name}
-											</span>
-										) : (
-											<span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-secondary-100 dark:bg-secondary-700 text-secondary-800 dark:text-secondary-200">
-												Ungrouped
-											</span>
-										)}
+										{/* Extract group IDs from the new many-to-many structure */}
+										{(() => {
+											const groupIds =
+												host.host_group_memberships?.map(
+													(membership) => membership.host_groups.id,
+												) || [];
+											return (
+												<InlineMultiGroupEdit
+													key={`${host.id}-${groupIds.join(",")}`}
+													value={groupIds}
+													onSave={(newGroupIds) =>
+														updateHostGroupsMutation.mutate({
+															hostId: host.id,
+															groupIds: newGroupIds,
+														})
+													}
+													options={hostGroups || []}
+													placeholder="Select groups..."
+													className="w-full"
+												/>
+											);
+										})()}
 									</div>
 
 									<div>
@@ -1097,12 +1235,8 @@ const HostDetail = () => {
 								</div>
 								<div className="bg-secondary-50 dark:bg-secondary-700 rounded-lg p-4">
 									<textarea
-										value={host.notes || ""}
-										onChange={(e) => {
-											// Update local state immediately for better UX
-											const updatedHost = { ...host, notes: e.target.value };
-											queryClient.setQueryData(["host", hostId], updatedHost);
-										}}
+										value={notes}
+										onChange={(e) => setNotes(e.target.value)}
 										placeholder="Add notes about this host... (e.g., purpose, special configurations, maintenance notes)"
 										className="w-full h-32 p-3 border border-secondary-200 dark:border-secondary-600 rounded-lg bg-white dark:bg-secondary-800 text-secondary-900 dark:text-white placeholder-secondary-500 dark:placeholder-secondary-400 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 resize-none"
 										maxLength={1000}
@@ -1114,14 +1248,14 @@ const HostDetail = () => {
 										</p>
 										<div className="flex items-center gap-2">
 											<span className="text-xs text-secondary-400 dark:text-secondary-500">
-												{(host.notes || "").length}/1000
+												{notes.length}/1000
 											</span>
 											<button
 												type="button"
 												onClick={() => {
 													updateNotesMutation.mutate({
 														hostId: host.id,
-														notes: host.notes || "",
+														notes: notes,
 													});
 												}}
 												disabled={updateNotesMutation.isPending}
@@ -1136,6 +1270,9 @@ const HostDetail = () => {
 								</div>
 							</div>
 						)}
+
+						{/* Agent Queue */}
+						{activeTab === "queue" && <AgentQueueTab hostId={hostId} />}
 					</div>
 				</div>
 			</div>
@@ -1168,8 +1305,10 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 	const [showApiKey, setShowApiKey] = useState(false);
 	const [activeTab, setActiveTab] = useState("quick-install");
 	const [forceInstall, setForceInstall] = useState(false);
+	const [architecture, setArchitecture] = useState("amd64");
 	const apiIdInputId = useId();
 	const apiKeyInputId = useId();
+	const architectureSelectId = useId();
 
 	const { data: serverUrlData } = useQuery({
 		queryKey: ["serverUrl"],
@@ -1189,10 +1328,13 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 		return settings?.ignore_ssl_self_signed ? "-sk" : "-s";
 	};
 
-	// Helper function to build installation URL with optional force flag
+	// Helper function to build installation URL with optional force flag and architecture
 	const getInstallUrl = () => {
 		const baseUrl = `${serverUrl}/api/v1/hosts/install`;
-		return forceInstall ? `${baseUrl}?force=true` : baseUrl;
+		const params = new URLSearchParams();
+		if (forceInstall) params.append("force", "true");
+		params.append("arch", architecture);
+		return `${baseUrl}?${params.toString()}`;
 	};
 
 	const copyToClipboard = async (text) => {
@@ -1308,6 +1450,29 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 								</p>
 							</div>
 
+							{/* Architecture Selection */}
+							<div className="mb-3">
+								<label
+									htmlFor={architectureSelectId}
+									className="block text-sm font-medium text-primary-800 dark:text-primary-200 mb-2"
+								>
+									Target Architecture
+								</label>
+								<select
+									id={architectureSelectId}
+									value={architecture}
+									onChange={(e) => setArchitecture(e.target.value)}
+									className="px-3 py-2 border border-primary-300 dark:border-primary-600 rounded-md bg-white dark:bg-secondary-800 text-sm text-secondary-900 dark:text-white focus:ring-primary-500 focus:border-primary-500"
+								>
+									<option value="amd64">AMD64 (x86_64) - Default</option>
+									<option value="386">386 (i386) - 32-bit</option>
+									<option value="arm64">ARM64 (aarch64) - ARM</option>
+								</select>
+								<p className="text-xs text-primary-600 dark:text-primary-400 mt-1">
+									Select the architecture of the target host
+								</p>
+							</div>
+
 							<div className="flex items-center gap-2">
 								<input
 									type="text"
@@ -1364,12 +1529,12 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 
 								<div className="bg-white dark:bg-secondary-800 rounded-md p-3 border border-secondary-200 dark:border-secondary-600">
 									<h5 className="text-sm font-medium text-secondary-900 dark:text-white mb-2">
-										2. Download and Install Agent Script
+										2. Download and Install Agent Binary
 									</h5>
 									<div className="flex items-center gap-2">
 										<input
 											type="text"
-											value={`curl ${getCurlFlags()} -o /usr/local/bin/patchmon-agent.sh ${serverUrl}/api/v1/hosts/agent/download -H "X-API-ID: ${host.api_id}" -H "X-API-KEY: ${host.api_key}" && sudo chmod +x /usr/local/bin/patchmon-agent.sh`}
+											value={`curl ${getCurlFlags()} -o /usr/local/bin/patchmon-agent ${serverUrl}/api/v1/hosts/agent/download?arch=${architecture} -H "X-API-ID: ${host.api_id}" -H "X-API-KEY: ${host.api_key}" && sudo chmod +x /usr/local/bin/patchmon-agent`}
 											readOnly
 											className="flex-1 px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-sm font-mono text-secondary-900 dark:text-white"
 										/>
@@ -1377,7 +1542,7 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 											type="button"
 											onClick={() =>
 												copyToClipboard(
-													`curl ${getCurlFlags()} -o /usr/local/bin/patchmon-agent.sh ${serverUrl}/api/v1/hosts/agent/download -H "X-API-ID: ${host.api_id}" -H "X-API-KEY: ${host.api_key}" && sudo chmod +x /usr/local/bin/patchmon-agent.sh`,
+													`curl ${getCurlFlags()} -o /usr/local/bin/patchmon-agent ${serverUrl}/api/v1/hosts/agent/download?arch=${architecture} -H "X-API-ID: ${host.api_id}" -H "X-API-KEY: ${host.api_key}" && sudo chmod +x /usr/local/bin/patchmon-agent`,
 												)
 											}
 											className="btn-secondary flex items-center gap-1"
@@ -1395,7 +1560,7 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 									<div className="flex items-center gap-2">
 										<input
 											type="text"
-											value={`sudo /usr/local/bin/patchmon-agent.sh configure "${host.api_id}" "${host.api_key}" "${serverUrl}"`}
+											value={`sudo /usr/local/bin/patchmon-agent config set-api "${host.api_id}" "${host.api_key}" "${serverUrl}"`}
 											readOnly
 											className="flex-1 px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-sm font-mono text-secondary-900 dark:text-white"
 										/>
@@ -1403,7 +1568,7 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 											type="button"
 											onClick={() =>
 												copyToClipboard(
-													`sudo /usr/local/bin/patchmon-agent.sh configure "${host.api_id}" "${host.api_key}" "${serverUrl}"`,
+													`sudo /usr/local/bin/patchmon-agent config set-api "${host.api_id}" "${host.api_key}" "${serverUrl}"`,
 												)
 											}
 											className="btn-secondary flex items-center gap-1"
@@ -1421,7 +1586,7 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 									<div className="flex items-center gap-2">
 										<input
 											type="text"
-											value="sudo /usr/local/bin/patchmon-agent.sh test"
+											value="sudo /usr/local/bin/patchmon-agent ping"
 											readOnly
 											className="flex-1 px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-sm font-mono text-secondary-900 dark:text-white"
 										/>
@@ -1429,7 +1594,7 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 											type="button"
 											onClick={() =>
 												copyToClipboard(
-													"sudo /usr/local/bin/patchmon-agent.sh test",
+													"sudo /usr/local/bin/patchmon-agent ping",
 												)
 											}
 											className="btn-secondary flex items-center gap-1"
@@ -1447,7 +1612,7 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 									<div className="flex items-center gap-2">
 										<input
 											type="text"
-											value="sudo /usr/local/bin/patchmon-agent.sh update"
+											value="sudo /usr/local/bin/patchmon-agent report"
 											readOnly
 											className="flex-1 px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-sm font-mono text-secondary-900 dark:text-white"
 										/>
@@ -1455,7 +1620,7 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 											type="button"
 											onClick={() =>
 												copyToClipboard(
-													"sudo /usr/local/bin/patchmon-agent.sh update",
+													"sudo /usr/local/bin/patchmon-agent report",
 												)
 											}
 											className="btn-secondary flex items-center gap-1"
@@ -1468,12 +1633,33 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 
 								<div className="bg-white dark:bg-secondary-800 rounded-md p-3 border border-secondary-200 dark:border-secondary-600">
 									<h5 className="text-sm font-medium text-secondary-900 dark:text-white mb-2">
-										6. Setup Crontab (Optional)
+										6. Create Systemd Service File
 									</h5>
 									<div className="flex items-center gap-2">
 										<input
 											type="text"
-											value={`(sudo crontab -l 2>/dev/null | grep -v "patchmon-agent.sh update"; echo "${new Date().getMinutes()} * * * * /usr/local/bin/patchmon-agent.sh update >/dev/null 2>&1") | sudo crontab -`}
+											value={`sudo tee /etc/systemd/system/patchmon-agent.service > /dev/null << 'EOF'
+[Unit]
+Description=PatchMon Agent Service
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/patchmon-agent serve
+Restart=always
+RestartSec=10
+WorkingDirectory=/etc/patchmon
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=patchmon-agent
+
+[Install]
+WantedBy=multi-user.target
+EOF`}
 											readOnly
 											className="flex-1 px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-sm font-mono text-secondary-900 dark:text-white"
 										/>
@@ -1481,7 +1667,28 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 											type="button"
 											onClick={() =>
 												copyToClipboard(
-													`(sudo crontab -l 2>/dev/null | grep -v "patchmon-agent.sh update"; echo "${new Date().getMinutes()} * * * * /usr/local/bin/patchmon-agent.sh update >/dev/null 2>&1") | sudo crontab -`,
+													`sudo tee /etc/systemd/system/patchmon-agent.service > /dev/null << 'EOF'
+[Unit]
+Description=PatchMon Agent Service
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/patchmon-agent serve
+Restart=always
+RestartSec=10
+WorkingDirectory=/etc/patchmon
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=patchmon-agent
+
+[Install]
+WantedBy=multi-user.target
+EOF`,
 												)
 											}
 											className="btn-secondary flex items-center gap-1"
@@ -1490,6 +1697,64 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 											Copy
 										</button>
 									</div>
+								</div>
+
+								<div className="bg-white dark:bg-secondary-800 rounded-md p-3 border border-secondary-200 dark:border-secondary-600">
+									<h5 className="text-sm font-medium text-secondary-900 dark:text-white mb-2">
+										7. Enable and Start Service
+									</h5>
+									<div className="flex items-center gap-2">
+										<input
+											type="text"
+											value="sudo systemctl daemon-reload && sudo systemctl enable patchmon-agent && sudo systemctl start patchmon-agent"
+											readOnly
+											className="flex-1 px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-sm font-mono text-secondary-900 dark:text-white"
+										/>
+										<button
+											type="button"
+											onClick={() =>
+												copyToClipboard(
+													"sudo systemctl daemon-reload && sudo systemctl enable patchmon-agent && sudo systemctl start patchmon-agent",
+												)
+											}
+											className="btn-secondary flex items-center gap-1"
+										>
+											<Copy className="h-4 w-4" />
+											Copy
+										</button>
+									</div>
+									<p className="text-xs text-secondary-600 dark:text-secondary-400 mt-2">
+										This will start the agent service and establish WebSocket
+										connection for real-time communication
+									</p>
+								</div>
+
+								<div className="bg-white dark:bg-secondary-800 rounded-md p-3 border border-secondary-200 dark:border-secondary-600">
+									<h5 className="text-sm font-medium text-secondary-900 dark:text-white mb-2">
+										8. Verify Service Status
+									</h5>
+									<div className="flex items-center gap-2">
+										<input
+											type="text"
+											value="sudo systemctl status patchmon-agent"
+											readOnly
+											className="flex-1 px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-sm font-mono text-secondary-900 dark:text-white"
+										/>
+										<button
+											type="button"
+											onClick={() =>
+												copyToClipboard("sudo systemctl status patchmon-agent")
+											}
+											className="btn-secondary flex items-center gap-1"
+										>
+											<Copy className="h-4 w-4" />
+											Copy
+										</button>
+									</div>
+									<p className="text-xs text-secondary-600 dark:text-secondary-400 mt-2">
+										Check that the service is running and WebSocket connection
+										is established
+									</p>
 								</div>
 							</div>
 						</div>
@@ -1654,6 +1919,251 @@ const DeleteConfirmationModal = ({
 						{isLoading ? "Deleting..." : "Delete Host"}
 					</button>
 				</div>
+			</div>
+		</div>
+	);
+};
+
+// Agent Queue Tab Component
+const AgentQueueTab = ({ hostId }) => {
+	const {
+		data: queueData,
+		isLoading,
+		error,
+		refetch,
+	} = useQuery({
+		queryKey: ["host-queue", hostId],
+		queryFn: () => dashboardAPI.getHostQueue(hostId).then((res) => res.data),
+		staleTime: 30 * 1000, // 30 seconds
+		refetchInterval: 30 * 1000, // Auto-refresh every 30 seconds
+	});
+
+	if (isLoading) {
+		return (
+			<div className="flex items-center justify-center h-32">
+				<RefreshCw className="h-6 w-6 animate-spin text-primary-600" />
+			</div>
+		);
+	}
+
+	if (error) {
+		return (
+			<div className="text-center py-8">
+				<AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+				<p className="text-red-600 dark:text-red-400">
+					Failed to load queue data
+				</p>
+				<button
+					type="button"
+					onClick={() => refetch()}
+					className="mt-2 px-4 py-2 text-sm bg-primary-600 text-white rounded-md hover:bg-primary-700"
+				>
+					Retry
+				</button>
+			</div>
+		);
+	}
+
+	const { waiting, active, delayed, failed, jobHistory } = queueData.data;
+
+	const getStatusIcon = (status) => {
+		switch (status) {
+			case "completed":
+				return <CheckCircle2 className="h-4 w-4 text-green-500" />;
+			case "failed":
+				return <AlertCircle className="h-4 w-4 text-red-500" />;
+			case "active":
+				return <Clock3 className="h-4 w-4 text-blue-500" />;
+			default:
+				return <Clock className="h-4 w-4 text-gray-500" />;
+		}
+	};
+
+	const getStatusColor = (status) => {
+		switch (status) {
+			case "completed":
+				return "text-green-600 dark:text-green-400";
+			case "failed":
+				return "text-red-600 dark:text-red-400";
+			case "active":
+				return "text-blue-600 dark:text-blue-400";
+			default:
+				return "text-gray-600 dark:text-gray-400";
+		}
+	};
+
+	const formatJobType = (type) => {
+		switch (type) {
+			case "settings_update":
+				return "Settings Update";
+			case "report_now":
+				return "Report Now";
+			case "update_agent":
+				return "Agent Update";
+			default:
+				return type;
+		}
+	};
+
+	return (
+		<div className="space-y-6">
+			<div className="flex items-center justify-between">
+				<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
+					Live Agent Queue Status
+				</h3>
+				<button
+					type="button"
+					onClick={() => refetch()}
+					className="btn-outline flex items-center gap-2"
+					title="Refresh queue data"
+				>
+					<RefreshCw className="h-4 w-4" />
+				</button>
+			</div>
+
+			{/* Queue Summary */}
+			<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+				<div className="card p-4">
+					<div className="flex items-center">
+						<Server className="h-5 w-5 text-blue-600 mr-2" />
+						<div>
+							<p className="text-sm text-secondary-500 dark:text-white">
+								Waiting
+							</p>
+							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
+								{waiting}
+							</p>
+						</div>
+					</div>
+				</div>
+
+				<div className="card p-4">
+					<div className="flex items-center">
+						<Clock3 className="h-5 w-5 text-warning-600 mr-2" />
+						<div>
+							<p className="text-sm text-secondary-500 dark:text-white">
+								Active
+							</p>
+							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
+								{active}
+							</p>
+						</div>
+					</div>
+				</div>
+
+				<div className="card p-4">
+					<div className="flex items-center">
+						<Clock className="h-5 w-5 text-primary-600 mr-2" />
+						<div>
+							<p className="text-sm text-secondary-500 dark:text-white">
+								Delayed
+							</p>
+							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
+								{delayed}
+							</p>
+						</div>
+					</div>
+				</div>
+
+				<div className="card p-4">
+					<div className="flex items-center">
+						<AlertCircle className="h-5 w-5 text-danger-600 mr-2" />
+						<div>
+							<p className="text-sm text-secondary-500 dark:text-white">
+								Failed
+							</p>
+							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
+								{failed}
+							</p>
+						</div>
+					</div>
+				</div>
+			</div>
+
+			{/* Job History */}
+			<div>
+				{jobHistory.length === 0 ? (
+					<div className="text-center py-8">
+						<Server className="h-12 w-12 text-gray-400 mx-auto mb-4" />
+						<p className="text-gray-500 dark:text-gray-400">
+							No job history found
+						</p>
+					</div>
+				) : (
+					<div className="overflow-x-auto">
+						<table className="min-w-full divide-y divide-secondary-200 dark:divide-secondary-600">
+							<thead className="bg-secondary-50 dark:bg-secondary-700">
+								<tr>
+									<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
+										Job ID
+									</th>
+									<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
+										Job Name
+									</th>
+									<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
+										Status
+									</th>
+									<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
+										Attempt
+									</th>
+									<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
+										Date/Time
+									</th>
+									<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
+										Error/Output
+									</th>
+								</tr>
+							</thead>
+							<tbody className="bg-white dark:bg-secondary-800 divide-y divide-secondary-200 dark:divide-secondary-600">
+								{jobHistory.map((job) => (
+									<tr
+										key={job.id}
+										className="hover:bg-secondary-50 dark:hover:bg-secondary-700"
+									>
+										<td className="px-4 py-2 whitespace-nowrap text-xs font-mono text-secondary-900 dark:text-white">
+											{job.job_id}
+										</td>
+										<td className="px-4 py-2 whitespace-nowrap text-xs text-secondary-900 dark:text-white">
+											{formatJobType(job.job_name)}
+										</td>
+										<td className="px-4 py-2 whitespace-nowrap">
+											<div className="flex items-center gap-2">
+												{getStatusIcon(job.status)}
+												<span
+													className={`text-xs font-medium ${getStatusColor(job.status)}`}
+												>
+													{job.status.charAt(0).toUpperCase() +
+														job.status.slice(1)}
+												</span>
+											</div>
+										</td>
+										<td className="px-4 py-2 whitespace-nowrap text-xs text-secondary-900 dark:text-white">
+											{job.attempt_number}
+										</td>
+										<td className="px-4 py-2 whitespace-nowrap text-xs text-secondary-900 dark:text-white">
+											{new Date(job.created_at).toLocaleString()}
+										</td>
+										<td className="px-4 py-2 text-xs">
+											{job.error_message ? (
+												<span className="text-red-600 dark:text-red-400">
+													{job.error_message}
+												</span>
+											) : job.output ? (
+												<span className="text-green-600 dark:text-green-400">
+													{JSON.stringify(job.output)}
+												</span>
+											) : (
+												<span className="text-secondary-500 dark:text-secondary-400">
+													-
+												</span>
+											)}
+										</td>
+									</tr>
+								))}
+							</tbody>
+						</table>
+					</div>
+				)}
 			</div>
 		</div>
 	);

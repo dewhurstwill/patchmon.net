@@ -2,9 +2,10 @@
 
 ## Overview
 
-PatchMon is a containerised application that monitors system patches and updates. The application consists of three main services:
+PatchMon is a containerised application that monitors system patches and updates. The application consists of four main services:
 
 - **Database**: PostgreSQL 17
+- **Redis**: Redis 7 for BullMQ job queues and caching
 - **Backend**: Node.js API server
 - **Frontend**: React application served via NGINX
 
@@ -38,21 +39,31 @@ These tags are available for both backend and frontend images as they are versio
    environment:
      DATABASE_URL: postgresql://patchmon_user:REPLACE_YOUR_POSTGRES_PASSWORD_HERE@database:5432/patchmon_db
    ```
-4. Generate a strong JWT secret. You can do this like so:
+4. Set a Redis password in the Redis service where it says:
+   ```yaml
+   environment:
+     REDIS_PASSWORD: # CREATE A STRONG REDIS PASSWORD AND PUT IT HERE
+   ```
+5. Update the corresponding `REDIS_PASSWORD` in the backend service where it says:
+   ```yaml
+   environment:
+     REDIS_PASSWORD: REPLACE_YOUR_REDIS_PASSWORD_HERE
+   ```
+6. Generate a strong JWT secret. You can do this like so:
    ```bash
    openssl rand -hex 64
    ```
-5. Set a JWT secret in the backend service where it says:
+7. Set a JWT secret in the backend service where it says:
    ```yaml
    environment:
      JWT_SECRET: # CREATE A STRONG SECRET AND PUT IT HERE
    ```
-6. Configure environment variables (see [Configuration](#configuration) section)
-7. Start the application:
+8. Configure environment variables (see [Configuration](#configuration) section)
+9. Start the application:
    ```bash
    docker compose up -d
    ```
-8. Access the application at `http://localhost:3000`
+10. Access the application at `http://localhost:3000`
 
 ## Updating
 
@@ -106,6 +117,12 @@ When you do this, updating to a new version requires manually updating the image
 | `POSTGRES_USER`     | Database user     | `patchmon_user`  |
 | `POSTGRES_PASSWORD` | Database password | **MUST BE SET!** |
 
+#### Redis Service
+
+| Variable       | Description        | Default          |
+| -------------- | ------------------ | ---------------- |
+| `REDIS_PASSWORD` | Redis password    | **MUST BE SET!** |
+
 #### Backend Service
 
 ##### Database Configuration
@@ -115,6 +132,15 @@ When you do this, updating to a new version requires manually updating the image
 | `DATABASE_URL`             | PostgreSQL connection string                         | **MUST BE UPDATED WITH YOUR POSTGRES_PASSWORD!** |
 | `PM_DB_CONN_MAX_ATTEMPTS`  | Maximum database connection attempts                 | `30`                                             |
 | `PM_DB_CONN_WAIT_INTERVAL` | Wait interval between connection attempts in seconds | `2`                                              |
+
+##### Redis Configuration
+
+| Variable        | Description                    | Default |
+| --------------- | ------------------------------ | ------- |
+| `REDIS_HOST`    | Redis server hostname          | `redis` |
+| `REDIS_PORT`    | Redis server port              | `6379`  |
+| `REDIS_PASSWORD` | Redis authentication password | **MUST BE UPDATED WITH YOUR REDIS_PASSWORD!** |
+| `REDIS_DB`      | Redis database number          | `0`     |
 
 ##### Authentication & Security
 
@@ -165,9 +191,10 @@ When you do this, updating to a new version requires manually updating the image
 
 ### Volumes
 
-The compose file creates two Docker volumes:
+The compose file creates three Docker volumes:
 
 * `postgres_data`: PostgreSQL's data directory.
+* `redis_data`: Redis's data directory.
 * `agent_files`: PatchMon's agent files.
 
 If you wish to bind either if their respective container paths to a host path rather than a Docker volume, you can do so in the Docker Compose file.
@@ -201,6 +228,7 @@ For development with live reload and source code mounting:
    - Frontend: `http://localhost:3000`
    - Backend API: `http://localhost:3001`
    - Database: `localhost:5432`
+   - Redis: `localhost:6379`
 
 ## Development Docker Compose
 
@@ -254,6 +282,7 @@ docker compose -f docker/docker-compose.dev.yml up -d --build
 ### Development Ports
 The development setup exposes additional ports for debugging:
 - **Database**: `5432` - Direct PostgreSQL access
+- **Redis**: `6379` - Direct Redis access
 - **Backend**: `3001` - API server with development features
 - **Frontend**: `3000` - React development server with hot reload
 
@@ -277,8 +306,8 @@ The development setup exposes additional ports for debugging:
    - **Prisma Schema Changes**: Backend service restarts automatically
 
 4. **Database Access**: Connect database client directly to `localhost:5432`
-
-5. **Debug**: If started with `docker compose [...] up -d` or `docker compose [...] watch`, check logs manually:
+5. **Redis Access**: Connect Redis client directly to `localhost:6379`
+6. **Debug**: If started with `docker compose [...] up -d` or `docker compose [...] watch`, check logs manually:
    ```bash
    docker compose -f docker/docker-compose.dev.yml logs -f
    ```
@@ -288,6 +317,6 @@ The development setup exposes additional ports for debugging:
 
 - **Hot Reload**: Automatic code synchronization and service restarts
 - **Enhanced Logging**: Detailed logs for debugging
-- **Direct Access**: Exposed ports for database and API debugging  
+- **Direct Access**: Exposed ports for database, Redis, and API debugging  
 - **Health Checks**: Built-in health monitoring for services
 - **Volume Persistence**: Development data persists between restarts

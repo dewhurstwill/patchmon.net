@@ -200,6 +200,8 @@ const Dashboard = () => {
 		data: packageTrendsData,
 		isLoading: packageTrendsLoading,
 		error: _packageTrendsError,
+		refetch: refetchPackageTrends,
+		isFetching: packageTrendsFetching,
 	} = useQuery({
 		queryKey: ["packageTrends", packageTrendsPeriod, packageTrendsHost],
 		queryFn: () => {
@@ -771,6 +773,20 @@ const Dashboard = () => {
 								Package Trends Over Time
 							</h3>
 							<div className="flex items-center gap-3">
+								{/* Refresh Button */}
+								<button
+									type="button"
+									onClick={() => refetchPackageTrends()}
+									disabled={packageTrendsFetching}
+									className="px-3 py-1.5 text-sm border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-secondary-900 dark:text-white hover:bg-secondary-50 dark:hover:bg-secondary-700 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+									title="Refresh data"
+								>
+									<RefreshCw
+										className={`h-4 w-4 ${packageTrendsFetching ? "animate-spin" : ""}`}
+									/>
+									Refresh
+								</button>
+
 								{/* Period Selector */}
 								<select
 									value={packageTrendsPeriod}
@@ -1161,7 +1177,7 @@ const Dashboard = () => {
 							try {
 								const date = new Date(`${label}:00:00`);
 								// Check if date is valid
-								if (isNaN(date.getTime())) {
+								if (Number.isNaN(date.getTime())) {
 									return label; // Return original label if date is invalid
 								}
 								return date.toLocaleDateString("en-US", {
@@ -1171,7 +1187,7 @@ const Dashboard = () => {
 									minute: "2-digit",
 									hour12: true,
 								});
-							} catch (error) {
+							} catch (_error) {
 								return label; // Return original label if parsing fails
 							}
 						}
@@ -1180,16 +1196,23 @@ const Dashboard = () => {
 						try {
 							const date = new Date(label);
 							// Check if date is valid
-							if (isNaN(date.getTime())) {
+							if (Number.isNaN(date.getTime())) {
 								return label; // Return original label if date is invalid
 							}
 							return date.toLocaleDateString("en-US", {
 								month: "short",
 								day: "numeric",
 							});
-						} catch (error) {
+						} catch (_error) {
 							return label; // Return original label if parsing fails
 						}
+					},
+					label: (context) => {
+						const value = context.parsed.y;
+						if (value === null || value === undefined) {
+							return `${context.dataset.label}: No data`;
+						}
+						return `${context.dataset.label}: ${value}`;
 					},
 				},
 			},
@@ -1222,7 +1245,7 @@ const Dashboard = () => {
 								const hourNum = parseInt(hour, 10);
 
 								// Validate hour number
-								if (isNaN(hourNum) || hourNum < 0 || hourNum > 23) {
+								if (Number.isNaN(hourNum) || hourNum < 0 || hourNum > 23) {
 									return hour; // Return original hour if invalid
 								}
 
@@ -1233,7 +1256,7 @@ const Dashboard = () => {
 										: hourNum === 12
 											? "12 PM"
 											: `${hourNum - 12} PM`;
-							} catch (error) {
+							} catch (_error) {
 								return label; // Return original label if parsing fails
 							}
 						}
@@ -1242,14 +1265,14 @@ const Dashboard = () => {
 						try {
 							const date = new Date(label);
 							// Check if date is valid
-							if (isNaN(date.getTime())) {
+							if (Number.isNaN(date.getTime())) {
 								return label; // Return original label if date is invalid
 							}
 							return date.toLocaleDateString("en-US", {
 								month: "short",
 								day: "numeric",
 							});
-						} catch (error) {
+						} catch (_error) {
 							return label; // Return original label if parsing fails
 						}
 					},
@@ -1411,7 +1434,6 @@ const Dashboard = () => {
 						title="Customize dashboard layout"
 					>
 						<Settings className="h-4 w-4" />
-						Customize Dashboard
 					</button>
 					<button
 						type="button"
@@ -1423,7 +1445,6 @@ const Dashboard = () => {
 						<RefreshCw
 							className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`}
 						/>
-						{isFetching ? "Refreshing..." : "Refresh"}
 					</button>
 				</div>
 			</div>
