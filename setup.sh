@@ -654,6 +654,9 @@ configure_redis() {
     # Generate Redis username based on instance
     REDIS_USER="patchmon_${DB_SAFE_NAME}"
     
+    # Generate separate user password (more secure than reusing admin password)
+    REDIS_USER_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-32)
+    
     print_info "Creating Redis user: $REDIS_USER for database $REDIS_DB"
     
     # Create Redis configuration backup
@@ -663,7 +666,7 @@ configure_redis() {
     fi
     
     # Configure Redis with admin password first
-    print_info "Setting Redis admin password: $REDIS_PASSWORD"
+    print_info "Setting Redis admin password"
     
     # Add password configuration to redis.conf
     if ! grep -q "^requirepass" /etc/redis/redis.conf; then
@@ -683,7 +686,7 @@ configure_redis() {
     sleep 3
     
     # Test admin connection
-    if ! redis-cli -a "$REDIS_PASSWORD" --no-auth-warning ping > /dev/null 2>&1; then
+    if ! redis-cli -h 127.0.0.1 -p 6379 -a "$REDIS_PASSWORD" --no-auth-warning ping > /dev/null 2>&1; then
         print_error "Failed to configure Redis admin password"
         return 1
     fi
@@ -693,17 +696,29 @@ configure_redis() {
     # Create Redis user with ACL
     print_info "Creating Redis ACL user: $REDIS_USER"
     
-    # Create user with password and permissions for the specific database
-    if redis-cli -a "$REDIS_PASSWORD" --no-auth-warning ACL SETUSER "$REDIS_USER" on ">${REDIS_PASSWORD}" ~* +@all > /dev/null 2>&1; then
+    # Create user with password and permissions - capture output for error handling
+    local acl_result
+    acl_result=$(redis-cli -h 127.0.0.1 -p 6379 -a "$REDIS_PASSWORD" --no-auth-warning ACL SETUSER "$REDIS_USER" on ">${REDIS_USER_PASSWORD}" ~* +@all 2>&1)
+    
+    if [ "$acl_result" = "OK" ]; then
         print_status "Redis user '$REDIS_USER' created successfully"
+        
+        # Verify user was actually created
+        local verify_result
+        verify_result=$(redis-cli -h 127.0.0.1 -p 6379 -a "$REDIS_PASSWORD" --no-auth-warning ACL GETUSER "$REDIS_USER" 2>&1)
+        
+        if [ "$verify_result" = "(nil)" ]; then
+            print_error "User creation reported OK but user does not exist"
+            return 1
+        fi
     else
-        print_error "Failed to create Redis user"
+        print_error "Failed to create Redis user: $acl_result"
         return 1
     fi
     
     # Test user connection
     print_info "Testing Redis user connection..."
-    if redis-cli --user "$REDIS_USER" --pass "$REDIS_PASSWORD" --no-auth-warning -n "$REDIS_DB" ping > /dev/null 2>&1; then
+    if redis-cli -h 127.0.0.1 -p 6379 --user "$REDIS_USER" --pass "$REDIS_USER_PASSWORD" --no-auth-warning -n "$REDIS_DB" ping > /dev/null 2>&1; then
         print_status "Redis user connection test successful"
     else
         print_error "Redis user connection test failed"
@@ -711,8 +726,15 @@ configure_redis() {
     fi
     
     # Mark the selected database as in-use
-    redis-cli --user "$REDIS_USER" --pass "$REDIS_PASSWORD" --no-auth-warning -n "$REDIS_DB" SET "patchmon:initialized" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /dev/null
+    redis-cli -h 127.0.0.1 -p 6379 --user "$REDIS_USER" --pass "$REDIS_USER_PASSWORD" --no-auth-warning -n "$REDIS_DB" SET "patchmon:initialized" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /dev/null
     print_status "Marked Redis database $REDIS_DB as in-use"
+    
+    # Update .env with the USER PASSWORD, not admin password
+    echo "REDIS_USER=$REDIS_USER" >> .env
+    echo "REDIS_PASSWORD=$REDIS_USER_PASSWORD" >> .env
+    echo "REDIS_DB=$REDIS_DB" >> .env
+    
+    print_status "Redis user password: $REDIS_USER_PASSWORD"
     
     return 0
 }
