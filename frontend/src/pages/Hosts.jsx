@@ -1794,7 +1794,6 @@ const BulkAssignModal = ({
 	isLoading,
 }) => {
 	const [selectedGroupIds, setSelectedGroupIds] = useState([]);
-	const bulkHostGroupId = useId();
 
 	// Fetch host groups for selection
 	const { data: hostGroups } = useQuery({
