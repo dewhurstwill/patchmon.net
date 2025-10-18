@@ -641,9 +641,9 @@ install_redis() {
     fi
 }
 
-# Configure Redis with password
+# Configure Redis with user authentication
 configure_redis() {
-    print_info "Configuring Redis with password authentication..."
+    print_info "Configuring Redis with user authentication..."
     
     # Check if Redis is running
     if ! systemctl is-active --quiet redis-server; then
@@ -651,45 +651,70 @@ configure_redis() {
         return 1
     fi
     
+    # Generate Redis username based on instance
+    REDIS_USER="patchmon_${DB_SAFE_NAME}"
+    
+    print_info "Creating Redis user: $REDIS_USER for database $REDIS_DB"
+    
     # Create Redis configuration backup
     if [ -f /etc/redis/redis.conf ]; then
         cp /etc/redis/redis.conf /etc/redis/redis.conf.backup.$(date +%Y%m%d_%H%M%S)
         print_info "Created Redis configuration backup"
     fi
     
-    # Configure Redis with password
-    print_info "Setting Redis password: $REDIS_PASSWORD"
+    # Configure Redis with admin password first
+    print_info "Setting Redis admin password: $REDIS_PASSWORD"
     
     # Add password configuration to redis.conf
     if ! grep -q "^requirepass" /etc/redis/redis.conf; then
         echo "requirepass $REDIS_PASSWORD" >> /etc/redis/redis.conf
-        print_status "Added password configuration to Redis"
+        print_status "Added admin password configuration to Redis"
     else
         # Update existing password
         sed -i "s/^requirepass.*/requirepass $REDIS_PASSWORD/" /etc/redis/redis.conf
-        print_status "Updated Redis password configuration"
+        print_status "Updated Redis admin password configuration"
     fi
     
-    # Restart Redis to apply changes
-    print_info "Restarting Redis to apply password configuration..."
+    # Restart Redis to apply admin password
+    print_info "Restarting Redis to apply admin password configuration..."
     systemctl restart redis-server
     
     # Wait for Redis to start
     sleep 3
     
-    # Test Redis connection with password
-    if redis-cli -a "$REDIS_PASSWORD" --no-auth-warning ping > /dev/null 2>&1; then
-        print_status "Redis password configuration successful"
-        
-        # Mark the selected database as in-use
-        redis-cli -a "$REDIS_PASSWORD" --no-auth-warning -n "$REDIS_DB" SET "patchmon:initialized" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /dev/null
-        print_status "Marked Redis database $REDIS_DB as in-use"
-        
-        return 0
-    else
-        print_error "Failed to configure Redis password"
+    # Test admin connection
+    if ! redis-cli -a "$REDIS_PASSWORD" --no-auth-warning ping > /dev/null 2>&1; then
+        print_error "Failed to configure Redis admin password"
         return 1
     fi
+    
+    print_status "Redis admin password configuration successful"
+    
+    # Create Redis user with ACL
+    print_info "Creating Redis ACL user: $REDIS_USER"
+    
+    # Create user with password and permissions for the specific database
+    if redis-cli -a "$REDIS_PASSWORD" --no-auth-warning ACL SETUSER "$REDIS_USER" on ">${REDIS_PASSWORD}" ~* +@all > /dev/null 2>&1; then
+        print_status "Redis user '$REDIS_USER' created successfully"
+    else
+        print_error "Failed to create Redis user"
+        return 1
+    fi
+    
+    # Test user connection
+    print_info "Testing Redis user connection..."
+    if redis-cli --user "$REDIS_USER" --pass "$REDIS_PASSWORD" --no-auth-warning -n "$REDIS_DB" ping > /dev/null 2>&1; then
+        print_status "Redis user connection test successful"
+    else
+        print_error "Redis user connection test failed"
+        return 1
+    fi
+    
+    # Mark the selected database as in-use
+    redis-cli --user "$REDIS_USER" --pass "$REDIS_PASSWORD" --no-auth-warning -n "$REDIS_DB" SET "patchmon:initialized" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /dev/null
+    print_status "Marked Redis database $REDIS_DB as in-use"
+    
+    return 0
 }
 
 # Install nginx
@@ -983,6 +1008,7 @@ AGENT_RATE_LIMIT_MAX=1000
 # Redis Configuration
 REDIS_HOST=localhost
 REDIS_PORT=6379
+REDIS_USER=$REDIS_USER
 REDIS_PASSWORD=$REDIS_PASSWORD
 REDIS_DB=$REDIS_DB
 
@@ -1487,6 +1513,7 @@ Database Information:
 Redis Information:
 - Host: localhost
 - Port: 6379
+- User: $REDIS_USER
 - Password: $REDIS_PASSWORD
 - Database: $REDIS_DB
 
@@ -1641,6 +1668,7 @@ deploy_instance() {
     echo -e "${YELLOW}Database Name: $DB_NAME${NC}"
     echo -e "${YELLOW}Database User: $DB_USER${NC}"
     echo -e "${YELLOW}Database Password: $DB_PASS${NC}"
+    echo -e "${YELLOW}Redis User: $REDIS_USER${NC}"
     echo -e "${YELLOW}Redis Password: $REDIS_PASSWORD${NC}"
     echo -e "${YELLOW}Redis Database: $REDIS_DB${NC}"
     echo -e "${YELLOW}JWT Secret: $JWT_SECRET${NC}"
