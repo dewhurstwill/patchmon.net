@@ -1,3 +1,19 @@
+# Change 3 Passwords in this file:
+# Generate passwords with 'openssl rand -hex 64'
+# 
+# 1. The database password in the environment variable POSTGRES_PASSWORD
+# 2. The redis password in the command redis-server --requirepass your-redis-password-here
+# 3. The jwt secret in the environment variable JWT_SECRET
+#
+#
+# Change 2 URL areas in this file:
+# 1. Setup your CORS_ORIGIN to what url you will use for accessing PatchMon frontend url
+# 2. Setup your SERVER_PROTOCOL, SERVER_HOST and SERVER_PORT to what you will use for linux agents to access PatchMon
+#
+# This is generally the same as your CORS_ORIGIN url , in some cases it might be different - SERVER_* variables are used in the scripts for Server connection.
+# You can also change this in the front-end but in the case of docker-compose - it is overwritten by the variables set here.
+
+
 name: patchmon
 
 services:
@@ -7,7 +23,7 @@ services:
     environment:
       POSTGRES_DB: patchmon_db
       POSTGRES_USER: patchmon_user
-      POSTGRES_PASSWORD: # CREATE A STRONG PASSWORD AND PUT IT HERE
+      POSTGRES_PASSWORD: # CREATE A STRONG DB PASSWORD AND PUT IT HERE
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -19,11 +35,11 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: redis-server --requirepass your-redis-password-here
+    command: redis-server --requirepass your-redis-password-here # CHANGE THIS TO YOUR REDIS PASSWORD
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "your-redis-password-here", "ping"]
+      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "your-redis-password-here", "ping"] # CHANGE THIS TO YOUR REDIS PASSWORD
       interval: 3s
       timeout: 5s
       retries: 7
@@ -35,7 +51,7 @@ services:
     environment:
       LOG_LEVEL: info
       DATABASE_URL: postgresql://patchmon_user:REPLACE_YOUR_POSTGRES_PASSWORD_HERE@database:5432/patchmon_db
-      JWT_SECRET: # CREATE A STRONG SECRET AND PUT IT HERE - Generate with 'openssl rand -hex 64'
+      JWT_SECRET: # CREATE A STRONG SECRET AND PUT IT HERE
       SERVER_PROTOCOL: http
       SERVER_HOST: localhost
       SERVER_PORT: 3000

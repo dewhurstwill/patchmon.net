@@ -6,7 +6,7 @@ const { PrismaClient } = require("@prisma/client");
 const prisma = new PrismaClient();
 
 // Default GitHub repository URL
-const DEFAULT_GITHUB_REPO = "https://github.com/patchMon/patchmon";
+const DEFAULT_GITHUB_REPO = "https://github.com/PatchMon/PatchMon.git";
 
 const router = express.Router();
 

@@ -436,6 +436,57 @@ generate_jwt_secret() {
     openssl rand -base64 64 | tr -d "=+/" | cut -c1-50
 }
 
+# Generate Redis password
+generate_redis_password() {
+    openssl rand -base64 32 | tr -d "=+/" | cut -c1-25
+}
+
+# Find next available Redis database
+find_next_redis_db() {
+    print_info "Finding next available Redis database..."
+    
+    # Start from database 0 and keep checking until we find an empty one
+    local db_num=0
+    local max_attempts=16  # Redis default is 16 databases
+    
+    while [ $db_num -lt $max_attempts ]; do
+        # Test if database is empty
+        local key_count
+        local redis_output
+        
+        # Try to get database size
+        redis_output=$(redis-cli -h localhost -p 6379 -n "$db_num" DBSIZE 2>&1)
+        
+        # Check for errors
+        if echo "$redis_output" | grep -q "ERR"; then
+            if echo "$redis_output" | grep -q "invalid DB index"; then
+                print_warning "Reached maximum database limit at database $db_num"
+                break
+            else
+                print_error "Error checking database $db_num: $redis_output"
+                return 1
+            fi
+        fi
+        
+        key_count="$redis_output"
+        
+        # If database is empty, use it
+        if [ "$key_count" = "0" ]; then
+            print_status "Found available Redis database: $db_num (empty)"
+            echo "$db_num"
+            return 0
+        fi
+        
+        print_info "Database $db_num has $key_count keys, checking next..."
+        db_num=$((db_num + 1))
+    done
+    
+    print_warning "No available Redis databases found (checked 0-$max_attempts)"
+    print_info "Using database 0 (may have existing data)"
+    echo "0"
+    return 0
+}
+
 # Initialize instance variables
 init_instance_vars() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] init_instance_vars function started" >> "$DEBUG_LOG"
@@ -466,6 +517,12 @@ init_instance_vars() {
     
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Generating JWT secret..." >> "$DEBUG_LOG"
     JWT_SECRET=$(generate_jwt_secret)
+    
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Generating Redis password..." >> "$DEBUG_LOG"
+    REDIS_PASSWORD=$(generate_redis_password)
+    
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Finding next available Redis database..." >> "$DEBUG_LOG"
+    REDIS_DB=$(find_next_redis_db)
     
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] Generating random backend port..." >> "$DEBUG_LOG"
     
@@ -582,6 +639,82 @@ install_redis() {
         systemctl enable redis-server
         print_status "Redis installed and started"
     fi
+}
+
+# Configure Redis with user authentication
+configure_redis() {
+    print_info "Configuring Redis with user authentication..."
+    
+    # Check if Redis is running
+    if ! systemctl is-active --quiet redis-server; then
+        print_error "Redis is not running. Please start Redis first."
+        return 1
+    fi
+    
+    # Generate Redis username based on instance
+    REDIS_USER="patchmon_${DB_SAFE_NAME}"
+    
+    print_info "Creating Redis user: $REDIS_USER for database $REDIS_DB"
+    
+    # Create Redis configuration backup
+    if [ -f /etc/redis/redis.conf ]; then
+        cp /etc/redis/redis.conf /etc/redis/redis.conf.backup.$(date +%Y%m%d_%H%M%S)
+        print_info "Created Redis configuration backup"
+    fi
+    
+    # Configure Redis with admin password first
+    print_info "Setting Redis admin password: $REDIS_PASSWORD"
+    
+    # Add password configuration to redis.conf
+    if ! grep -q "^requirepass" /etc/redis/redis.conf; then
+        echo "requirepass $REDIS_PASSWORD" >> /etc/redis/redis.conf
+        print_status "Added admin password configuration to Redis"
+    else
+        # Update existing password
+        sed -i "s/^requirepass.*/requirepass $REDIS_PASSWORD/" /etc/redis/redis.conf
+        print_status "Updated Redis admin password configuration"
+    fi
+    
+    # Restart Redis to apply admin password
+    print_info "Restarting Redis to apply admin password configuration..."
+    systemctl restart redis-server
+    
+    # Wait for Redis to start
+    sleep 3
+    
+    # Test admin connection
+    if ! redis-cli -a "$REDIS_PASSWORD" --no-auth-warning ping > /dev/null 2>&1; then
+        print_error "Failed to configure Redis admin password"
+        return 1
+    fi
+    
+    print_status "Redis admin password configuration successful"
+    
+    # Create Redis user with ACL
+    print_info "Creating Redis ACL user: $REDIS_USER"
+    
+    # Create user with password and permissions for the specific database
+    if redis-cli -a "$REDIS_PASSWORD" --no-auth-warning ACL SETUSER "$REDIS_USER" on ">${REDIS_PASSWORD}" ~* +@all > /dev/null 2>&1; then
+        print_status "Redis user '$REDIS_USER' created successfully"
+    else
+        print_error "Failed to create Redis user"
+        return 1
+    fi
+    
+    # Test user connection
+    print_info "Testing Redis user connection..."
+    if redis-cli --user "$REDIS_USER" --pass "$REDIS_PASSWORD" --no-auth-warning -n "$REDIS_DB" ping > /dev/null 2>&1; then
+        print_status "Redis user connection test successful"
+    else
+        print_error "Redis user connection test failed"
+        return 1
+    fi
+    
+    # Mark the selected database as in-use
+    redis-cli --user "$REDIS_USER" --pass "$REDIS_PASSWORD" --no-auth-warning -n "$REDIS_DB" SET "patchmon:initialized" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /dev/null
+    print_status "Marked Redis database $REDIS_DB as in-use"
+    
+    return 0
 }
 
 # Install nginx
@@ -875,8 +1008,9 @@ AGENT_RATE_LIMIT_MAX=1000
 # Redis Configuration
 REDIS_HOST=localhost
 REDIS_PORT=6379
-REDIS_PASSWORD=
-REDIS_DB=0
+REDIS_USER=$REDIS_USER
+REDIS_PASSWORD=$REDIS_PASSWORD
+REDIS_DB=$REDIS_DB
 
 # Logging
 LOG_LEVEL=info
@@ -1379,8 +1513,9 @@ Database Information:
 Redis Information:
 - Host: localhost
 - Port: 6379
-- Password: (none - Redis runs without authentication)
-- Database: 0
+- User: $REDIS_USER
+- Password: $REDIS_PASSWORD
+- Database: $REDIS_DB
 
 Networking:
 - Backend Port: $BACKEND_PORT
@@ -1533,6 +1668,9 @@ deploy_instance() {
     echo -e "${YELLOW}Database Name: $DB_NAME${NC}"
     echo -e "${YELLOW}Database User: $DB_USER${NC}"
     echo -e "${YELLOW}Database Password: $DB_PASS${NC}"
+    echo -e "${YELLOW}Redis User: $REDIS_USER${NC}"
+    echo -e "${YELLOW}Redis Password: $REDIS_PASSWORD${NC}"
+    echo -e "${YELLOW}Redis Database: $REDIS_DB${NC}"
     echo -e "${YELLOW}JWT Secret: $JWT_SECRET${NC}"
     echo -e "${YELLOW}Backend Port: $BACKEND_PORT${NC}"
     echo -e "${YELLOW}Instance User: $INSTANCE_USER${NC}"
@@ -1543,6 +1681,7 @@ deploy_instance() {
     install_nodejs
     install_postgresql
     install_redis
+    configure_redis
     install_nginx
     
     # Only install certbot if SSL is enabled

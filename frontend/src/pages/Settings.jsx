@@ -144,7 +144,7 @@ const Settings = () => {
 				defaultUserRole: settings.default_user_role || "user",
 				githubRepoUrl:
 					settings.github_repo_url ||
-					"git@github.com:9technologygroup/patchmon.net.git",
+					"https://github.com/PatchMon/PatchMon.git",
 				repositoryType: settings.repository_type || "public",
 				sshKeyPath: settings.ssh_key_path || "",
 				useCustomSshKey: !!settings.ssh_key_path,
