@@ -505,8 +505,8 @@ const Hosts = () => {
 	}, [hosts]);
 
 	const bulkUpdateGroupMutation = useMutation({
-		mutationFn: ({ hostIds, hostGroupId }) =>
-			adminHostsAPI.bulkUpdateGroup(hostIds, hostGroupId),
+		mutationFn: ({ hostIds, groupIds }) =>
+			adminHostsAPI.bulkUpdateGroups(hostIds, groupIds),
 		onSuccess: (data) => {
 			console.log("bulkUpdateGroupMutation success:", data);
 
@@ -517,11 +517,7 @@ const Hosts = () => {
 					return oldData.map((host) => {
 						const updatedHost = data.hosts.find((h) => h.id === host.id);
 						if (updatedHost) {
-							// Ensure hostGroupId is set correctly
-							return {
-								...updatedHost,
-								hostGroupId: updatedHost.host_groups?.id || null,
-							};
+							return updatedHost;
 						}
 						return host;
 					});
@@ -671,8 +667,8 @@ const Hosts = () => {
 		}
 	};
 
-	const handleBulkAssign = (hostGroupId) => {
-		bulkUpdateGroupMutation.mutate({ hostIds: selectedHosts, hostGroupId });
+	const handleBulkAssign = (groupIds) => {
+		bulkUpdateGroupMutation.mutate({ hostIds: selectedHosts, groupIds });
 	};
 
 	const handleBulkDelete = () => {
@@ -1797,8 +1793,7 @@ const BulkAssignModal = ({
 	onAssign,
 	isLoading,
 }) => {
-	const [selectedGroupId, setSelectedGroupId] = useState("");
-	const bulkHostGroupId = useId();
+	const [selectedGroupIds, setSelectedGroupIds] = useState([]);
 
 	// Fetch host groups for selection
 	const { data: hostGroups } = useQuery({
@@ -1812,7 +1807,17 @@ const BulkAssignModal = ({
 
 	const handleSubmit = (e) => {
 		e.preventDefault();
-		onAssign(selectedGroupId || null);
+		onAssign(selectedGroupIds);
+	};
+
+	const toggleGroup = (groupId) => {
+		setSelectedGroupIds((prev) => {
+			if (prev.includes(groupId)) {
+				return prev.filter((id) => id !== groupId);
+			} else {
+				return [...prev, groupId];
+			}
+		});
 	};
 
 	return (
@@ -1820,7 +1825,7 @@ const BulkAssignModal = ({
 			<div className="bg-white dark:bg-secondary-800 rounded-lg p-6 w-full max-w-md">
 				<div className="flex justify-between items-center mb-4">
 					<h3 className="text-lg font-semibold text-secondary-900 dark:text-white">
-						Assign to Host Group
+						Assign to Host Groups
 					</h3>
 					<button
 						type="button"
@@ -1850,27 +1855,43 @@ const BulkAssignModal = ({
 
 				<form onSubmit={handleSubmit} className="space-y-4">
 					<div>
-						<label
-							htmlFor={bulkHostGroupId}
-							className="block text-sm font-medium text-secondary-700 dark:text-secondary-300 mb-1"
-						>
-							Host Group
-						</label>
-						<select
-							id={bulkHostGroupId}
-							value={selectedGroupId}
-							onChange={(e) => setSelectedGroupId(e.target.value)}
-							className="w-full px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500"
-						>
-							<option value="">No group (ungrouped)</option>
+						<span className="block text-sm font-medium text-secondary-700 dark:text-secondary-200 mb-3">
+							Host Groups
+						</span>
+						<div className="space-y-2 max-h-48 overflow-y-auto">
+							{/* Host Group Options */}
 							{hostGroups?.map((group) => (
-								<option key={group.id} value={group.id}>
-									{group.name}
-								</option>
+								<label
+									key={group.id}
+									className={`flex items-center gap-3 p-3 border-2 rounded-lg transition-all duration-200 cursor-pointer ${
+										selectedGroupIds.includes(group.id)
+											? "border-primary-500 bg-primary-50 dark:bg-primary-900/30"
+											: "border-secondary-300 dark:border-secondary-600 bg-white dark:bg-secondary-700 hover:border-secondary-400 dark:hover:border-secondary-500"
+									}`}
+								>
+									<input
+										type="checkbox"
+										checked={selectedGroupIds.includes(group.id)}
+										onChange={() => toggleGroup(group.id)}
+										className="w-4 h-4 text-primary-600 bg-gray-100 border-gray-300 rounded focus:ring-primary-500 dark:focus:ring-primary-600 dark:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+									/>
+									<div className="flex items-center gap-2 flex-1">
+										{group.color && (
+											<div
+												className="w-3 h-3 rounded-full border border-secondary-300 dark:border-secondary-500 flex-shrink-0"
+												style={{ backgroundColor: group.color }}
+											></div>
+										)}
+										<div className="text-sm font-medium text-secondary-700 dark:text-secondary-200">
+											{group.name}
+										</div>
+									</div>
+								</label>
 							))}
-						</select>
-						<p className="mt-1 text-sm text-secondary-500 dark:text-secondary-400">
-							Select a group to assign these hosts to, or leave ungrouped.
+						</div>
+						<p className="mt-2 text-sm text-secondary-500 dark:text-secondary-400">
+							Select one or more groups to assign these hosts to, or leave
+							ungrouped.
 						</p>
 					</div>
 
@@ -1884,7 +1905,7 @@ const BulkAssignModal = ({
 							Cancel
 						</button>
 						<button type="submit" className="btn-primary" disabled={isLoading}>
-							{isLoading ? "Assigning..." : "Assign to Group"}
+							{isLoading ? "Assigning..." : "Assign to Groups"}
 						</button>
 					</div>
 				</form>

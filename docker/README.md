@@ -39,15 +39,15 @@ These tags are available for both backend and frontend images as they are versio
    environment:
      DATABASE_URL: postgresql://patchmon_user:REPLACE_YOUR_POSTGRES_PASSWORD_HERE@database:5432/patchmon_db
    ```
-4. Set a Redis password in the Redis service where it says:
+4. Set a Redis password in the Redis service command where it says:
    ```yaml
-   environment:
-     REDIS_PASSWORD: # CREATE A STRONG REDIS PASSWORD AND PUT IT HERE
+   command: redis-server --requirepass your-redis-password-here
    ```
+   Note: The Redis service uses a hardcoded password in the command line for better reliability and to avoid environment variable parsing issues.
 5. Update the corresponding `REDIS_PASSWORD` in the backend service where it says:
    ```yaml
    environment:
-     REDIS_PASSWORD: REPLACE_YOUR_REDIS_PASSWORD_HERE
+     REDIS_PASSWORD: your-redis-password-here
    ```
 6. Generate a strong JWT secret. You can do this like so:
    ```bash
@@ -122,6 +122,9 @@ When you do this, updating to a new version requires manually updating the image
 | Variable       | Description        | Default          |
 | -------------- | ------------------ | ---------------- |
 | `REDIS_PASSWORD` | Redis password    | **MUST BE SET!** |
+
+> [!NOTE]
+> The Redis service uses a hardcoded password in the command line (`redis-server --requirepass your-password`) instead of environment variables or configuration files. This approach eliminates parsing issues and provides better reliability. The password must be set in both the Redis command and the backend service environment variables.
 
 #### Backend Service
 

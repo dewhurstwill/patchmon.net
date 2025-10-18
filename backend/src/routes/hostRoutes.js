@@ -847,6 +847,119 @@ router.post(
 // 	},
 // );
 
+// Admin endpoint to bulk update host groups (many-to-many)
+router.put(
+	"/bulk/groups",
+	authenticateToken,
+	requireManageHosts,
+	[
+		body("hostIds").isArray().withMessage("Host IDs must be an array"),
+		body("hostIds.*")
+			.isLength({ min: 1 })
+			.withMessage("Each host ID must be provided"),
+		body("groupIds").isArray().optional(),
+		body("groupIds.*")
+			.optional()
+			.isUUID()
+			.withMessage("Each group ID must be a valid UUID"),
+	],
+	async (req, res) => {
+		try {
+			const errors = validationResult(req);
+			if (!errors.isEmpty()) {
+				return res.status(400).json({ errors: errors.array() });
+			}
+
+			const { hostIds, groupIds = [] } = req.body;
+
+			// Verify all groups exist if provided
+			if (groupIds.length > 0) {
+				const existingGroups = await prisma.host_groups.findMany({
+					where: { id: { in: groupIds } },
+					select: { id: true },
+				});
+
+				if (existingGroups.length !== groupIds.length) {
+					return res.status(400).json({
+						error: "One or more host groups not found",
+						provided: groupIds,
+						found: existingGroups.map((g) => g.id),
+					});
+				}
+			}
+
+			// Check if all hosts exist
+			const existingHosts = await prisma.hosts.findMany({
+				where: { id: { in: hostIds } },
+				select: { id: true, friendly_name: true },
+			});
+
+			if (existingHosts.length !== hostIds.length) {
+				const foundIds = existingHosts.map((h) => h.id);
+				const missingIds = hostIds.filter((id) => !foundIds.includes(id));
+				return res.status(400).json({
+					error: "Some hosts not found",
+					missingHostIds: missingIds,
+				});
+			}
+
+			// Use transaction to update group memberships for all hosts
+			const updatedHosts = await prisma.$transaction(async (tx) => {
+				const results = [];
+
+				for (const hostId of hostIds) {
+					// Remove existing memberships for this host
+					await tx.host_group_memberships.deleteMany({
+						where: { host_id: hostId },
+					});
+
+					// Add new memberships for this host
+					if (groupIds.length > 0) {
+						await tx.host_group_memberships.createMany({
+							data: groupIds.map((groupId) => ({
+								id: crypto.randomUUID(),
+								host_id: hostId,
+								host_group_id: groupId,
+							})),
+						});
+					}
+
+					// Get updated host with groups
+					const updatedHost = await tx.hosts.findUnique({
+						where: { id: hostId },
+						include: {
+							host_group_memberships: {
+								include: {
+									host_groups: {
+										select: {
+											id: true,
+											name: true,
+											color: true,
+										},
+									},
+								},
+							},
+						},
+					});
+
+					results.push(updatedHost);
+				}
+
+				return results;
+			});
+
+			res.json({
+				message: `Successfully updated ${updatedHosts.length} host${updatedHosts.length !== 1 ? "s" : ""}`,
+				updatedCount: updatedHosts.length,
+				hosts: updatedHosts,
+			});
+		} catch (error) {
+			console.error("Bulk host groups update error:", error);
+			res.status(500).json({ error: "Failed to update host groups" });
+		}
+	},
+);
+
 // Admin endpoint to update host groups (many-to-many)
 router.put(
 	"/:hostId/groups",
