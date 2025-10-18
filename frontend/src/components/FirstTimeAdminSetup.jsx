@@ -2,6 +2,7 @@ import { AlertCircle, CheckCircle, Shield, UserPlus } from "lucide-react";
 import { useId, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
+import { isCorsError } from "../utils/api";
 
 const FirstTimeAdminSetup = () => {
 	const { login, setAuthState } = useAuth();
@@ -121,11 +122,39 @@ const FirstTimeAdminSetup = () => {
 					}, 2000);
 				}
 			} else {
-				setError(data.error || "Failed to create admin user");
+				// Handle HTTP error responses (like 500 CORS errors)
+				console.log("HTTP error response:", response.status, data);
+
+				// Check if this is a CORS error based on the response data
+				if (
+					data.message?.includes("Not allowed by CORS") ||
+					data.message?.includes("CORS") ||
+					data.error?.includes("CORS")
+				) {
+					setError(
+						"CORS_ORIGIN mismatch - please set your URL in your environment variable",
+					);
+				} else {
+					setError(data.error || "Failed to create admin user");
+				}
 			}
 		} catch (error) {
 			console.error("Setup error:", error);
-			setError("Network error. Please try again.");
+			// Check for CORS/network errors first
+			if (isCorsError(error)) {
+				setError(
+					"CORS_ORIGIN mismatch - please set your URL in your environment variable",
+				);
+			} else if (
+				error.name === "TypeError" &&
+				error.message?.includes("Failed to fetch")
+			) {
+				setError(
+					"CORS_ORIGIN mismatch - please set your URL in your environment variable",
+				);
+			} else {
+				setError("Network error. Please try again.");
+			}
 		} finally {
 			setIsLoading(false);
 		}

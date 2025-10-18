@@ -13,7 +13,7 @@ import { useEffect, useId, useState } from "react";
 
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../contexts/AuthContext";
-import { authAPI } from "../utils/api";
+import { authAPI, isCorsError } from "../utils/api";
 
 const Login = () => {
 	const usernameId = useId();
@@ -82,7 +82,21 @@ const Login = () => {
 				setError(result.error || "Login failed");
 			}
 		} catch (err) {
-			setError(err.response?.data?.error || "Login failed");
+			// Check for CORS/network errors first
+			if (isCorsError(err)) {
+				setError(
+					"CORS_ORIGIN mismatch - please set your URL in your environment variable",
+				);
+			} else if (
+				err.name === "TypeError" &&
+				err.message?.includes("Failed to fetch")
+			) {
+				setError(
+					"CORS_ORIGIN mismatch - please set your URL in your environment variable",
+				);
+			} else {
+				setError(err.response?.data?.error || "Login failed");
+			}
 		} finally {
 			setIsLoading(false);
 		}
@@ -112,12 +126,25 @@ const Login = () => {
 			}
 		} catch (err) {
 			console.error("Signup error:", err);
-			const errorMessage =
-				err.response?.data?.error ||
-				(err.response?.data?.errors && err.response.data.errors.length > 0
-					? err.response.data.errors.map((e) => e.msg).join(", ")
-					: err.message || "Signup failed");
-			setError(errorMessage);
+			if (isCorsError(err)) {
+				setError(
+					"CORS_ORIGIN mismatch - please set your URL in your environment variable",
+				);
+			} else if (
+				err.name === "TypeError" &&
+				err.message?.includes("Failed to fetch")
+			) {
+				setError(
+					"CORS_ORIGIN mismatch - please set your URL in your environment variable",
+				);
+			} else {
+				const errorMessage =
+					err.response?.data?.error ||
+					(err.response?.data?.errors && err.response.data.errors.length > 0
+						? err.response.data.errors.map((e) => e.msg).join(", ")
+						: err.message || "Signup failed");
+				setError(errorMessage);
+			}
 		} finally {
 			setIsLoading(false);
 		}
@@ -146,9 +173,22 @@ const Login = () => {
 			}
 		} catch (err) {
 			console.error("TFA verification error:", err);
-			const errorMessage =
-				err.response?.data?.error || err.message || "TFA verification failed";
-			setError(errorMessage);
+			if (isCorsError(err)) {
+				setError(
+					"CORS_ORIGIN mismatch - please set your URL in your environment variable",
+				);
+			} else if (
+				err.name === "TypeError" &&
+				err.message?.includes("Failed to fetch")
+			) {
+				setError(
+					"CORS_ORIGIN mismatch - please set your URL in your environment variable",
+				);
+			} else {
+				const errorMessage =
+					err.response?.data?.error || err.message || "TFA verification failed";
+				setError(errorMessage);
+			}
 			// Clear the token input for security
 			setTfaData({ token: "" });
 		} finally {

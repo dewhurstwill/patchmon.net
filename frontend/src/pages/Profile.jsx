@@ -26,7 +26,7 @@ import { useEffect, useId, useState } from "react";
 
 import { useAuth } from "../contexts/AuthContext";
 import { useTheme } from "../contexts/ThemeContext";
-import { tfaAPI } from "../utils/api";
+import { isCorsError, tfaAPI } from "../utils/api";
 
 const Profile = () => {
 	const usernameId = useId();
@@ -88,8 +88,15 @@ const Profile = () => {
 					text: result.error || "Failed to update profile",
 				});
 			}
-		} catch {
-			setMessage({ type: "error", text: "Network error occurred" });
+		} catch (error) {
+			if (isCorsError(error)) {
+				setMessage({
+					type: "error",
+					text: "CORS_ORIGIN mismatch - please set your URL in your environment variable",
+				});
+			} else {
+				setMessage({ type: "error", text: "Network error occurred" });
+			}
 		} finally {
 			setIsLoading(false);
 		}
@@ -133,8 +140,15 @@ const Profile = () => {
 					text: result.error || "Failed to change password",
 				});
 			}
-		} catch {
-			setMessage({ type: "error", text: "Network error occurred" });
+		} catch (error) {
+			if (isCorsError(error)) {
+				setMessage({
+					type: "error",
+					text: "CORS_ORIGIN mismatch - please set your URL in your environment variable",
+				});
+			} else {
+				setMessage({ type: "error", text: "Network error occurred" });
+			}
 		} finally {
 			setIsLoading(false);
 		}

@@ -221,7 +221,82 @@ export const packagesAPI = {
 };
 
 // Utility functions
+export const isCorsError = (error) => {
+	// Check for browser-level CORS errors (when request is blocked before reaching server)
+	if (error.message?.includes("Failed to fetch") && !error.response) {
+		return true;
+	}
+
+	// Check for TypeError with Failed to fetch (common CORS error pattern)
+	if (
+		error.name === "TypeError" &&
+		error.message?.includes("Failed to fetch")
+	) {
+		return true;
+	}
+
+	// Check for backend CORS errors that get converted to 500 by proxy
+	if (error.response?.status === 500) {
+		// Check if the error message contains CORS-related text
+		if (
+			error.message?.includes("Not allowed by CORS") ||
+			error.message?.includes("CORS") ||
+			error.message?.includes("cors")
+		) {
+			return true;
+		}
+
+		// Check if the response data contains CORS error information
+		if (
+			error.response?.data?.error?.includes("CORS") ||
+			error.response?.data?.error?.includes("cors") ||
+			error.response?.data?.message?.includes("CORS") ||
+			error.response?.data?.message?.includes("cors") ||
+			error.response?.data?.message?.includes("Not allowed by CORS")
+		) {
+			return true;
+		}
+
+		// Check for specific CORS error patterns from backend logs
+		if (
+			error.message?.includes("origin") &&
+			error.message?.includes("callback")
+		) {
+			return true;
+		}
+
+		// Check if this is likely a CORS error based on context
+		// If we're accessing from localhost but CORS_ORIGIN is set to fabio, this is likely CORS
+		const currentOrigin = window.location.origin;
+		if (
+			currentOrigin === "http://localhost:3000" &&
+			error.config?.url?.includes("/api/")
+		) {
+			// This is likely a CORS error when accessing from localhost
+			return true;
+		}
+	}
+
+	// Check for CORS-related errors
+	return (
+		error.message?.includes("CORS") ||
+		error.message?.includes("cors") ||
+		error.message?.includes("Access to fetch") ||
+		error.message?.includes("blocked by CORS policy") ||
+		error.message?.includes("Cross-Origin Request Blocked") ||
+		error.message?.includes("NetworkError when attempting to fetch resource") ||
+		error.message?.includes("ERR_BLOCKED_BY_CLIENT") ||
+		error.message?.includes("ERR_NETWORK") ||
+		error.message?.includes("ERR_CONNECTION_REFUSED")
+	);
+};
+
 export const formatError = (error) => {
+	// Check for CORS-related errors
+	if (isCorsError(error)) {
+		return "CORS_ORIGIN mismatch - please set your URL in your environment variable";
+	}
+
 	if (error.response?.data?.message) {
 		return error.response.data.message;
 	}

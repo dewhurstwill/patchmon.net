@@ -339,9 +339,7 @@ const parseOrigins = (val) =>
 		.map((s) => s.trim())
 		.filter(Boolean);
 const allowedOrigins = parseOrigins(
-	process.env.CORS_ORIGINS ||
-		process.env.CORS_ORIGIN ||
-		"http://localhost:3000",
+	process.env.CORS_ORIGINS || process.env.CORS_ORIGIN || "http://fabio:3000",
 );
 app.use(
 	cors({
@@ -564,6 +562,15 @@ app.use((err, _req, res, _next) => {
 	if (process.env.ENABLE_LOGGING === "true") {
 		logger.error(err.stack);
 	}
+
+	// Special handling for CORS errors - always include the message
+	if (err.message?.includes("Not allowed by CORS")) {
+		return res.status(500).json({
+			error: "Something went wrong!",
+			message: err.message, // Always include CORS error message
+		});
+	}
+
 	res.status(500).json({
 		error: "Something went wrong!",
 		message: process.env.NODE_ENV === "development" ? err.message : undefined,

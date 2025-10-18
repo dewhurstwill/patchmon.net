@@ -41,7 +41,7 @@ server {
         # Preserve original client IP through proxy chain
         proxy_set_header X-Original-Forwarded-For $http_x_forwarded_for;
 
-        # CORS headers for API calls
+        # CORS headers for API calls - even though backend is doing it
         add_header Access-Control-Allow-Origin * always;
         add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS" always;
         add_header Access-Control-Allow-Headers "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization" always;
@@ -77,10 +77,10 @@ server {
         proxy_request_buffering off;
         proxy_max_temp_file_size 0;
 
-        # CORS headers for SSE
-        add_header Access-Control-Allow-Origin * always;
-        add_header Access-Control-Allow-Methods "GET, OPTIONS" always;
-        add_header Access-Control-Allow-Headers "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization" always;
+        # CORS headers for SSE - commented out to let backend handle CORS
+        # add_header Access-Control-Allow-Origin * always;
+        # add_header Access-Control-Allow-Methods "GET, OPTIONS" always;
+        # add_header Access-Control-Allow-Headers "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization" always;
 
         # Handle preflight requests
         if ($request_method = 'OPTIONS') {

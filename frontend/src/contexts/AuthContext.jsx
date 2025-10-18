@@ -7,6 +7,7 @@ import {
 } from "react";
 import { flushSync } from "react-dom";
 import { AUTH_PHASES, isAuthPhase } from "../constants/authPhases";
+import { isCorsError } from "../utils/api";
 
 const AuthContext = createContext();
 
@@ -120,9 +121,50 @@ export const AuthProvider = ({ children }) => {
 
 				return { success: true };
 			} else {
+				// Handle HTTP error responses (like 500 CORS errors)
+				console.log("HTTP error response:", response.status, data);
+
+				// Check if this is a CORS error based on the response data
+				if (
+					data.message?.includes("Not allowed by CORS") ||
+					data.message?.includes("CORS") ||
+					data.error?.includes("CORS")
+				) {
+					return {
+						success: false,
+						error:
+							"CORS_ORIGIN mismatch - please set your URL in your environment variable",
+					};
+				}
+
 				return { success: false, error: data.error || "Login failed" };
 			}
-		} catch {
+		} catch (error) {
+			console.log("Login error:", error);
+			console.log("Error response:", error.response);
+			console.log("Error message:", error.message);
+
+			// Check for CORS/network errors first
+			if (isCorsError(error)) {
+				return {
+					success: false,
+					error:
+						"CORS_ORIGIN mismatch - please set your URL in your environment variable",
+				};
+			}
+
+			// Check for other network errors
+			if (
+				error.name === "TypeError" &&
+				error.message?.includes("Failed to fetch")
+			) {
+				return {
+					success: false,
+					error:
+						"CORS_ORIGIN mismatch - please set your URL in your environment variable",
+				};
+			}
+
 			return { success: false, error: "Network error occurred" };
 		}
 	};
@@ -167,9 +209,46 @@ export const AuthProvider = ({ children }) => {
 				localStorage.setItem("user", JSON.stringify(data.user));
 				return { success: true, user: data.user };
 			} else {
+				// Handle HTTP error responses (like 500 CORS errors)
+				console.log("HTTP error response:", response.status, data);
+
+				// Check if this is a CORS error based on the response data
+				if (
+					data.message?.includes("Not allowed by CORS") ||
+					data.message?.includes("CORS") ||
+					data.error?.includes("CORS")
+				) {
+					return {
+						success: false,
+						error:
+							"CORS_ORIGIN mismatch - please set your URL in your environment variable",
+					};
+				}
+
 				return { success: false, error: data.error || "Update failed" };
 			}
-		} catch {
+		} catch (error) {
+			// Check for CORS/network errors first
+			if (isCorsError(error)) {
+				return {
+					success: false,
+					error:
+						"CORS_ORIGIN mismatch - please set your URL in your environment variable",
+				};
+			}
+
+			// Check for other network errors
+			if (
+				error.name === "TypeError" &&
+				error.message?.includes("Failed to fetch")
+			) {
+				return {
+					success: false,
+					error:
+						"CORS_ORIGIN mismatch - please set your URL in your environment variable",
+				};
+			}
+
 			return { success: false, error: "Network error occurred" };
 		}
 	};
@@ -190,12 +269,49 @@ export const AuthProvider = ({ children }) => {
 			if (response.ok) {
 				return { success: true };
 			} else {
+				// Handle HTTP error responses (like 500 CORS errors)
+				console.log("HTTP error response:", response.status, data);
+
+				// Check if this is a CORS error based on the response data
+				if (
+					data.message?.includes("Not allowed by CORS") ||
+					data.message?.includes("CORS") ||
+					data.error?.includes("CORS")
+				) {
+					return {
+						success: false,
+						error:
+							"CORS_ORIGIN mismatch - please set your URL in your environment variable",
+					};
+				}
+
 				return {
 					success: false,
 					error: data.error || "Password change failed",
 				};
 			}
-		} catch {
+		} catch (error) {
+			// Check for CORS/network errors first
+			if (isCorsError(error)) {
+				return {
+					success: false,
+					error:
+						"CORS_ORIGIN mismatch - please set your URL in your environment variable",
+				};
+			}
+
+			// Check for other network errors
+			if (
+				error.name === "TypeError" &&
+				error.message?.includes("Failed to fetch")
+			) {
+				return {
+					success: false,
+					error:
+						"CORS_ORIGIN mismatch - please set your URL in your environment variable",
+				};
+			}
+
 			return { success: false, error: "Network error occurred" };
 		}
 	};
