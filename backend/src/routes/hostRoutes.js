@@ -14,7 +14,7 @@ const {
 const router = express.Router();
 const prisma = new PrismaClient();
 
-// Secure endpoint to download the agent binary (requires API authentication)
+// Secure endpoint to download the agent script/binary (requires API authentication)
 router.get("/agent/download", async (req, res) => {
 	try {
 		// Verify API credentials
@@ -34,20 +34,124 @@ router.get("/agent/download", async (req, res) => {
 			return res.status(401).json({ error: "Invalid API credentials" });
 		}
 
+		const fs = require("node:fs");
+		const path = require("node:path");
+
+		// Check if this is a legacy agent (bash script) requesting update
+		// Legacy agents will have agent_version < 1.3.0
+		const isLegacyAgent =
+			host.agent_version &&
+			(host.agent_version.startsWith("1.2.") ||
+				host.agent_version.startsWith("1.1.") ||
+				host.agent_version.startsWith("1.0.") ||
+				!host.agent_version);
+
+		if (isLegacyAgent) {
+			// Serve migration script for legacy agents
+			const migrationScriptPath = path.join(
+				__dirname,
+				"../../../agents/patchmon-agent.sh",
+			);
+
+			if (!fs.existsSync(migrationScriptPath)) {
+				return res.status(404).json({ error: "Migration script not found" });
+			}
+
+			// Set appropriate headers for script download
+			res.setHeader("Content-Type", "text/plain");
+			res.setHeader(
+				"Content-Disposition",
+				'attachment; filename="patchmon-agent.sh"',
+			);
+
+			// Stream the migration script
+			const fileStream = fs.createReadStream(migrationScriptPath);
+			fileStream.pipe(res);
+
+			fileStream.on("error", (error) => {
+				console.error("Migration script stream error:", error);
+				if (!res.headersSent) {
+					res.status(500).json({ error: "Failed to stream migration script" });
+				}
+			});
+		} else {
+			// Serve Go binary for new agents
+			const architecture = req.query.arch || "amd64";
+
+			// Validate architecture
+			const validArchitectures = ["amd64", "386", "arm64", "arm"];
+			if (!validArchitectures.includes(architecture)) {
+				return res.status(400).json({
+					error: "Invalid architecture. Must be one of: amd64, 386, arm64, arm",
+				});
+			}
+
+			const binaryName = `patchmon-agent-linux-${architecture}`;
+			const binaryPath = path.join(__dirname, "../../../agents", binaryName);
+
+			if (!fs.existsSync(binaryPath)) {
+				return res.status(404).json({
+					error: `Agent binary not found for architecture: ${architecture}`,
+				});
+			}
+
+			// Set appropriate headers for binary download
+			res.setHeader("Content-Type", "application/octet-stream");
+			res.setHeader(
+				"Content-Disposition",
+				`attachment; filename="${binaryName}"`,
+			);
+
+			// Stream the binary file
+			const fileStream = fs.createReadStream(binaryPath);
+			fileStream.pipe(res);
+
+			fileStream.on("error", (error) => {
+				console.error("Binary stream error:", error);
+				if (!res.headersSent) {
+					res.status(500).json({ error: "Failed to stream agent binary" });
+				}
+			});
+		}
+	} catch (error) {
+		console.error("Agent download error:", error);
+		res.status(500).json({ error: "Failed to serve agent" });
+	}
+});
+
+// Endpoint to download Go agent binary (for migration script)
+router.get("/agent/go-binary", async (req, res) => {
+	try {
+		// Verify API credentials
+		const apiId = req.headers["x-api-id"];
+		const apiKey = req.headers["x-api-key"];
+
+		if (!apiId || !apiKey) {
+			return res.status(401).json({ error: "API credentials required" });
+		}
+
+		// Validate API credentials
+		const host = await prisma.hosts.findUnique({
+			where: { api_id: apiId },
+		});
+
+		if (!host || host.api_key !== apiKey) {
+			return res.status(401).json({ error: "Invalid API credentials" });
+		}
+
+		const fs = require("node:fs");
+		const path = require("node:path");
+
 		// Get architecture parameter (default to amd64)
 		const architecture = req.query.arch || "amd64";
 
 		// Validate architecture
-		const validArchitectures = ["amd64", "386", "arm64"];
+		const validArchitectures = ["amd64", "386", "arm64", "arm"];
 		if (!validArchitectures.includes(architecture)) {
 			return res.status(400).json({
-				error: "Invalid architecture. Must be one of: amd64, 386, arm64",
+				error: "Invalid architecture. Must be one of: amd64, 386, arm64, arm",
 			});
 		}
-
-		// Serve agent binary directly from file system
-		const fs = require("node:fs");
-		const path = require("node:path");
 
 		const binaryName = `patchmon-agent-linux-${architecture}`;
 		const binaryPath = path.join(__dirname, "../../../agents", binaryName);
@@ -76,8 +180,8 @@ router.get("/agent/download", async (req, res) => {
 			}
 		});
 	} catch (error) {
-		console.error("Agent download error:", error);
-		res.status(500).json({ error: "Failed to serve agent binary" });
+		console.error("Go binary download error:", error);
+		res.status(500).json({ error: "Failed to serve Go agent binary" });
 	}
 });
 
