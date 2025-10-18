@@ -43,8 +43,7 @@ router.get("/agent/download", async (req, res) => {
 			host.agent_version &&
 			(host.agent_version.startsWith("1.2.") ||
 				host.agent_version.startsWith("1.1.") ||
-				host.agent_version.startsWith("1.0.") ||
-				!host.agent_version);
+				host.agent_version.startsWith("1.0."));
 
 		if (isLegacyAgent) {
 			// Serve migration script for legacy agents
@@ -867,91 +866,6 @@ router.post(
 	},
 );
 
-// TODO: Admin endpoint to bulk update host groups - needs to be rewritten for many-to-many relationship
-// router.put(
-// 	"/bulk/group",
-// 	authenticateToken,
-// 	requireManageHosts,
-// 	[
-// 		body("hostIds").isArray().withMessage("Host IDs must be an array"),
-// 		body("hostIds.*")
-// 			.isLength({ min: 1 })
-// 			.withMessage("Each host ID must be provided"),
-// 		body("hostGroupId").optional(),
-// 	],
-// 	async (req, res) => {
-// 		try {
-// 			const errors = validationResult(req);
-// 			if (!errors.isEmpty()) {
-// 				return res.status(400).json({ errors: errors.array() });
-// 			}
-
-// 			const { hostIds, hostGroupId } = req.body;
-
-// 			// If hostGroupId is provided, verify the group exists
-// 			if (hostGroupId) {
-// 				const hostGroup = await prisma.host_groups.findUnique({
-// 					where: { id: hostGroupId },
-// 				});
-
-// 				if (!hostGroup) {
-// 					return res.status(400).json({ error: "Host group not found" });
-// 				}
-// 			}
-
-// 			// Check if all hosts exist
-// 			const existingHosts = await prisma.hosts.findMany({
-// 				where: { id: { in: hostIds } },
-// 				select: { id: true, friendly_name: true },
-// 			});
-
-// 			if (existingHosts.length !== hostIds.length) {
-// 				const foundIds = existingHosts.map((h) => h.id);
-// 				const missingIds = hostIds.filter((id) => !foundIds.includes(id));
-// 				return res.status(400).json({
-// 					error: "Some hosts not found",
-// 					missingHostIds: missingIds,
-// 				});
-// 			}
-
-// 			// Bulk update host groups
-// 			const updateResult = await prisma.hosts.updateMany({
-// 				where: { id: { in: hostIds } },
-// 				data: {
-// 					host_group_id: hostGroupId || null,
-// 					updated_at: new Date(),
-// 				},
-// 			});
-
-// 			// Get updated hosts with group information
-// 			const updatedHosts = await prisma.hosts.findMany({
-// 				where: { id: { in: hostIds } },
-// 				select: {
-// 					id: true,
-// 					friendly_name: true,
-// 					host_groups: {
-// 						select: {
-// 							id: true,
-// 							name: true,
-// 							color: true,
-// 						},
-// 					},
-// 				},
-// 			});
-
-// 			res.json({
-// 				message: `Successfully updated ${updateResult.count} host${updateResult.count !== 1 ? "s" : ""}`,
-// 				updatedCount: updateResult.count,
-// 				hosts: updatedHosts,
-// 			});
-// 		} catch (error) {
-// 			console.error("Bulk host group update error:", error);
-// 			res.status(500).json({ error: "Failed to update host groups" });
-// 		}
-// 	},
-// );
-
-// Admin endpoint to bulk update host groups (many-to-many)
 router.put(
 	"/bulk/groups",
 	authenticateToken,

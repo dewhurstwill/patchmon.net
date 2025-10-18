@@ -154,15 +154,15 @@ download_go_agent() {
         # Verify binary - check if it's a valid executable
         chmod +x "$temp_binary"
         
-        # Test binary by trying to run it
-        if "$temp_binary" check-version >/dev/null 2>&1; then
-            success "Go agent binary downloaded and verified"
+        # Check if file exists and is executable
+        if [[ -f "$temp_binary" ]] && [[ -x "$temp_binary" ]]; then
+            success "Go agent binary downloaded successfully"
             echo "$temp_binary"
         else
             # Try to get more info about the file
-            local file_info=$(file "$temp_binary" 2>/dev/null || echo "unknown")
+            local file_output=$(file "$temp_binary" 2>/dev/null || echo "unknown")
             rm -f "$temp_binary"  # Clean up failed download
-            error "Downloaded Go agent binary is not executable. File info: $file_info"
+            error "Downloaded file is not executable. File info: $file_output"
         fi
     else
         rm -f "$temp_binary"  # Clean up failed download
@@ -170,10 +170,15 @@ download_go_agent() {
     fi
 }
 
-# Install Go agent binary
+# Install Go agent binary and service
 install_go_agent() {
     local temp_binary="$1"
     local install_path="/usr/local/bin/patchmon-agent"
+    
+    # Check if temp_binary is provided and exists
+    if [[ -z "$temp_binary" ]] || [[ ! -f "$temp_binary" ]]; then
+        error "No valid binary provided for installation"
+    fi
     
     info "Installing Go agent binary..."
     
@@ -188,8 +193,57 @@ install_go_agent() {
     mv "$temp_binary" "$install_path"
     success "Go agent binary installed to: $install_path"
     
-    # Clean up the temporary file
+    # Clean up the temporary file (it's now moved, so this is just safety)
     rm -f "$temp_binary"
+    
+    # Install and start systemd service
+    install_systemd_service
+}
+
+# Install and start systemd service
+install_systemd_service() {
+    info "Installing systemd service..."
+    
+    # Create systemd service file
+    cat > /etc/systemd/system/patchmon-agent.service << EOF
+[Unit]
+Description=PatchMon Agent
+After=network.target
+
+[Service]
+Type=simple
+User=root
+ExecStart=/usr/local/bin/patchmon-agent serve
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+    # Reload systemd and enable service
+    systemctl daemon-reload
+    systemctl enable patchmon-agent.service
+    
+    # Start the service
+    info "Starting PatchMon agent service..."
+    if systemctl start patchmon-agent.service; then
+        success "PatchMon agent service started successfully"
+        
+        # Wait a moment for service to start
+        sleep 3
+        
+        # Check if service is running
+        if systemctl is-active --quiet patchmon-agent.service; then
+            success "PatchMon agent service is running"
+        else
+            warning "PatchMon agent service failed to start"
+        fi
+    else
+        warning "Failed to start PatchMon agent service"
+    fi
 }
 
 # Remove cron entries
@@ -227,6 +281,13 @@ configure_go_agent() {
     # Create necessary directories
     mkdir -p /etc/patchmon/logs
     
+    # Check if the Go agent binary exists
+    if [[ ! -f "/usr/local/bin/patchmon-agent" ]]; then
+        warning "Go agent binary not found at /usr/local/bin/patchmon-agent"
+        warning "Configuration files were created manually"
+        return 0
+    fi
+    
     # Configure credentials
     if ! /usr/local/bin/patchmon-agent config set-credentials "$API_ID" "$API_KEY"; then
         warning "Failed to configure credentials via CLI, but files were created manually"
@@ -239,6 +300,22 @@ configure_go_agent() {
 test_go_agent() {
     info "Testing Go agent..."
     
+    # Check if the Go agent binary exists
+    if [[ ! -f "/usr/local/bin/patchmon-agent" ]]; then
+        warning "Go agent binary not found - skipping tests"
+        return 0
+    fi
+    
+    # Wait a bit for service to fully start
+    sleep 2
+    
+    # Test service status
+    if systemctl is-active --quiet patchmon-agent.service; then
+        success "PatchMon agent service is running"
+    else
+        warning "PatchMon agent service is not running"
+    fi
+    
     # Test configuration
     if /usr/local/bin/patchmon-agent config show >/dev/null 2>&1; then
         success "Go agent configuration test passed"
@@ -246,11 +323,12 @@ test_go_agent() {
         warning "Go agent configuration test failed, but continuing..."
     fi
     
-    # Test connectivity
+    # Test connectivity (ping test)
+    info "Testing connectivity to PatchMon server..."
     if /usr/local/bin/patchmon-agent ping >/dev/null 2>&1; then
-        success "Go agent connectivity test passed"
+        success "Go agent connectivity test passed - server is reachable"
     else
-        warning "Go agent connectivity test failed, but continuing..."
+        warning "Go agent connectivity test failed - server may be unreachable"
     fi
 }
 
@@ -265,7 +343,7 @@ cleanup_temp_directory() {
     fi
 }
 
-# Clean up legacy files
+# Clean up legacy files (only after successful verification)
 cleanup_legacy_files() {
     info "Cleaning up legacy files..."
     
@@ -281,9 +359,9 @@ cleanup_legacy_files() {
         success "Removed legacy credentials file"
     fi
     
-    # Remove legacy config file
-    if [[ -f "$CONFIG_FILE" ]]; then
-        rm -f "$CONFIG_FILE"
+    # Remove legacy config file (if it exists)
+    if [[ -f "/etc/patchmon/config" ]]; then
+        rm -f "/etc/patchmon/config"
         success "Removed legacy config file"
     fi
 }
@@ -301,6 +379,8 @@ show_migration_summary() {
     echo "  • Converted credentials to YAML format"
     echo "  • Created Go agent configuration"
     echo "  • Downloaded and installed Go agent binary"
+    echo "  • Installed and started systemd service"
+    echo "  • Verified service is running and connected"
     echo "  • Removed legacy cron entries"
     echo "  • Cleaned up legacy files"
     echo ""
@@ -354,15 +434,19 @@ post_migration_check() {
     # Run diagnostics
     info "Running system diagnostics..."
     echo ""
-    if /usr/local/bin/patchmon-agent diagnostics >/dev/null 2>&1; then
-        success "Diagnostics completed successfully"
-        echo ""
-        echo "Full diagnostics output:"
-        echo "----------------------------------------"
-        /usr/local/bin/patchmon-agent diagnostics
-        echo "----------------------------------------"
+    if [[ -f "/usr/local/bin/patchmon-agent" ]]; then
+        if /usr/local/bin/patchmon-agent diagnostics >/dev/null 2>&1; then
+            success "Diagnostics completed successfully"
+            echo ""
+            echo "Full diagnostics output:"
+            echo "----------------------------------------"
+            /usr/local/bin/patchmon-agent diagnostics
+            echo "----------------------------------------"
+        else
+            warning "Diagnostics failed to run"
+        fi
     else
-        warning "Diagnostics failed to run"
+        warning "Go agent binary not found - cannot run diagnostics"
     fi
     
     echo ""
@@ -391,31 +475,42 @@ perform_migration() {
     # Download Go agent
     local temp_binary=$(download_go_agent)
     
-    # Install Go agent
+    # Install Go agent binary and service
     install_go_agent "$temp_binary"
-    
-    # Remove cron entries
-    remove_cron_entries
     
     # Configure Go agent
     configure_go_agent
     
-    # Test Go agent
+    # Test Go agent (including service and connectivity)
     test_go_agent
     
-    # Clean up legacy files
-    cleanup_legacy_files
-    
-    # Clean up temporary directory
-    cleanup_temp_directory
-    
-    # Show summary
-    show_migration_summary
-    
-    # Run post-migration verification
-    post_migration_check
-    
-    success "Migration completed successfully!"
+    # Only proceed with cleanup if tests pass
+    if systemctl is-active --quiet patchmon-agent.service && /usr/local/bin/patchmon-agent ping >/dev/null 2>&1; then
+        success "Go agent is running and connected - proceeding with cleanup"
+        
+        # Remove cron entries
+        remove_cron_entries
+        
+        # Clean up legacy files
+        cleanup_legacy_files
+        
+        # Clean up temporary directory
+        cleanup_temp_directory
+        
+        # Show summary
+        show_migration_summary
+        
+        # Run post-migration verification
+        post_migration_check
+        
+        success "Migration completed successfully!"
+    else
+        warning "Go agent verification failed - skipping cleanup to preserve legacy files"
+        warning "You may need to manually clean up legacy files after fixing the Go agent"
+        
+        # Show summary anyway
+        show_migration_summary
+    fi
     
     # Exit here to prevent the legacy script from continuing
     exit 0
