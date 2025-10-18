@@ -570,6 +570,20 @@ install_postgresql() {
     fi
 }
 
+# Install Redis
+install_redis() {
+    print_info "Installing Redis..."
+    
+    if systemctl is-active --quiet redis-server; then
+        print_status "Redis already running"
+    else
+        $PKG_INSTALL redis-server
+        systemctl start redis-server
+        systemctl enable redis-server
+        print_status "Redis installed and started"
+    fi
+}
+
 # Install nginx
 install_nginx() {
     print_info "Installing nginx..."
@@ -857,6 +871,12 @@ AUTH_RATE_LIMIT_WINDOW_MS=600000
 AUTH_RATE_LIMIT_MAX=500
 AGENT_RATE_LIMIT_WINDOW_MS=60000
 AGENT_RATE_LIMIT_MAX=1000
+
+# Redis Configuration
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_PASSWORD=
+REDIS_DB=0
 
 # Logging
 LOG_LEVEL=info
@@ -1356,6 +1376,12 @@ Database Information:
 - Host: localhost
 - Port: 5432
 
+Redis Information:
+- Host: localhost
+- Port: 6379
+- Password: (none - Redis runs without authentication)
+- Database: 0
+
 Networking:
 - Backend Port: $BACKEND_PORT
 - Nginx Config: /etc/nginx/sites-available/$FQDN
@@ -1516,6 +1542,7 @@ deploy_instance() {
     # System setup (prerequisites already installed in interactive_setup)
     install_nodejs
     install_postgresql
+    install_redis
     install_nginx
     
     # Only install certbot if SSL is enabled

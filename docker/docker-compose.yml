@@ -19,14 +19,11 @@ services:
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: redis-server /usr/local/etc/redis/redis.conf
-    environment:
-      REDIS_PASSWORD: # CREATE A STRONG REDIS PASSWORD AND PUT IT HERE
+    command: redis-server --requirepass your-redis-password-here
     volumes:
       - redis_data:/data
-      - ./docker/redis.conf:/usr/local/etc/redis/redis.conf:ro
     healthcheck:
-      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "${REDIS_PASSWORD}", "ping"]
+      test: ["CMD", "redis-cli", "--no-auth-warning", "-a", "your-redis-password-here", "ping"]
       interval: 3s
       timeout: 5s
       retries: 7
@@ -46,7 +43,7 @@ services:
       # Redis Configuration
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      REDIS_PASSWORD: REPLACE_YOUR_REDIS_PASSWORD_HERE
+      REDIS_PASSWORD: your-redis-password-here
       REDIS_DB: 0
     volumes:
       - agent_files:/app/agents
