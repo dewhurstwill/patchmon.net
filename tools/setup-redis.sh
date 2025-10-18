@@ -15,7 +15,7 @@ NC='\033[0m' # No Color
 # Default Redis connection details
 REDIS_HOST=${REDIS_HOST:-"localhost"}
 REDIS_PORT=${REDIS_PORT:-6379}
-REDIS_ADMIN_PASSWORD=${REDIS_ADMIN_PASSWORD:-"redispass1"}
+REDIS_ADMIN_PASSWORD=${REDIS_ADMIN_PASSWORD:-""}
 
 echo -e "${BLUE}🔧 PatchMon Redis Setup${NC}"
 echo "=================================="
@@ -124,19 +124,34 @@ create_redis_user() {
     
     # Create user with password and permissions
     # Note: >password syntax is for Redis ACL, we need to properly escape it
+    local result
     if [ -n "$REDIS_ADMIN_PASSWORD" ]; then
         # With password
-        redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" -a "$REDIS_ADMIN_PASSWORD" --no-auth-warning ACL SETUSER "$username" on ">${password}" ~* +@all > /dev/null
+        result=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" -a "$REDIS_ADMIN_PASSWORD" --no-auth-warning ACL SETUSER "$username" on ">${password}" ~* +@all 2>&1)
     else
         # Without password
-        redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" ACL SETUSER "$username" on ">${password}" ~* +@all > /dev/null
+        result=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" ACL SETUSER "$username" on ">${password}" ~* +@all 2>&1)
     fi
     
-    if [ $? -eq 0 ]; then
+    if [ $? -eq 0 ] && [ "$result" = "OK" ]; then
         echo -e "${GREEN}✅ Redis user '$username' created successfully for database $db_num${NC}"
+        
+        # Verify user was created
+        if [ -n "$REDIS_ADMIN_PASSWORD" ]; then
+            local verify=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" -a "$REDIS_ADMIN_PASSWORD" --no-auth-warning ACL GETUSER "$username" 2>&1)
+        else
+            local verify=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" ACL GETUSER "$username" 2>&1)
+        fi
+        
+        if [ "$verify" = "(nil)" ]; then
+            echo -e "${RED}❌ User creation reported OK but user does not exist${NC}"
+            return 1
+        fi
+        
         return 0
     else
         echo -e "${RED}❌ Failed to create Redis user${NC}"
+        echo -e "${RED}Error: $result${NC}"
         return 1
     fi
 }
