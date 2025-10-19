@@ -1169,7 +1169,47 @@ server {
         add_header X-XSS-Protection "1; mode=block";
     }
     
+    # Bull Board proxy
+    location /bullboard {
+        proxy_pass http://127.0.0.1:$BACKEND_PORT;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        
+        # CORS headers for Bull Board
+        add_header Access-Control-Allow-Origin * always;
+        add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS" always;
+        add_header Access-Control-Allow-Headers "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization" always;
+        
+        # Handle preflight requests
+        if (\$request_method = 'OPTIONS') {
+            return 204;
+        }
+    }
+    
     # API routes
+    # Bull Board proxy
+    location /bullboard {
+        proxy_pass http://127.0.0.1:$BACKEND_PORT;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        
+        # CORS headers for Bull Board
+        add_header Access-Control-Allow-Origin * always;
+        add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS" always;
+        add_header Access-Control-Allow-Headers "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization" always;
+        
+        # Handle preflight requests
+        if (\$request_method = 'OPTIONS') {
+            return 204;
+        }
+    }
+    
     location /api/ {
         proxy_pass http://127.0.0.1:$BACKEND_PORT;
         proxy_http_version 1.1;
@@ -1250,7 +1290,47 @@ server {
         add_header X-XSS-Protection "1; mode=block";
     }
     
+    # Bull Board proxy
+    location /bullboard {
+        proxy_pass http://127.0.0.1:$BACKEND_PORT;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        
+        # CORS headers for Bull Board
+        add_header Access-Control-Allow-Origin * always;
+        add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS" always;
+        add_header Access-Control-Allow-Headers "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization" always;
+        
+        # Handle preflight requests
+        if (\$request_method = 'OPTIONS') {
+            return 204;
+        }
+    }
+    
     # API proxy
+    # Bull Board proxy
+    location /bullboard {
+        proxy_pass http://127.0.0.1:$BACKEND_PORT;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        
+        # CORS headers for Bull Board
+        add_header Access-Control-Allow-Origin * always;
+        add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS" always;
+        add_header Access-Control-Allow-Headers "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization" always;
+        
+        # Handle preflight requests
+        if (\$request_method = 'OPTIONS') {
+            return 204;
+        }
+    }
+    
     location /api/ {
         proxy_pass http://127.0.0.1:$BACKEND_PORT;
         proxy_http_version 1.1;
@@ -1319,7 +1399,47 @@ server {
         add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
     }
     
+    # Bull Board proxy
+    location /bullboard {
+        proxy_pass http://127.0.0.1:$BACKEND_PORT;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        
+        # CORS headers for Bull Board
+        add_header Access-Control-Allow-Origin * always;
+        add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS" always;
+        add_header Access-Control-Allow-Headers "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization" always;
+        
+        # Handle preflight requests
+        if (\$request_method = 'OPTIONS') {
+            return 204;
+        }
+    }
+    
     # API routes
+    # Bull Board proxy
+    location /bullboard {
+        proxy_pass http://127.0.0.1:$BACKEND_PORT;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        
+        # CORS headers for Bull Board
+        add_header Access-Control-Allow-Origin * always;
+        add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS" always;
+        add_header Access-Control-Allow-Headers "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization" always;
+        
+        # Handle preflight requests
+        if (\$request_method = 'OPTIONS') {
+            return 204;
+        }
+    }
+    
     location /api/ {
         proxy_pass http://127.0.0.1:$BACKEND_PORT;
         proxy_http_version 1.1;
