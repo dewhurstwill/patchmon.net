@@ -34,7 +34,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Global variables
-SCRIPT_VERSION="self-hosting-install.sh v1.2.9-selfhost-2025-10-11-1"
+SCRIPT_VERSION="self-hosting-install.sh v1.3.0-selfhost-2025-10-19-1"
 DEFAULT_GITHUB_REPO="https://github.com/PatchMon/PatchMon.git"
 FQDN=""
 CUSTOM_FQDN=""
@@ -665,47 +665,79 @@ configure_redis() {
         print_info "Created Redis configuration backup"
     fi
     
-    # Configure Redis with admin password first
-    print_info "Setting Redis admin password"
+    # Configure Redis with ACL authentication
+    print_info "Configuring Redis with ACL authentication"
     
-    # Add password configuration to redis.conf
-    if ! grep -q "^requirepass" /etc/redis/redis.conf; then
-        echo "requirepass $REDIS_PASSWORD" >> /etc/redis/redis.conf
-        print_status "Added admin password configuration to Redis"
-    else
-        # Update existing password
-        sed -i "s/^requirepass.*/requirepass $REDIS_PASSWORD/" /etc/redis/redis.conf
-        print_status "Updated Redis admin password configuration"
+    # Ensure ACL file exists and is configured
+    if [ ! -f /etc/redis/users.acl ]; then
+        touch /etc/redis/users.acl
+        chown redis:redis /etc/redis/users.acl
+        chmod 640 /etc/redis/users.acl
+        print_status "Created Redis ACL file"
     fi
     
-    # Restart Redis to apply admin password
-    print_info "Restarting Redis to apply admin password configuration..."
+    # Configure ACL file in redis.conf
+    if ! grep -q "^aclfile" /etc/redis/redis.conf; then
+        echo "aclfile /etc/redis/users.acl" >> /etc/redis/redis.conf
+        print_status "Added ACL file configuration to Redis"
+    fi
+    
+    # Remove any requirepass configuration (incompatible with ACL)
+    if grep -q "^requirepass" /etc/redis/redis.conf; then
+        sed -i 's/^requirepass.*/# &/' /etc/redis/redis.conf
+        print_status "Disabled requirepass (incompatible with ACL)"
+    fi
+    
+    # Remove any user definitions from redis.conf (should be in ACL file)
+    if grep -q "^user " /etc/redis/redis.conf; then
+        sed -i '/^user /d' /etc/redis/redis.conf
+        print_status "Removed user definitions from redis.conf"
+    fi
+    
+    # Create admin user in ACL file if it doesn't exist
+    if ! grep -q "^user admin" /etc/redis/users.acl; then
+        echo "user admin on sanitize-payload >$REDIS_PASSWORD ~* &* +@all" >> /etc/redis/users.acl
+        print_status "Added admin user to ACL file"
+    fi
+    
+    # Restart Redis to apply ACL configuration
+    print_info "Restarting Redis to apply ACL configuration..."
     systemctl restart redis-server
     
     # Wait for Redis to start
     sleep 3
     
     # Test admin connection
-    if ! redis-cli -h 127.0.0.1 -p 6379 -a "$REDIS_PASSWORD" --no-auth-warning ping > /dev/null 2>&1; then
-        print_error "Failed to configure Redis admin password"
+    if ! redis-cli -h 127.0.0.1 -p 6379 --user admin --pass "$REDIS_PASSWORD" --no-auth-warning ping > /dev/null 2>&1; then
+        print_error "Failed to configure Redis ACL authentication"
         return 1
     fi
     
-    print_status "Redis admin password configuration successful"
+    print_status "Redis ACL authentication configuration successful"
     
     # Create Redis user with ACL
     print_info "Creating Redis ACL user: $REDIS_USER"
     
     # Create user with password and permissions - capture output for error handling
     local acl_result
-    acl_result=$(redis-cli -h 127.0.0.1 -p 6379 -a "$REDIS_PASSWORD" --no-auth-warning ACL SETUSER "$REDIS_USER" on ">${REDIS_USER_PASSWORD}" ~* +@all 2>&1)
+    acl_result=$(redis-cli -h 127.0.0.1 -p 6379 --user admin --pass "$REDIS_PASSWORD" --no-auth-warning ACL SETUSER "$REDIS_USER" on ">${REDIS_USER_PASSWORD}" ~* +@all 2>&1)
     
     if [ "$acl_result" = "OK" ]; then
         print_status "Redis user '$REDIS_USER' created successfully"
         
+        # Save ACL users to file to persist across restarts
+        local save_result
+        save_result=$(redis-cli -h 127.0.0.1 -p 6379 --user admin --pass "$REDIS_PASSWORD" --no-auth-warning ACL SAVE 2>&1)
+        
+        if [ "$save_result" = "OK" ]; then
+            print_status "Redis ACL users saved to file"
+        else
+            print_warning "Failed to save ACL users to file: $save_result"
+        fi
+        
         # Verify user was actually created
         local verify_result
-        verify_result=$(redis-cli -h 127.0.0.1 -p 6379 -a "$REDIS_PASSWORD" --no-auth-warning ACL GETUSER "$REDIS_USER" 2>&1)
+        verify_result=$(redis-cli -h 127.0.0.1 -p 6379 --user admin --pass "$REDIS_PASSWORD" --no-auth-warning ACL GETUSER "$REDIS_USER" 2>&1)
         
         if [ "$verify_result" = "(nil)" ]; then
             print_error "User creation reported OK but user does not exist"
@@ -1043,7 +1075,7 @@ EOF
     cat > frontend/.env << EOF
 VITE_API_URL=$SERVER_PROTOCOL_SEL://$FQDN/api/v1
 VITE_APP_NAME=PatchMon
-VITE_APP_VERSION=1.2.9
+VITE_APP_VERSION=1.3.0
 EOF
 
     print_status "Environment files created"
@@ -1415,7 +1447,7 @@ create_agent_version() {
     
     # Priority 2: Use fallback version if not found
     if [ "$current_version" = "N/A" ] || [ -z "$current_version" ]; then
-        current_version="1.2.9"
+        current_version="1.3.0"
         print_warning "Could not determine version, using fallback: $current_version"
     fi
     

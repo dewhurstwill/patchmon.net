@@ -1,8 +1,8 @@
 const jwt = require("jsonwebtoken");
 const crypto = require("node:crypto");
-const { PrismaClient } = require("@prisma/client");
+const { getPrismaClient } = require("../config/prisma");
 
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 /**
  * Session Manager - Handles secure session management with inactivity timeout

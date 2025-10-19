@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# PatchMon Docker Agent Script v1.2.9
+# PatchMon Docker Agent Script v1.3.0
 # This script collects Docker container and image information and sends it to PatchMon
 
 # Configuration
 PATCHMON_SERVER="${PATCHMON_SERVER:-http://localhost:3001}"
 API_VERSION="v1"
-AGENT_VERSION="1.2.9"
+AGENT_VERSION="1.3.0"
 CONFIG_FILE="/etc/patchmon/agent.conf"
 CREDENTIALS_FILE="/etc/patchmon/credentials"
 LOG_FILE="/var/log/patchmon-docker-agent.log"

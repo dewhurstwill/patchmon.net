@@ -52,6 +52,7 @@ const HostDetail = () => {
 	const [historyPage, setHistoryPage] = useState(0);
 	const [historyLimit] = useState(10);
 	const [notes, setNotes] = useState("");
+	const [notesMessage, setNotesMessage] = useState({ text: "", type: "" });
 
 	const {
 		data: host,
@@ -212,6 +213,17 @@ const HostDetail = () => {
 		onSuccess: () => {
 			queryClient.invalidateQueries(["host", hostId]);
 			queryClient.invalidateQueries(["hosts"]);
+			setNotesMessage({ text: "Notes saved successfully!", type: "success" });
+			// Clear message after 3 seconds
+			setTimeout(() => setNotesMessage({ text: "", type: "" }), 3000);
+		},
+		onError: (error) => {
+			setNotesMessage({
+				text: error.response?.data?.error || "Failed to save notes",
+				type: "error",
+			});
+			// Clear message after 5 seconds for errors
+			setTimeout(() => setNotesMessage({ text: "", type: "" }), 5000);
 		},
 	});
 
@@ -1233,6 +1245,37 @@ const HostDetail = () => {
 										Host Notes
 									</h3>
 								</div>
+
+								{/* Success/Error Message */}
+								{notesMessage.text && (
+									<div
+										className={`rounded-md p-4 ${
+											notesMessage.type === "success"
+												? "bg-green-50 dark:bg-green-900 border border-green-200 dark:border-green-700"
+												: "bg-red-50 dark:bg-red-900 border border-red-200 dark:border-red-700"
+										}`}
+									>
+										<div className="flex">
+											{notesMessage.type === "success" ? (
+												<CheckCircle className="h-5 w-5 text-green-400 dark:text-green-300" />
+											) : (
+												<AlertCircle className="h-5 w-5 text-red-400 dark:text-red-300" />
+											)}
+											<div className="ml-3">
+												<p
+													className={`text-sm font-medium ${
+														notesMessage.type === "success"
+															? "text-green-800 dark:text-green-200"
+															: "text-red-800 dark:text-red-200"
+													}`}
+												>
+													{notesMessage.text}
+												</p>
+											</div>
+										</div>
+									</div>
+								)}
+
 								<div className="bg-secondary-50 dark:bg-secondary-700 rounded-lg p-4">
 									<textarea
 										value={notes}

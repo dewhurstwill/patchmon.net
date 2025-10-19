@@ -99,16 +99,27 @@ class QueueManager {
 	 * Initialize all workers
 	 */
 	async initializeWorkers() {
+		// Optimized worker options to reduce Redis connections
+		const workerOptions = {
+			connection: redisConnection,
+			concurrency: 1, // Keep concurrency low to reduce connections
+			// Connection optimization
+			maxStalledCount: 1,
+			stalledInterval: 30000,
+			// Reduce connection churn
+			settings: {
+				stalledInterval: 30000,
+				maxStalledCount: 1,
+			},
+		};
+
 		// GitHub Update Check Worker
 		this.workers[QUEUE_NAMES.GITHUB_UPDATE_CHECK] = new Worker(
 			QUEUE_NAMES.GITHUB_UPDATE_CHECK,
 			this.automations[QUEUE_NAMES.GITHUB_UPDATE_CHECK].process.bind(
 				this.automations[QUEUE_NAMES.GITHUB_UPDATE_CHECK],
 			),
-			{
-				connection: redisConnection,
-				concurrency: 1,
-			},
+			workerOptions,
 		);
 
 		// Session Cleanup Worker
@@ -117,10 +128,7 @@ class QueueManager {
 			this.automations[QUEUE_NAMES.SESSION_CLEANUP].process.bind(
 				this.automations[QUEUE_NAMES.SESSION_CLEANUP],
 			),
-			{
-				connection: redisConnection,
-				concurrency: 1,
-			},
+			workerOptions,
 		);
 
 		// Orphaned Repo Cleanup Worker
@@ -129,10 +137,7 @@ class QueueManager {
 			this.automations[QUEUE_NAMES.ORPHANED_REPO_CLEANUP].process.bind(
 				this.automations[QUEUE_NAMES.ORPHANED_REPO_CLEANUP],
 			),
-			{
-				connection: redisConnection,
-				concurrency: 1,
-			},
+			workerOptions,
 		);
 
 		// Orphaned Package Cleanup Worker
@@ -141,167 +146,33 @@ class QueueManager {
 			this.automations[QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP].process.bind(
 				this.automations[QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP],
 			),
-			{
-				connection: redisConnection,
-				concurrency: 1,
-			},
+			workerOptions,
 		);
 
 		// Agent Commands Worker
 		this.workers[QUEUE_NAMES.AGENT_COMMANDS] = new Worker(
 			QUEUE_NAMES.AGENT_COMMANDS,
 			async (job) => {
-				const { api_id, type, update_interval } = job.data || {};
-				console.log("[agent-commands] processing job", job.id, api_id, type);
+				const { api_id, type } = job.data;
+				console.log(`Processing agent command: ${type} for ${api_id}`);
 
-				// Log job attempt to history - use job.id as the unique identifier
-				const attemptNumber = job.attemptsMade || 1;
-				const historyId = job.id; // Single row per job, updated with each attempt
-
-				try {
-					if (!api_id || !type) {
-						throw new Error("invalid job data");
-					}
-
-					// Find host by api_id
-					const host = await prisma.hosts.findUnique({
-						where: { api_id },
-						select: { id: true },
-					});
-
-					// Ensure agent is connected; if not, retry later
-					if (!agentWs.isConnected(api_id)) {
-						const error = new Error("agent not connected");
-						// Log failed attempt
-						await prisma.job_history.upsert({
-							where: { id: historyId },
-							create: {
-								id: historyId,
-								job_id: job.id,
-								queue_name: QUEUE_NAMES.AGENT_COMMANDS,
-								job_name: type,
-								host_id: host?.id,
-								api_id,
-								status: "failed",
-								attempt_number: attemptNumber,
-								error_message: error.message,
-								created_at: new Date(),
-								updated_at: new Date(),
-							},
-							update: {
-								status: "failed",
-								attempt_number: attemptNumber,
-								error_message: error.message,
-								updated_at: new Date(),
-							},
-						});
-						console.log(
-							"[agent-commands] agent not connected, will retry",
-							api_id,
-						);
-						throw error;
-					}
-
-					// Process the command
-					let result;
-					if (type === "settings_update") {
-						agentWs.pushSettingsUpdate(api_id, update_interval);
-						console.log(
-							"[agent-commands] delivered settings_update",
-							api_id,
-							update_interval,
-						);
-						result = { delivered: true, update_interval };
-					} else if (type === "report_now") {
-						agentWs.pushReportNow(api_id);
-						console.log("[agent-commands] delivered report_now", api_id);
-						result = { delivered: true };
-					} else {
-						throw new Error("unsupported agent command");
-					}
-
-					// Log successful completion
-					await prisma.job_history.upsert({
-						where: { id: historyId },
-						create: {
-							id: historyId,
-							job_id: job.id,
-							queue_name: QUEUE_NAMES.AGENT_COMMANDS,
-							job_name: type,
-							host_id: host?.id,
-							api_id,
-							status: "completed",
-							attempt_number: attemptNumber,
-							output: result,
-							created_at: new Date(),
-							updated_at: new Date(),
-							completed_at: new Date(),
-						},
-						update: {
-							status: "completed",
-							attempt_number: attemptNumber,
-							output: result,
-							error_message: null,
-							updated_at: new Date(),
-							completed_at: new Date(),
-						},
-					});
-
-					return result;
-				} catch (error) {
-					// Log error to history (if not already logged above)
-					if (error.message !== "agent not connected") {
-						const host = await prisma.hosts
-							.findUnique({
-								where: { api_id },
-								select: { id: true },
-							})
-							.catch(() => null);
-
-						await prisma.job_history
-							.upsert({
-								where: { id: historyId },
-								create: {
-									id: historyId,
-									job_id: job.id,
-									queue_name: QUEUE_NAMES.AGENT_COMMANDS,
-									job_name: type || "unknown",
-									host_id: host?.id,
-									api_id,
-									status: "failed",
-									attempt_number: attemptNumber,
-									error_message: error.message,
-									created_at: new Date(),
-									updated_at: new Date(),
-								},
-								update: {
-									status: "failed",
-									attempt_number: attemptNumber,
-									error_message: error.message,
-									updated_at: new Date(),
-								},
-							})
-							.catch((err) =>
-								console.error("[agent-commands] failed to log error:", err),
-							);
-					}
-					throw error;
+				// Send command via WebSocket based on type
+				if (type === "report_now") {
+					agentWs.pushReportNow(api_id);
+				} else if (type === "settings_update") {
+					// For settings update, we need additional data
+					const { update_interval } = job.data;
+					agentWs.pushSettingsUpdate(api_id, update_interval);
+				} else {
+					console.error(`Unknown agent command type: ${type}`);
 				}
 			},
-			{
-				connection: redisConnection,
-				concurrency: 10,
-			},
+			workerOptions,
 		);
 
-		// Add error handling for all workers
-		Object.values(this.workers).forEach((worker) => {
-			worker.on("error", (error) => {
-				console.error("Worker error:", error);
-			});
-		});
-
-		console.log("✅ All workers initialized");
+		console.log(
+			"✅ All workers initialized with optimized connection settings",
+		);
 	}
 
 	/**

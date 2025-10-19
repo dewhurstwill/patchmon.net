@@ -117,7 +117,7 @@ const Layout = ({ children }) => {
 				name: "Automation",
 				href: "/automation",
 				icon: RefreshCw,
-				beta: true,
+				new: true,
 			});
 
 			if (canViewReports()) {
@@ -440,6 +440,11 @@ const Layout = ({ children }) => {
 																			Beta
 																		</span>
 																	)}
+																	{subItem.new && (
+																		<span className="text-xs bg-green-100 dark:bg-green-900 text-green-600 dark:text-green-200 px-1.5 py-0.5 rounded font-medium">
+																			New
+																		</span>
+																	)}
 																</span>
 															</Link>
 														)}
@@ -714,6 +719,11 @@ const Layout = ({ children }) => {
 																		{subItem.beta && (
 																			<span className="text-xs bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-200 px-1.5 py-0.5 rounded font-medium">
 																				Beta
+																			</span>
+																		)}
+																		{subItem.new && (
+																			<span className="text-xs bg-green-100 dark:bg-green-900 text-green-600 dark:text-green-200 px-1.5 py-0.5 rounded font-medium">
+																				New
 																			</span>
 																		)}
 																		{subItem.showUpgradeIcon && (

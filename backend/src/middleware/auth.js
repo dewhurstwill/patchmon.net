@@ -1,12 +1,12 @@
 const jwt = require("jsonwebtoken");
-const { PrismaClient } = require("@prisma/client");
+const { getPrismaClient } = require("../config/prisma");
 const {
 	validate_session,
 	update_session_activity,
 	is_tfa_bypassed,
 } = require("../utils/session_manager");
 
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 // Middleware to verify JWT token with session validation
 const authenticateToken = async (req, res, next) => {

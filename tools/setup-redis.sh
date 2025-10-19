@@ -15,7 +15,7 @@ NC='\033[0m' # No Color
 # Default Redis connection details
 REDIS_HOST=${REDIS_HOST:-"localhost"}
 REDIS_PORT=${REDIS_PORT:-6379}
-REDIS_ADMIN_PASSWORD=${REDIS_ADMIN_PASSWORD:-""}
+REDIS_ADMIN_PASSWORD=${REDIS_ADMIN_PASSWORD:-"YOURREDISPASSHERE"}
 
 echo -e "${BLUE}🔧 PatchMon Redis Setup${NC}"
 echo "=================================="
@@ -31,12 +31,12 @@ check_redis_connection() {
     echo -e "${YELLOW}📡 Checking Redis connection...${NC}"
     
     if [ -n "$REDIS_ADMIN_PASSWORD" ]; then
-        # With password
-        if redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" -a "$REDIS_ADMIN_PASSWORD" --no-auth-warning ping > /dev/null 2>&1; then
+        # With password - use ACL admin user
+        if redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" --user admin --pass "$REDIS_ADMIN_PASSWORD" --no-auth-warning ping > /dev/null 2>&1; then
             echo -e "${GREEN}✅ Redis connection successful${NC}"
             return 0
         else
-            echo -e "${RED}❌ Cannot connect to Redis with password${NC}"
+            echo -e "${RED}❌ Cannot connect to Redis with ACL admin user${NC}"
             echo "Please ensure Redis is running and the admin password is correct"
             return 1
         fi
@@ -67,8 +67,8 @@ find_next_db() {
         local redis_output
         
         if [ -n "$REDIS_ADMIN_PASSWORD" ]; then
-            # With password
-            redis_output=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" -a "$REDIS_ADMIN_PASSWORD" --no-auth-warning -n "$db_num" DBSIZE 2>&1)
+            # With password - use ACL admin user
+            redis_output=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" --user admin --pass "$REDIS_ADMIN_PASSWORD" --no-auth-warning -n "$db_num" DBSIZE 2>&1)
         else
             # Without password
             redis_output=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" -n "$db_num" DBSIZE 2>&1)
@@ -126,8 +126,8 @@ create_redis_user() {
     # Note: >password syntax is for Redis ACL, we need to properly escape it
     local result
     if [ -n "$REDIS_ADMIN_PASSWORD" ]; then
-        # With password
-        result=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" -a "$REDIS_ADMIN_PASSWORD" --no-auth-warning ACL SETUSER "$username" on ">${password}" ~* +@all 2>&1)
+        # With password - use ACL admin user
+        result=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" --user admin --pass "$REDIS_ADMIN_PASSWORD" --no-auth-warning ACL SETUSER "$username" on ">${password}" ~* +@all 2>&1)
     else
         # Without password
         result=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" ACL SETUSER "$username" on ">${password}" ~* +@all 2>&1)
@@ -136,9 +136,23 @@ create_redis_user() {
     if [ $? -eq 0 ] && [ "$result" = "OK" ]; then
         echo -e "${GREEN}✅ Redis user '$username' created successfully for database $db_num${NC}"
         
+        # Save ACL users to file to persist across restarts
+        local save_result
+        if [ -n "$REDIS_ADMIN_PASSWORD" ]; then
+            save_result=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" --user admin --pass "$REDIS_ADMIN_PASSWORD" --no-auth-warning ACL SAVE 2>&1)
+        else
+            save_result=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" ACL SAVE 2>&1)
+        fi
+        
+        if [ "$save_result" = "OK" ]; then
+            echo -e "${GREEN}✅ Redis ACL users saved to file${NC}"
+        else
+            echo -e "${YELLOW}⚠️  Failed to save ACL users to file: $save_result${NC}"
+        fi
+        
         # Verify user was created
         if [ -n "$REDIS_ADMIN_PASSWORD" ]; then
-            local verify=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" -a "$REDIS_ADMIN_PASSWORD" --no-auth-warning ACL GETUSER "$username" 2>&1)
+            local verify=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" --user admin --pass "$REDIS_ADMIN_PASSWORD" --no-auth-warning ACL GETUSER "$username" 2>&1)
         else
             local verify=$(redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" ACL GETUSER "$username" 2>&1)
         fi
@@ -180,7 +194,7 @@ mark_database_in_use() {
     echo -e "${YELLOW}📝 Marking database as in-use...${NC}"
     
     if [ -n "$REDIS_ADMIN_PASSWORD" ]; then
-        redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" -a "$REDIS_ADMIN_PASSWORD" --no-auth-warning -n "$db_num" SET "patchmon:initialized" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /dev/null
+        redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" --user admin --pass "$REDIS_ADMIN_PASSWORD" --no-auth-warning -n "$db_num" SET "patchmon:initialized" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /dev/null
     else
         redis-cli -h "$REDIS_HOST" -p "$REDIS_PORT" -n "$db_num" SET "patchmon:initialized" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /dev/null
     fi

@@ -1,5 +1,5 @@
-const { PrismaClient } = require("@prisma/client");
-const prisma = new PrismaClient();
+const { getPrismaClient } = require("../config/prisma");
+const prisma = getPrismaClient();
 
 // Permission middleware factory
 const requirePermission = (permission) => {

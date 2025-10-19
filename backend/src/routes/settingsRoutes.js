@@ -1,12 +1,12 @@
 const express = require("express");
 const { body, validationResult } = require("express-validator");
-const { PrismaClient } = require("@prisma/client");
+const { getPrismaClient } = require("../config/prisma");
 const { authenticateToken } = require("../middleware/auth");
 const { requireManageSettings } = require("../middleware/permissions");
 const { getSettings, updateSettings } = require("../services/settingsService");
 
 const router = express.Router();
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 // WebSocket broadcaster for agent policy updates (no longer used - queue-based delivery preferred)
 // const { broadcastSettingsUpdate } = require("../services/agentWs");

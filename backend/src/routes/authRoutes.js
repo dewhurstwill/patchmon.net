@@ -1,7 +1,7 @@
 const express = require("express");
 const bcrypt = require("bcryptjs");
 const jwt = require("jsonwebtoken");
-const { PrismaClient } = require("@prisma/client");
+const { getPrismaClient } = require("../config/prisma");
 const { body, validationResult } = require("express-validator");
 const { authenticateToken, _requireAdmin } = require("../middleware/auth");
 const {
@@ -20,7 +20,7 @@ const {
 } = require("../utils/session_manager");
 
 const router = express.Router();
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 /**
  * Parse user agent string to extract browser and OS info

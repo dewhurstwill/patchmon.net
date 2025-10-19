@@ -1,9 +1,9 @@
 const express = require("express");
 const router = express.Router();
-const { createPrismaClient } = require("../config/database");
+const { getPrismaClient } = require("../config/prisma");
 const { authenticateToken } = require("../middleware/auth");
 
-const prisma = createPrismaClient();
+const prisma = getPrismaClient();
 
 /**
  * Global search endpoint

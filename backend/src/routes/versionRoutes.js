@@ -1,9 +1,9 @@
 const express = require("express");
 const { authenticateToken } = require("../middleware/auth");
 const { requireManageSettings } = require("../middleware/permissions");
-const { PrismaClient } = require("@prisma/client");
+const { getPrismaClient } = require("../config/prisma");
 
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 // Default GitHub repository URL
 const DEFAULT_GITHUB_REPO = "https://github.com/PatchMon/PatchMon.git";
@@ -14,13 +14,13 @@ const router = express.Router();
 function getCurrentVersion() {
 	try {
 		const packageJson = require("../../package.json");
-		return packageJson?.version || "1.2.9";
+		return packageJson?.version || "1.3.0";
 	} catch (packageError) {
 		console.warn(
 			"Could not read version from package.json, using fallback:",
 			packageError.message,
 		);
-		return "1.2.9";
+		return "1.3.0";
 	}
 }
 

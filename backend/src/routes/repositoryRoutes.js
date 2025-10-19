@@ -1,6 +1,6 @@
 const express = require("express");
 const { body, validationResult } = require("express-validator");
-const { PrismaClient } = require("@prisma/client");
+const { getPrismaClient } = require("../config/prisma");
 const { authenticateToken } = require("../middleware/auth");
 const {
 	requireViewHosts,
@@ -8,7 +8,7 @@ const {
 } = require("../middleware/permissions");
 
 const router = express.Router();
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 // Get all repositories with host count
 router.get("/", authenticateToken, requireViewHosts, async (_req, res) => {

@@ -153,6 +153,14 @@ const Packages = () => {
 		}));
 	}, [packagesResponse]);
 
+	// Fetch dashboard stats for card counts (consistent with homepage)
+	const { data: dashboardStats } = useQuery({
+		queryKey: ["dashboardStats"],
+		queryFn: () => dashboardAPI.getStats().then((res) => res.data),
+		staleTime: 5 * 60 * 1000, // Data stays fresh for 5 minutes
+		refetchOnWindowFocus: false, // Don't refetch when window regains focus
+	});
+
 	// Fetch hosts data to get total packages count
 	const { data: hosts } = useQuery({
 		queryKey: ["hosts"],
@@ -446,24 +454,20 @@ const Packages = () => {
 	const uniquePackageHostsCount = uniquePackageHosts.size;
 
 	// Calculate total packages installed
-	// When filtering by host, count each package once (since it can only be installed once per host)
-	// When not filtering, sum up all installations across all hosts
-	const totalPackagesCount =
-		hostFilter && hostFilter !== "all"
-			? packages?.length || 0
-			: packages?.reduce(
-					(sum, pkg) => sum + (pkg.stats?.totalInstalls || 0),
-					0,
-				) || 0;
+	// Show unique package count (same as table) for consistency
+	const totalPackagesCount = packages?.length || 0;
 
-	// Calculate outdated packages
-	const outdatedPackagesCount =
-		packages?.filter((pkg) => (pkg.stats?.updatesNeeded || 0) > 0).length || 0;
-
-	// Calculate security updates
-	const securityUpdatesCount =
-		packages?.filter((pkg) => (pkg.stats?.securityUpdates || 0) > 0).length ||
+	// Calculate total installations across all hosts
+	const totalInstallationsCount =
+		packages?.reduce((sum, pkg) => sum + (pkg.stats?.totalInstalls || 0), 0) ||
 		0;
+
+	// Use dashboard stats for outdated packages count (consistent with homepage)
+	const outdatedPackagesCount =
+		dashboardStats?.cards?.totalOutdatedPackages || 0;
+
+	// Use dashboard stats for security updates count (consistent with homepage)
+	const securityUpdatesCount = dashboardStats?.cards?.securityUpdates || 0;
 
 	if (isLoading) {
 		return (
@@ -529,16 +533,30 @@ const Packages = () => {
 			</div>
 
 			{/* Summary Stats */}
-			<div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6 flex-shrink-0">
+			<div className="grid grid-cols-1 sm:grid-cols-5 gap-4 mb-6 flex-shrink-0">
 				<div className="card p-4 cursor-pointer hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow duration-200">
 					<div className="flex items-center">
 						<Package className="h-5 w-5 text-primary-600 mr-2" />
 						<div>
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Total Installed
+								Total Packages
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{totalPackagesCount}
+							</p>
+						</div>
+					</div>
+				</div>
+
+				<div className="card p-4 cursor-pointer hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow duration-200">
+					<div className="flex items-center">
+						<Package className="h-5 w-5 text-blue-600 mr-2" />
+						<div>
+							<p className="text-sm text-secondary-500 dark:text-white">
+								Total Installations
+							</p>
+							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
+								{totalInstallationsCount}
 							</p>
 						</div>
 					</div>

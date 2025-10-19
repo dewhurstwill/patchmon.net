@@ -1,9 +1,9 @@
 const express = require("express");
-const { createPrismaClient } = require("../config/database");
+const { getPrismaClient } = require("../config/prisma");
 const bcrypt = require("bcryptjs");
 
 const router = express.Router();
-const prisma = createPrismaClient();
+const prisma = getPrismaClient();
 
 // Middleware to authenticate API key
 const authenticateApiKey = async (req, res, next) => {
@@ -114,9 +114,15 @@ router.get("/stats", authenticateApiKey, async (_req, res) => {
 			where: { status: "active" },
 		});
 
-		// Get total outdated packages count
-		const totalOutdatedPackages = await prisma.host_packages.count({
-			where: { needs_update: true },
+		// Get total unique packages that need updates (consistent with dashboard)
+		const totalOutdatedPackages = await prisma.packages.count({
+			where: {
+				host_packages: {
+					some: {
+						needs_update: true,
+					},
+				},
+			},
 		});
 
 		// Get total repositories count
@@ -136,11 +142,15 @@ router.get("/stats", authenticateApiKey, async (_req, res) => {
 			},
 		});
 
-		// Get security updates count
-		const securityUpdates = await prisma.host_packages.count({
+		// Get security updates count (unique packages - consistent with dashboard)
+		const securityUpdates = await prisma.packages.count({
 			where: {
-				needs_update: true,
-				is_security_update: true,
+				host_packages: {
+					some: {
+						needs_update: true,
+						is_security_update: true,
+					},
+				},
 			},
 		});
 

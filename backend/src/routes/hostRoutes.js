@@ -1,5 +1,5 @@
 const express = require("express");
-const { PrismaClient } = require("@prisma/client");
+const { getPrismaClient } = require("../config/prisma");
 const { body, validationResult } = require("express-validator");
 const { v4: uuidv4 } = require("uuid");
 const crypto = require("node:crypto");
@@ -12,7 +12,7 @@ const {
 } = require("../middleware/permissions");
 
 const router = express.Router();
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 // Secure endpoint to download the agent script/binary (requires API authentication)
 router.get("/agent/download", async (req, res) => {
@@ -39,7 +39,10 @@ router.get("/agent/download", async (req, res) => {
 
 		// Check if this is a legacy agent (bash script) requesting update
 		// Legacy agents will have agent_version < 1.2.9 (excluding 1.2.9 itself)
+		// But allow forcing binary download for fresh installations
+		const forceBinary = req.query.force === "binary";
 		const isLegacyAgent =
+			!forceBinary &&
 			host.agent_version &&
 			((host.agent_version.startsWith("1.2.") &&
 				host.agent_version !== "1.2.9") ||
