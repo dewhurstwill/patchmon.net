@@ -153,6 +153,32 @@ while IFS= read -r line; do
     ip_address=$(timeout 5 pct exec "$vmid" -- hostname -I 2>/dev/null </dev/null | awk '{print $1}' || echo "unknown")
     os_info=$(timeout 5 pct exec "$vmid" -- cat /etc/os-release 2>/dev/null </dev/null | grep "^PRETTY_NAME=" | cut -d'"' -f2 || echo "unknown")
     
+    # Detect container architecture
+    debug "  Detecting container architecture..."
+    arch_raw=$(timeout 5 pct exec "$vmid" -- uname -m 2>/dev/null </dev/null || echo "unknown")
+    
+    # Map architecture to supported values
+    case "$arch_raw" in
+        "x86_64")
+            architecture="amd64"
+            ;;
+        "i386"|"i686")
+            architecture="386"
+            ;;
+        "aarch64"|"arm64")
+            architecture="arm64"
+            ;;
+        "armv7l"|"armv6l"|"arm")
+            architecture="arm"
+            ;;
+        *)
+            warn "  ⚠ Unknown architecture '$arch_raw', defaulting to amd64"
+            architecture="amd64"
+            ;;
+    esac
+    
+    debug "  Detected architecture: $arch_raw -> $architecture"
+    
     # Get machine ID from container
     machine_id=$(timeout 5 pct exec "$vmid" -- bash -c "cat /etc/machine-id 2>/dev/null || cat /var/lib/dbus/machine-id 2>/dev/null || echo 'proxmox-lxc-$vmid-'$(cat /proc/sys/kernel/random/uuid)" </dev/null 2>/dev/null || echo "proxmox-lxc-$vmid-unknown")
 
@@ -161,6 +187,7 @@ while IFS= read -r line; do
     info "  Hostname: $hostname"
     info "  IP Address: $ip_address"
     info "  OS: $os_info"
+    info "  Architecture: $architecture ($arch_raw)"
     info "  Machine ID: ${machine_id:0:16}..."
 
     if [[ "$DRY_RUN" == "true" ]]; then
@@ -244,12 +271,13 @@ while IFS= read -r line; do
         # Install PatchMon agent in container
         info "  Installing PatchMon agent..."
         
-        # Build install URL with force flag if enabled
-        install_url="$PATCHMON_URL/api/v1/hosts/install"
+        # Build install URL with force flag and architecture if enabled
+        install_url="$PATCHMON_URL/api/v1/hosts/install?arch=$architecture"
         if [[ "$FORCE_INSTALL" == "true" ]]; then
-            install_url="$install_url?force=true"
+            install_url="$install_url&force=true"
             info "  Using force mode - will bypass broken packages"
         fi
+        info "  Using architecture: $architecture"
         
         # Reset exit code for this container
         install_exit_code=0
@@ -400,7 +428,7 @@ if [[ ${#dpkg_error_containers[@]} -gt 0 ]]; then
                         -H \"X-API-ID: $api_id\" \
                         -H \"X-API-KEY: $api_key\" \
                         -o patchmon-install.sh \
-                        '$PATCHMON_URL/api/v1/hosts/install' && \
+                        '$PATCHMON_URL/api/v1/hosts/install?arch=$architecture' && \
                     bash patchmon-install.sh && \
                     rm -f patchmon-install.sh
                 " 2>&1 </dev/null) || install_exit_code=$?
