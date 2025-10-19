@@ -1,12 +1,12 @@
 const express = require("express");
-const { PrismaClient } = require("@prisma/client");
+const { getPrismaClient } = require("../config/prisma");
 const speakeasy = require("speakeasy");
 const QRCode = require("qrcode");
 const { authenticateToken } = require("../middleware/auth");
 const { body, validationResult } = require("express-validator");
 
 const router = express.Router();
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 // Generate TFA secret and QR code
 router.get("/setup", authenticateToken, async (req, res) => {

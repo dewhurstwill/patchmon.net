@@ -1,11 +1,11 @@
 const express = require("express");
 const { body, validationResult } = require("express-validator");
-const { PrismaClient } = require("@prisma/client");
+const { getPrismaClient } = require("../config/prisma");
 const { authenticateToken } = require("../middleware/auth");
 const { v4: uuidv4 } = require("uuid");
 
 const router = express.Router();
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 // Helper function to get user permissions based on role
 async function getUserPermissions(userRole) {

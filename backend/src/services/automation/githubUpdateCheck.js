@@ -52,7 +52,7 @@ class GitHubUpdateCheck {
 			}
 
 			// Read version from package.json
-			let currentVersion = "1.2.7"; // fallback
+			let currentVersion = "1.3.0"; // fallback
 			try {
 				const packageJson = require("../../../package.json");
 				if (packageJson?.version) {

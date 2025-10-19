@@ -1,5 +1,5 @@
 const express = require("express");
-const { PrismaClient } = require("@prisma/client");
+const { getPrismaClient } = require("../config/prisma");
 const moment = require("moment");
 const { authenticateToken } = require("../middleware/auth");
 const {
@@ -11,7 +11,7 @@ const {
 const { queueManager } = require("../services/automation");
 
 const router = express.Router();
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 // Get dashboard statistics
 router.get(
@@ -61,9 +61,15 @@ router.get(
 					},
 				}),
 
-				// Total outdated packages across all hosts
-				prisma.host_packages.count({
-					where: { needs_update: true },
+				// Total unique packages that need updates
+				prisma.packages.count({
+					where: {
+						host_packages: {
+							some: {
+								needs_update: true,
+							},
+						},
+					},
 				}),
 
 				// Errored hosts (not updated within threshold based on update interval)
@@ -76,11 +82,15 @@ router.get(
 					},
 				}),
 
-				// Security updates count
-				prisma.host_packages.count({
+				// Security updates count (unique packages)
+				prisma.packages.count({
 					where: {
-						needs_update: true,
-						is_security_update: true,
+						host_packages: {
+							some: {
+								needs_update: true,
+								is_security_update: true,
+							},
+						},
 					},
 				}),
 

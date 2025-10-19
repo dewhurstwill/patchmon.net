@@ -1,9 +1,9 @@
 const express = require("express");
 const { authenticateToken } = require("../middleware/auth");
-const { PrismaClient } = require("@prisma/client");
+const { getPrismaClient } = require("../config/prisma");
 const { v4: uuidv4 } = require("uuid");
 
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 const router = express.Router();
 
 // Helper function to convert BigInt fields to strings for JSON serialization

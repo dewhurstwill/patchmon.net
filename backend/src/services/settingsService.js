@@ -1,7 +1,7 @@
-const { PrismaClient } = require("@prisma/client");
+const { getPrismaClient } = require("../config/prisma");
 const { v4: uuidv4 } = require("uuid");
 
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 // Cached settings instance
 let cachedSettings = null;

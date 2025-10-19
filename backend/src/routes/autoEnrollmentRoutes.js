@@ -1,5 +1,5 @@
 const express = require("express");
-const { PrismaClient } = require("@prisma/client");
+const { getPrismaClient } = require("../config/prisma");
 const crypto = require("node:crypto");
 const bcrypt = require("bcryptjs");
 const { body, validationResult } = require("express-validator");
@@ -8,7 +8,7 @@ const { requireManageSettings } = require("../middleware/permissions");
 const { v4: uuidv4 } = require("uuid");
 
 const router = express.Router();
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 // Generate auto-enrollment token credentials
 const generate_auto_enrollment_token = () => {

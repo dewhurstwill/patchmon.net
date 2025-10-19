@@ -41,10 +41,10 @@ const helmet = require("helmet");
 const rateLimit = require("express-rate-limit");
 const cookieParser = require("cookie-parser");
 const {
-	createPrismaClient,
+	getPrismaClient,
 	waitForDatabase,
 	disconnectPrisma,
-} = require("./config/database");
+} = require("./config/prisma");
 const winston = require("winston");
 
 // Import routes
@@ -75,7 +75,7 @@ const { BullMQAdapter } = require("@bull-board/api/bullMQAdapter");
 const { ExpressAdapter } = require("@bull-board/express");
 
 // Initialize Prisma client with optimized connection pooling for multiple instances
-const prisma = createPrismaClient();
+const prisma = getPrismaClient();
 
 // Function to check and create default role permissions on startup
 async function checkAndCreateRolePermissions() {

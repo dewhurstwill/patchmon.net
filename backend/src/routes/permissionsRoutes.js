@@ -1,5 +1,5 @@
 const express = require("express");
-const { PrismaClient } = require("@prisma/client");
+const { getPrismaClient } = require("../config/prisma");
 const { authenticateToken } = require("../middleware/auth");
 const {
 	requireManageSettings,
@@ -7,7 +7,7 @@ const {
 } = require("../middleware/permissions");
 
 const router = express.Router();
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 // Get all role permissions (allow users who can manage users to view roles)
 router.get(

@@ -1,12 +1,12 @@
 const express = require("express");
 const { body, validationResult } = require("express-validator");
-const { PrismaClient } = require("@prisma/client");
+const { getPrismaClient } = require("../config/prisma");
 const { randomUUID } = require("node:crypto");
 const { authenticateToken } = require("../middleware/auth");
 const { requireManageHosts } = require("../middleware/permissions");
 
 const router = express.Router();
-const prisma = new PrismaClient();
+const prisma = getPrismaClient();
 
 // Get all host groups
 router.get("/", authenticateToken, async (_req, res) => {

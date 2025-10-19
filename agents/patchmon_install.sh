@@ -399,7 +399,7 @@ fi
 curl $CURL_FLAGS \
     -H "X-API-ID: $API_ID" \
     -H "X-API-KEY: $API_KEY" \
-    "$PATCHMON_URL/api/v1/hosts/agent/download?arch=$ARCHITECTURE" \
+    "$PATCHMON_URL/api/v1/hosts/agent/download?arch=$ARCHITECTURE&force=binary" \
     -o /usr/local/bin/patchmon-agent
 
 chmod +x /usr/local/bin/patchmon-agent

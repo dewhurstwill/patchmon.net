@@ -53,8 +53,6 @@ router.get("/status/:apiId/stream", async (req, res) => {
 			// Validate session (same as regular auth middleware)
 			const validation = await validate_session(decoded.sessionId, token);
 			if (!validation.valid) {
-				console.error("[SSE] Session validation failed:", validation.reason);
-				console.error("[SSE] Invalid session for api_id:", apiId);
 				return res.status(401).json({ error: "Invalid or expired session" });
 			}
 
@@ -62,9 +60,7 @@ router.get("/status/:apiId/stream", async (req, res) => {
 			await update_session_activity(decoded.sessionId);
 
 			req.user = validation.user;
-		} catch (err) {
-			console.error("[SSE] JWT verification failed:", err.message);
-			console.error("[SSE] Invalid token for api_id:", apiId);
+		} catch (_err) {
 			return res.status(401).json({ error: "Invalid or expired token" });
 		}
 

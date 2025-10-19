@@ -1,6 +1,6 @@
 /**
- * Database configuration for multiple instances
- * Optimizes connection pooling to prevent "too many connections" errors
+ * Centralized Prisma Client Singleton
+ * Prevents multiple Prisma clients from creating connection leaks
  */
 
 const { PrismaClient } = require("@prisma/client");
@@ -26,22 +26,43 @@ function getOptimizedDatabaseUrl() {
 	return url.toString();
 }
 
-// Create optimized Prisma client
-function createPrismaClient() {
-	const optimizedUrl = getOptimizedDatabaseUrl();
+// Singleton Prisma client instance
+let prismaInstance = null;
 
-	return new PrismaClient({
-		datasources: {
-			db: {
-				url: optimizedUrl,
+function getPrismaClient() {
+	if (!prismaInstance) {
+		const optimizedUrl = getOptimizedDatabaseUrl();
+
+		prismaInstance = new PrismaClient({
+			datasources: {
+				db: {
+					url: optimizedUrl,
+				},
 			},
-		},
-		log:
-			process.env.PRISMA_LOG_QUERIES === "true"
-				? ["query", "info", "warn", "error"]
-				: ["warn", "error"],
-		errorFormat: "pretty",
-	});
+			log:
+				process.env.PRISMA_LOG_QUERIES === "true"
+					? ["query", "info", "warn", "error"]
+					: ["warn", "error"],
+			errorFormat: "pretty",
+		});
+
+		// Handle graceful shutdown
+		process.on("beforeExit", async () => {
+			await prismaInstance.$disconnect();
+		});
+
+		process.on("SIGINT", async () => {
+			await prismaInstance.$disconnect();
+			process.exit(0);
+		});
+
+		process.on("SIGTERM", async () => {
+			await prismaInstance.$disconnect();
+			process.exit(0);
+		});
+	}
+
+	return prismaInstance;
 }
 
 // Connection health check
@@ -50,7 +71,7 @@ async function checkDatabaseConnection(prisma) {
 		await prisma.$queryRaw`SELECT 1`;
 		return true;
 	} catch (error) {
-		console.error("Database connection failed:", error.message);
+		console.error("Database connection check failed:", error.message);
 		return false;
 	}
 }
@@ -121,9 +142,8 @@ async function disconnectPrisma(prisma, maxRetries = 3) {
 }
 
 module.exports = {
-	createPrismaClient,
+	getPrismaClient,
 	checkDatabaseConnection,
 	waitForDatabase,
 	disconnectPrisma,
-	getOptimizedDatabaseUrl,
 };

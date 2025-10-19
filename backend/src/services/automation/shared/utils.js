@@ -33,7 +33,7 @@ async function checkPublicRepo(owner, repo) {
 	try {
 		const httpsRepoUrl = `https://api.github.com/repos/${owner}/${repo}/releases/latest`;
 
-		let currentVersion = "1.2.7"; // fallback
+		let currentVersion = "1.3.0"; // fallback
 		try {
 			const packageJson = require("../../../package.json");
 			if (packageJson?.version) {
