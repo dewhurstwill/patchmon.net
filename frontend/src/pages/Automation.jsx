@@ -227,7 +227,7 @@ const Automation = () => {
 
 		// Use the proxied URL through the frontend (port 3000)
 		// This avoids CORS issues as everything goes through the same origin
-		const url = `/admin/queues?token=${encodeURIComponent(token)}`;
+		const url = `/bullboard?token=${encodeURIComponent(token)}`;
 		window.open(url, "_blank", "width=1200,height=800");
 	};
 

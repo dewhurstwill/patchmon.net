@@ -445,8 +445,8 @@ app.use(`/api/${apiVersion}/ws`, wsRoutes);
 let bullBoardRouter = null;
 const bullBoardSessions = new Map(); // Store authenticated sessions
 
-// Mount Bull Board at /admin instead of /api/v1/admin to avoid path conflicts
-app.use(`/admin/queues`, (_req, res, next) => {
+// Mount Bull Board at /bullboard for cleaner URL
+app.use(`/bullboard`, (_req, res, next) => {
 	// Relax COOP/COEP for Bull Board in non-production to avoid browser warnings
 	if (process.env.NODE_ENV !== "production") {
 		res.setHeader("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
@@ -457,7 +457,7 @@ app.use(`/admin/queues`, (_req, res, next) => {
 });
 
 // Authentication middleware for Bull Board
-app.use(`/admin/queues`, async (req, res, next) => {
+app.use(`/bullboard`, async (req, res, next) => {
 	// Skip authentication for static assets only
 	if (req.path.includes("/static/") || req.path.includes("/favicon")) {
 		return next();
@@ -534,7 +534,7 @@ app.use(`/admin/queues`, async (req, res, next) => {
 	});
 });
 
-app.use(`/admin/queues`, (req, res, next) => {
+app.use(`/bullboard`, (req, res, next) => {
 	if (bullBoardRouter) {
 		return bullBoardRouter(req, res, next);
 	}
@@ -542,7 +542,7 @@ app.use(`/admin/queues`, (req, res, next) => {
 });
 
 // Error handler specifically for Bull Board routes
-app.use("/admin/queues", (err, req, res, _next) => {
+app.use("/bullboard", (err, req, res, _next) => {
 	console.error("Bull Board error on", req.method, req.url);
 	console.error("Error details:", err.message);
 	console.error("Stack:", err.stack);
@@ -874,7 +874,7 @@ async function startServer() {
 		// Set up Bull Board for queue monitoring
 		const serverAdapter = new ExpressAdapter();
 		// Set basePath to match where we mount the router
-		serverAdapter.setBasePath("/admin/queues");
+		serverAdapter.setBasePath("/bullboard");
 
 		const { QUEUE_NAMES } = require("./services/automation");
 		const bullAdapters = Object.values(QUEUE_NAMES).map(
@@ -888,7 +888,7 @@ async function startServer() {
 
 		// Set the router for the Bull Board middleware (secured middleware above)
 		bullBoardRouter = serverAdapter.getRouter();
-		console.log("✅ Bull Board mounted at /admin/queues (secured)");
+		console.log("✅ Bull Board mounted at /bullboard (secured)");
 
 		// Initialize WS layer with the underlying HTTP server
 		initAgentWs(server, prisma);
