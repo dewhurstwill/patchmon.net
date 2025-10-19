@@ -570,21 +570,24 @@ router.post(
 					os_version: "unknown",
 					api_id: api_id,
 					api_key: api_key,
-					host_group_id: req.auto_enrollment_token.default_host_group_id,
 					status: "pending",
 					notes: `Auto-enrolled via ${req.auto_enrollment_token.token_name} on ${new Date().toISOString()}`,
 					updated_at: new Date(),
 				},
-				include: {
-					host_groups: {
-						select: {
-							id: true,
-							name: true,
-							color: true,
-						},
-					},
-				},
 			});
+
+			// Create host group membership if default host group is specified
+			let hostGroupMembership = null;
+			if (req.auto_enrollment_token.default_host_group_id) {
+				hostGroupMembership = await prisma.host_group_memberships.create({
+					data: {
+						id: uuidv4(),
+						host_id: host.id,
+						host_group_id: req.auto_enrollment_token.default_host_group_id,
+						created_at: new Date(),
+					},
+				});
+			}
 
 			// Update token usage stats
 			await prisma.auto_enrollment_tokens.update({
@@ -600,6 +603,19 @@ router.post(
 				`Auto-enrolled host: ${friendly_name} (${host.id}) via token: ${req.auto_enrollment_token.token_name}`,
 			);
 
+			// Get host group details for response if membership was created
+			let hostGroup = null;
+			if (hostGroupMembership) {
+				hostGroup = await prisma.host_groups.findUnique({
+					where: { id: req.auto_enrollment_token.default_host_group_id },
+					select: {
+						id: true,
+						name: true,
+						color: true,
+					},
+				});
+			}
+
 			res.status(201).json({
 				message: "Host enrolled successfully",
 				host: {
@@ -607,7 +623,7 @@ router.post(
 					friendly_name: host.friendly_name,
 					api_id: api_id,
 					api_key: api_key,
-					host_group: host.host_groups,
+					host_group: hostGroup,
 					status: host.status,
 				},
 			});
@@ -698,12 +714,23 @@ router.post(
 							os_version: "unknown",
 							api_id: api_id,
 							api_key: api_key,
-							host_group_id: req.auto_enrollment_token.default_host_group_id,
 							status: "pending",
 							notes: `Auto-enrolled via ${req.auto_enrollment_token.token_name} on ${new Date().toISOString()}`,
 							updated_at: new Date(),
 						},
 					});
+
+					// Create host group membership if default host group is specified
+					if (req.auto_enrollment_token.default_host_group_id) {
+						await prisma.host_group_memberships.create({
+							data: {
+								id: uuidv4(),
+								host_id: host.id,
+								host_group_id: req.auto_enrollment_token.default_host_group_id,
+								created_at: new Date(),
+							},
+						});
+					}
 
 					results.success.push({
 						id: host.id,
