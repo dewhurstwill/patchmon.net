@@ -80,6 +80,9 @@ update_agents() {
         # Copy new agents
         cp -r /app/agents_backup/* /app/agents/
         
+        # Make agent binaries executable
+        chmod +x /app/agents/patchmon-agent-linux-* 2>/dev/null || true
+        
         # Verify update
         local new_version=$(get_agent_version "$current_agent")
         if [ "$new_version" = "$backup_version" ]; then
