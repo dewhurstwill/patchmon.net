@@ -132,6 +132,66 @@ function pushSettingsUpdate(apiId, newInterval) {
 	);
 }
 
+function pushUpdateNotification(apiId, updateInfo) {
+	const ws = apiIdToSocket.get(apiId);
+	if (ws && ws.readyState === WebSocket.OPEN) {
+		safeSend(
+			ws,
+			JSON.stringify({
+				type: "update_notification",
+				version: updateInfo.version,
+				force: updateInfo.force || false,
+				downloadUrl: updateInfo.downloadUrl,
+				message: updateInfo.message,
+			}),
+		);
+		console.log(
+			`📤 Pushed update notification to agent ${apiId}: version ${updateInfo.version}`,
+		);
+		return true;
+	} else {
+		console.log(
+			`⚠️ Agent ${apiId} not connected, cannot push update notification`,
+		);
+		return false;
+	}
+}
+
+async function pushUpdateNotificationToAll(updateInfo) {
+	let notifiedCount = 0;
+	let failedCount = 0;
+
+	for (const [apiId, ws] of apiIdToSocket) {
+		if (ws && ws.readyState === WebSocket.OPEN) {
+			try {
+				safeSend(
+					ws,
+					JSON.stringify({
+						type: "update_notification",
+						version: updateInfo.version,
+						force: updateInfo.force || false,
+						message: updateInfo.message,
+					}),
+				);
+				notifiedCount++;
+				console.log(
+					`📤 Pushed update notification to agent ${apiId}: version ${updateInfo.version}`,
+				);
+			} catch (error) {
+				failedCount++;
+				console.error(`❌ Failed to notify agent ${apiId}:`, error.message);
+			}
+		} else {
+			failedCount++;
+		}
+	}
+
+	console.log(
+		`📤 Update notification sent to ${notifiedCount} agents, ${failedCount} failed`,
+	);
+	return { notifiedCount, failedCount };
+}
+
 // Notify all subscribers when connection status changes
 function notifyConnectionChange(apiId, connected) {
 	const subscribers = connectionChangeSubscribers.get(apiId);
@@ -170,6 +230,8 @@ module.exports = {
 	broadcastSettingsUpdate,
 	pushReportNow,
 	pushSettingsUpdate,
+	pushUpdateNotification,
+	pushUpdateNotificationToAll,
 	// Expose read-only view of connected agents
 	getConnectedApiIds: () => Array.from(apiIdToSocket.keys()),
 	isConnected: (apiId) => {
