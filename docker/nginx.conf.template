@@ -24,12 +24,7 @@ server {
     add_header X-XSS-Protection "1; mode=block" always;
     add_header Referrer-Policy "strict-origin-when-cross-origin" always;
 
-    # Handle client-side routing
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-
-    # Bull Board proxy
+    # Bull Board proxy - must come before the root location to avoid conflicts
     location /bullboard {
         proxy_pass http://${BACKEND_HOST}:${BACKEND_PORT};
         proxy_set_header Host $host;
@@ -50,6 +45,11 @@ server {
         if ($request_method = 'OPTIONS') {
             return 204;
         }
+    }
+
+    # Handle client-side routing
+    location / {
+        try_files $uri $uri/ /index.html;
     }
 
     # API proxy
