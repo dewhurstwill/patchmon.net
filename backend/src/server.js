@@ -67,6 +67,7 @@ const gethomepageRoutes = require("./routes/gethomepageRoutes");
 const automationRoutes = require("./routes/automationRoutes");
 const dockerRoutes = require("./routes/dockerRoutes");
 const wsRoutes = require("./routes/wsRoutes");
+const agentVersionRoutes = require("./routes/agentVersionRoutes");
 const { initSettings } = require("./services/settingsService");
 const { queueManager } = require("./services/automation");
 const { authenticateToken, requireAdmin } = require("./middleware/auth");
@@ -262,6 +263,7 @@ const PORT = process.env.PORT || 3001;
 const http = require("node:http");
 const server = http.createServer(app);
 const { init: initAgentWs } = require("./services/agentWs");
+const agentVersionService = require("./services/agentVersionService");
 
 // Trust proxy (needed when behind reverse proxy) and remove X-Powered-By
 if (process.env.TRUST_PROXY) {
@@ -440,6 +442,7 @@ app.use(`/api/${apiVersion}/gethomepage`, gethomepageRoutes);
 app.use(`/api/${apiVersion}/automation`, automationRoutes);
 app.use(`/api/${apiVersion}/docker`, dockerRoutes);
 app.use(`/api/${apiVersion}/ws`, wsRoutes);
+app.use(`/api/${apiVersion}/agent`, agentVersionRoutes);
 
 // Bull Board - will be populated after queue manager initializes
 let bullBoardRouter = null;
@@ -892,6 +895,7 @@ async function startServer() {
 
 		// Initialize WS layer with the underlying HTTP server
 		initAgentWs(server, prisma);
+		await agentVersionService.initialize();
 
 		server.listen(PORT, () => {
 			if (process.env.ENABLE_LOGGING === "true") {
