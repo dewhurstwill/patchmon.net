@@ -410,11 +410,26 @@ class AgentVersionService {
 	async getVersionInfo() {
 		let hasUpdate = false;
 		let updateStatus = "unknown";
+		let effectiveLatestVersion = this.currentVersion; // Always use local version if available
 
-		if (this.currentVersion && this.latestVersion) {
+		// If we have a local version, use it as the latest regardless of GitHub
+		if (this.currentVersion) {
+			effectiveLatestVersion = this.currentVersion;
+			console.log(
+				`🔄 Using local agent version ${this.currentVersion} as latest`,
+			);
+		} else if (this.latestVersion) {
+			// Fallback to GitHub version only if no local version
+			effectiveLatestVersion = this.latestVersion;
+			console.log(
+				`🔄 No local version found, using GitHub version ${this.latestVersion}`,
+			);
+		}
+
+		if (this.currentVersion && effectiveLatestVersion) {
 			const comparison = compareVersions(
 				this.currentVersion,
-				this.latestVersion,
+				effectiveLatestVersion,
 			);
 			if (comparison < 0) {
 				hasUpdate = true;
@@ -426,25 +441,25 @@ class AgentVersionService {
 				hasUpdate = false;
 				updateStatus = "up-to-date";
 			}
-		} else if (this.latestVersion && !this.currentVersion) {
+		} else if (effectiveLatestVersion && !this.currentVersion) {
 			hasUpdate = true;
 			updateStatus = "no-agent";
-		} else if (this.currentVersion && !this.latestVersion) {
+		} else if (this.currentVersion && !effectiveLatestVersion) {
 			// We have a current version but no latest version (GitHub API unavailable)
 			hasUpdate = false;
 			updateStatus = "github-unavailable";
-		} else if (!this.currentVersion && !this.latestVersion) {
+		} else if (!this.currentVersion && !effectiveLatestVersion) {
 			updateStatus = "no-data";
 		}
 
 		return {
 			currentVersion: this.currentVersion,
-			latestVersion: this.latestVersion,
+			latestVersion: effectiveLatestVersion,
 			hasUpdate: hasUpdate,
 			updateStatus: updateStatus,
 			lastChecked: this.lastChecked,
 			supportedArchitectures: this.supportedArchitectures,
-			status: this.latestVersion ? "ready" : "no-releases",
+			status: effectiveLatestVersion ? "ready" : "no-releases",
 		};
 	}
 
@@ -511,6 +526,32 @@ class AgentVersionService {
 
 	async getBinaryInfo(version, architecture) {
 		try {
+			// Always use local version if it matches the requested version
+			if (version === this.currentVersion && this.currentVersion) {
+				const binaryPath = await this.getBinaryPath(
+					this.currentVersion,
+					architecture,
+				);
+				const stats = await fs.stat(binaryPath);
+
+				// Calculate file hash
+				const fileBuffer = await fs.readFile(binaryPath);
+				const hash = crypto
+					.createHash("sha256")
+					.update(fileBuffer)
+					.digest("hex");
+
+				return {
+					version: this.currentVersion,
+					architecture,
+					size: stats.size,
+					hash,
+					lastModified: stats.mtime,
+					path: binaryPath,
+				};
+			}
+
+			// For other versions, try to find them in the agents folder
 			const binaryPath = await this.getBinaryPath(version, architecture);
 			const stats = await fs.stat(binaryPath);
 
