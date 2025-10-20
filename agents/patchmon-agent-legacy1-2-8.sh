@@ -1,12 +1,12 @@
 #!/bin/bash
 
-# PatchMon Agent Script v1.2.9
+# PatchMon Agent Script v1.2.8
 # This script sends package update information to the PatchMon server using API credentials
 
 # Configuration
 PATCHMON_SERVER="${PATCHMON_SERVER:-http://localhost:3001}"
 API_VERSION="v1"
-AGENT_VERSION="1.2.9"
+AGENT_VERSION="1.2.8"
 CONFIG_FILE="/etc/patchmon/agent.conf"
 CREDENTIALS_FILE="/etc/patchmon/credentials"
 LOG_FILE="/var/log/patchmon-agent.log"
@@ -38,21 +38,21 @@ error() {
     exit 1
 }
 
-# Info logging (cleaner output - only stderr, no duplicate logging)
+# Info logging (cleaner output - only stdout, no duplicate logging)
 info() {
-    echo -e "${BLUE}ℹ️  $1${NC}" >&2
+    echo -e "${BLUE}ℹ️  $1${NC}"
     log "INFO: $1"
 }
 
-# Success logging (cleaner output - only stderr, no duplicate logging)
+# Success logging (cleaner output - only stdout, no duplicate logging)
 success() {
-    echo -e "${GREEN}✅ $1${NC}" >&2
+    echo -e "${GREEN}✅ $1${NC}"
     log "SUCCESS: $1"
 }
 
-# Warning logging (cleaner output - only stderr, no duplicate logging)
+# Warning logging (cleaner output - only stdout, no duplicate logging)
 warning() {
-    echo -e "${YELLOW}⚠️  $1${NC}" >&2
+    echo -e "${YELLOW}⚠️  $1${NC}"
     log "WARNING: $1"
 }
 
@@ -709,135 +709,6 @@ get_package_info() {
     echo "$packages_json"
 }
 
-# Check and handle APT locks
-handle_apt_locks() {
-    local interactive=${1:-false}  # First parameter indicates if running interactively
-    
-    local lock_files=(
-        "/var/lib/dpkg/lock"
-        "/var/lib/dpkg/lock-frontend"
-        "/var/lib/apt/lists/lock"
-        "/var/cache/apt/archives/lock"
-    )
-    
-    local processes_found=false
-    local hung_processes=()
-    
-    # Check for running APT processes
-    if pgrep -x "apt-get|apt|aptitude|dpkg|unattended-upgr" > /dev/null 2>&1; then
-        processes_found=true
-        info "Found running package management processes:"
-        echo "" >&2
-        
-        # Get process info with ACTUAL elapsed time (not CPU time)
-        # Using ps -eo format to get real elapsed time
-        while IFS= read -r line; do
-            [[ -z "$line" ]] && continue
-            
-            local pid=$(echo "$line" | awk '{print $1}')
-            local elapsed=$(echo "$line" | awk '{print $2}')
-            local cmd=$(echo "$line" | awk '{for(i=3;i<=NF;i++) printf "%s ", $i; print ""}')
-            
-            # Display process info
-            echo "  PID $pid: $cmd (running for $elapsed)" >&2
-            
-            # Parse elapsed time and convert to seconds
-            # Format can be: MM:SS, HH:MM:SS, DD-HH:MM:SS, or just SS
-            # Use 10# prefix to force base-10 (avoid octal interpretation of leading zeros)
-            local runtime_seconds=0
-            if [[ "$elapsed" =~ ^([0-9]+)-([0-9]+):([0-9]+):([0-9]+)$ ]]; then
-                # Format: DD-HH:MM:SS
-                runtime_seconds=$(( 10#${BASH_REMATCH[1]} * 86400 + 10#${BASH_REMATCH[2]} * 3600 + 10#${BASH_REMATCH[3]} * 60 + 10#${BASH_REMATCH[4]} ))
-            elif [[ "$elapsed" =~ ^([0-9]+):([0-9]+):([0-9]+)$ ]]; then
-                # Format: HH:MM:SS
-                runtime_seconds=$(( 10#${BASH_REMATCH[1]} * 3600 + 10#${BASH_REMATCH[2]} * 60 + 10#${BASH_REMATCH[3]} ))
-            elif [[ "$elapsed" =~ ^([0-9]+):([0-9]+)$ ]]; then
-                # Format: MM:SS
-                runtime_seconds=$(( 10#${BASH_REMATCH[1]} * 60 + 10#${BASH_REMATCH[2]} ))
-            elif [[ "$elapsed" =~ ^([0-9]+)$ ]]; then
-                # Format: just seconds
-                runtime_seconds=$((10#${BASH_REMATCH[1]}))
-            fi
-            
-            # Consider process hung if running for more than 5 minutes
-            if [[ $runtime_seconds -gt 300 ]]; then
-                hung_processes+=("$pid:$elapsed:$cmd")
-            fi
-        done < <(ps -eo pid,etime,cmd | grep -E "apt-get|apt[^-]|aptitude|dpkg|unattended-upgr" | grep -v grep | grep -v "ps -eo")
-        
-        echo "" >&2
-        
-        info "Detected ${#hung_processes[@]} hung process(es), interactive=$interactive"
-        
-        # If hung processes found and running interactively, offer to kill them
-        if [[ ${#hung_processes[@]} -gt 0 && "$interactive" == "true" ]]; then
-            warning "Found ${#hung_processes[@]} potentially hung process(es) (running > 5 minutes)"
-            echo "" >&2
-            
-            for process_info in "${hung_processes[@]}"; do
-                IFS=':' read -r pid elapsed cmd <<< "$process_info"
-                echo "  PID $pid: $cmd (hung for $elapsed)" >&2
-            done
-            
-            echo "" >&2
-            read -p "$(echo -e "${YELLOW}⚠️  Do you want to kill these processes? [y/N]:${NC} ")" -n 1 -r >&2
-            echo "" >&2
-            
-            if [[ $REPLY =~ ^[Yy]$ ]]; then
-                for process_info in "${hung_processes[@]}"; do
-                    IFS=':' read -r pid elapsed cmd <<< "$process_info"
-                    info "Killing process $pid..."
-                    if kill "$pid" 2>/dev/null; then
-                        success "Killed process $pid"
-                        sleep 1
-                        # Check if process is still running
-                        if kill -0 "$pid" 2>/dev/null; then
-                            warning "Process $pid still running, using SIGKILL..."
-                            kill -9 "$pid" 2>/dev/null
-                            success "Force killed process $pid"
-                        fi
-                    else
-                        warning "Could not kill process $pid (may require sudo)"
-                    fi
-                done
-                
-                # Wait a moment for locks to clear
-                sleep 2
-            else
-                info "Skipping process termination"
-            fi
-        elif [[ ${#hung_processes[@]} -gt 0 ]]; then
-            warning "Found ${#hung_processes[@]} potentially hung process(es) (running > 5 minutes)"
-            info "Run this command with sudo and interactively to kill hung processes"
-        fi
-    fi
-    
-    # Check for stale lock files (files that exist but no process is holding them)
-    for lock_file in "${lock_files[@]}"; do
-        if [[ -f "$lock_file" ]]; then
-            # Try to get the PID from the lock file if it exists
-            if lsof "$lock_file" > /dev/null 2>&1; then
-                info "Lock file $lock_file is held by an active process"
-            else
-                warning "Found stale lock file: $lock_file"
-                info "Attempting to remove stale lock..."
-                if rm -f "$lock_file" 2>/dev/null; then
-                    success "Removed stale lock: $lock_file"
-                else
-                    warning "Could not remove lock (insufficient permissions): $lock_file"
-                fi
-            fi
-        fi
-    done
-    
-    # If processes were found, return failure so caller can wait
-    if [[ "$processes_found" == true ]]; then
-        return 1
-    else
-        return 0
-    fi
-}
-
 # Get package info for APT-based systems
 get_apt_packages() {
     local -n packages_ref=$1
@@ -854,25 +725,10 @@ get_apt_packages() {
         else
             retry_count=$((retry_count + 1))
             if [[ $retry_count -lt $max_retries ]]; then
-                warning "APT lock detected (attempt $retry_count/$max_retries)"
-                
-                # On first retry, try to handle locks
-                if [[ $retry_count -eq 1 ]]; then
-                    info "Checking for stale APT locks..."
-                    # Check if running interactively (stdin is a terminal OR stdout is a terminal)
-                    local is_interactive=false
-                    if [[ -t 0 ]] || [[ -t 1 ]]; then
-                        is_interactive=true
-                    fi
-                    info "Interactive mode: $is_interactive"
-                    handle_apt_locks "$is_interactive"
-                fi
-                
-                info "Waiting ${retry_delay} seconds before retry..."
+                warning "APT lock detected, retrying in ${retry_delay} seconds... (attempt $retry_count/$max_retries)"
                 sleep $retry_delay
             else
-                warning "APT lock persists after $max_retries attempts"
-                warning "Continuing without updating package lists (will use cached data)"
+                warning "APT lock persists after $max_retries attempts, continuing without update..."
             fi
         fi
     done
@@ -1708,21 +1564,9 @@ main() {
         "diagnostics")
             show_diagnostics
             ;;
-        "clear-locks"|"unlock")
-            check_root
-            info "Checking APT locks and hung processes..."
-            echo ""
-            handle_apt_locks true
-            echo ""
-            if [[ $? -eq 0 ]]; then
-                success "No APT locks or processes blocking package management"
-            else
-                info "APT processes are still running - they may be legitimate operations"
-            fi
-            ;;
         *)
             echo "PatchMon Agent v$AGENT_VERSION - API Credential Based"
-            echo "Usage: $0 {configure|test|update|ping|config|check-version|check-agent-update|update-agent|update-crontab|clear-locks|diagnostics}"
+            echo "Usage: $0 {configure|test|update|ping|config|check-version|check-agent-update|update-agent|update-crontab|diagnostics}"
             echo ""
             echo "Commands:"
             echo "  configure <API_ID> <API_KEY> [SERVER_URL] - Configure API credentials for this host"
@@ -1734,7 +1578,6 @@ main() {
             echo "  check-agent-update            - Check for agent updates using timestamp comparison"
             echo "  update-agent                  - Update agent to latest version"
             echo "  update-crontab                - Update crontab with current policy"
-            echo "  clear-locks                   - Check and clear APT locks (interactive)"
             echo "  diagnostics                   - Show detailed system diagnostics"
             echo ""
             echo "Setup Process:"
