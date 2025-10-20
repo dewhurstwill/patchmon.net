@@ -123,35 +123,97 @@ router.get("/agent/download", async (req, res) => {
 });
 
 // Version check endpoint for agents
-router.get("/agent/version", async (_req, res) => {
+router.get("/agent/version", async (req, res) => {
 	try {
 		const fs = require("node:fs");
 		const path = require("node:path");
+		const { exec } = require("node:child_process");
+		const { promisify } = require("node:util");
+		const execAsync = promisify(exec);
 
-		// Read version directly from agent script file
-		const agentPath = path.join(__dirname, "../../../agents/patchmon-agent.sh");
+		// Get architecture parameter (default to amd64 for Go agents)
+		const architecture = req.query.arch || "amd64";
+		const agentType = req.query.type || "go"; // "go" or "legacy"
 
-		if (!fs.existsSync(agentPath)) {
-			return res.status(404).json({ error: "Agent script not found" });
+		if (agentType === "legacy") {
+			// Legacy agent version check (bash script)
+			const agentPath = path.join(
+				__dirname,
+				"../../../agents/patchmon-agent.sh",
+			);
+
+			if (!fs.existsSync(agentPath)) {
+				return res.status(404).json({ error: "Legacy agent script not found" });
+			}
+
+			const scriptContent = fs.readFileSync(agentPath, "utf8");
+			const versionMatch = scriptContent.match(/AGENT_VERSION="([^"]+)"/);
+
+			if (!versionMatch) {
+				return res
+					.status(500)
+					.json({ error: "Could not extract version from agent script" });
+			}
+
+			const currentVersion = versionMatch[1];
+
+			res.json({
+				currentVersion: currentVersion,
+				downloadUrl: `/api/v1/hosts/agent/download`,
+				releaseNotes: `PatchMon Agent v${currentVersion}`,
+				minServerVersion: null,
+			});
+		} else {
+			// Go agent version check (binary)
+			const binaryName = `patchmon-agent-linux-${architecture}`;
+			const binaryPath = path.join(__dirname, "../../../agents", binaryName);
+
+			if (!fs.existsSync(binaryPath)) {
+				return res.status(404).json({
+					error: `Go agent binary not found for architecture: ${architecture}`,
+				});
+			}
+
+			// Execute the binary to get its version
+			try {
+				const { stdout } = await execAsync(`${binaryPath} --help`, {
+					timeout: 10000,
+				});
+
+				// Parse version from help output (e.g., "PatchMon Agent v1.3.1")
+				const versionMatch = stdout.match(
+					/PatchMon Agent v([0-9]+\.[0-9]+\.[0-9]+)/i,
+				);
+
+				if (!versionMatch) {
+					return res.status(500).json({
+						error: "Could not extract version from agent binary",
+					});
+				}
+
+				const serverVersion = versionMatch[1];
+				const agentVersion = req.query.currentVersion || serverVersion;
+
+				// Simple version comparison (assuming semantic versioning)
+				const hasUpdate = agentVersion !== serverVersion;
+
+				res.json({
+					currentVersion: agentVersion,
+					latestVersion: serverVersion,
+					hasUpdate: hasUpdate,
+					downloadUrl: `/api/v1/hosts/agent/download?arch=${architecture}`,
+					releaseNotes: `PatchMon Agent v${serverVersion}`,
+					minServerVersion: null,
+					architecture: architecture,
+					agentType: "go",
+				});
+			} catch (execError) {
+				console.error("Failed to execute agent binary:", execError.message);
+				return res.status(500).json({
+					error: "Failed to get version from agent binary",
+				});
+			}
 		}
-
-		const scriptContent = fs.readFileSync(agentPath, "utf8");
-		const versionMatch = scriptContent.match(/AGENT_VERSION="([^"]+)"/);
-
-		if (!versionMatch) {
-			return res
-				.status(500)
-				.json({ error: "Could not extract version from agent script" });
-		}
-
-		const currentVersion = versionMatch[1];
-
-		res.json({
-			currentVersion: currentVersion,
-			downloadUrl: `/api/v1/hosts/agent/download`,
-			releaseNotes: `PatchMon Agent v${currentVersion}`,
-			minServerVersion: null,
-		});
 	} catch (error) {
 		console.error("Version check error:", error);
 		res.status(500).json({ error: "Failed to get agent version" });
