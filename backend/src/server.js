@@ -341,20 +341,50 @@ const parseOrigins = (val) =>
 		.map((s) => s.trim())
 		.filter(Boolean);
 const allowedOrigins = parseOrigins(
-	process.env.CORS_ORIGINS || process.env.CORS_ORIGIN || "http://fabio:3000",
+	process.env.CORS_ORIGINS ||
+		process.env.CORS_ORIGIN ||
+		"http://localhost:3000",
 );
+
+// Add Bull Board origin to allowed origins if not already present
+const bullBoardOrigin = process.env.CORS_ORIGIN || "http://localhost:3000";
+if (!allowedOrigins.includes(bullBoardOrigin)) {
+	allowedOrigins.push(bullBoardOrigin);
+}
+
 app.use(
 	cors({
 		origin: (origin, callback) => {
 			// Allow non-browser/SSR tools with no origin
 			if (!origin) return callback(null, true);
 			if (allowedOrigins.includes(origin)) return callback(null, true);
+
+			// Allow Bull Board requests from the same origin as CORS_ORIGIN
+			if (origin === bullBoardOrigin) return callback(null, true);
+
 			// Allow same-origin requests (e.g., Bull Board accessing its own API)
 			// This allows http://hostname:3001 to make requests to http://hostname:3001
 			if (origin?.includes(":3001")) return callback(null, true);
+
+			// Allow Bull Board requests from the frontend origin (same host, different port)
+			// This handles cases where frontend is on port 3000 and backend on 3001
+			const frontendOrigin = origin?.replace(/:3001$/, ":3000");
+			if (frontendOrigin && allowedOrigins.includes(frontendOrigin)) {
+				return callback(null, true);
+			}
+
 			return callback(new Error("Not allowed by CORS"));
 		},
 		credentials: true,
+		// Additional CORS options for better cookie handling
+		optionsSuccessStatus: 200,
+		methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+		allowedHeaders: [
+			"Content-Type",
+			"Authorization",
+			"Cookie",
+			"X-Requested-With",
+		],
 	}),
 );
 app.use(limiter);
@@ -446,7 +476,7 @@ app.use(`/api/${apiVersion}/agent`, agentVersionRoutes);
 
 // Bull Board - will be populated after queue manager initializes
 let bullBoardRouter = null;
-const bullBoardSessions = new Map(); // Store authenticated sessions
+const _bullBoardSessions = new Map(); // Store authenticated sessions
 
 // Mount Bull Board at /bullboard for cleaner URL
 app.use(`/bullboard`, (_req, res, next) => {
@@ -456,14 +486,174 @@ app.use(`/bullboard`, (_req, res, next) => {
 		res.setHeader("Cross-Origin-Embedder-Policy", "unsafe-none");
 	}
 
+	// Add headers to help with WebSocket connections
+	res.setHeader("X-Frame-Options", "SAMEORIGIN");
+	res.setHeader(
+		"Content-Security-Policy",
+		"default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' ws: wss:;",
+	);
+
 	next();
 });
 
-// Authentication middleware for Bull Board
+// Simplified Bull Board authentication - just validate token once and set a simple auth cookie
 app.use(`/bullboard`, async (req, res, next) => {
-	// Skip authentication for static assets only
+	// Skip authentication for static assets
 	if (req.path.includes("/static/") || req.path.includes("/favicon")) {
 		return next();
+	}
+
+	// Check for existing Bull Board auth cookie
+	if (req.cookies["bull-board-auth"]) {
+		// Already authenticated, allow access
+		return next();
+	}
+
+	// No auth cookie - check for token in query
+	const token = req.query.token;
+	if (!token) {
+		return res.status(401).json({
+			error:
+				"Authentication required. Please access Bull Board from the Automation page.",
+		});
+	}
+
+	// Validate token and set auth cookie
+	req.headers.authorization = `Bearer ${token}`;
+	return authenticateToken(req, res, (err) => {
+		if (err) {
+			return res.status(401).json({ error: "Invalid authentication token" });
+		}
+		return requireAdmin(req, res, (adminErr) => {
+			if (adminErr) {
+				return res.status(403).json({ error: "Admin access required" });
+			}
+
+			// Set a simple auth cookie that will persist for the session
+			res.cookie("bull-board-auth", token, {
+				httpOnly: false,
+				secure: false,
+				maxAge: 3600000, // 1 hour
+				path: "/bullboard",
+				sameSite: "lax",
+			});
+
+			console.log("Bull Board - Authentication successful, cookie set");
+			return next();
+		});
+	});
+});
+
+// Remove all the old complex middleware below and replace with the new Bull Board router setup
+app.use(`/bullboard`, (req, res, next) => {
+	if (bullBoardRouter) {
+		return bullBoardRouter(req, res, next);
+	}
+	return res.status(503).json({ error: "Bull Board not initialized yet" });
+});
+
+/*
+// OLD MIDDLEWARE - REMOVED FOR SIMPLIFICATION - DO NOT USE
+if (false) {
+		const sessionId = req.cookies["bull-board-session"];
+		console.log("Bull Board API call - Session ID:", sessionId ? "present" : "missing");
+		console.log("Bull Board API call - Cookies:", req.cookies);
+		console.log("Bull Board API call - Bull Board token cookie:", req.cookies["bull-board-token"] ? "present" : "missing");
+		console.log("Bull Board API call - Query token:", req.query.token ? "present" : "missing");
+		console.log("Bull Board API call - Auth header:", req.headers.authorization ? "present" : "missing");
+		console.log("Bull Board API call - Origin:", req.headers.origin || "missing");
+		console.log("Bull Board API call - Referer:", req.headers.referer || "missing");
+		
+		// Check if we have any authentication method available
+		const hasSession = !!sessionId;
+		const hasTokenCookie = !!req.cookies["bull-board-token"];
+		const hasQueryToken = !!req.query.token;
+		const hasAuthHeader = !!req.headers.authorization;
+		const hasReferer = !!req.headers.referer;
+		
+		console.log("Bull Board API call - Auth methods available:", {
+			session: hasSession,
+			tokenCookie: hasTokenCookie,
+			queryToken: hasQueryToken,
+			authHeader: hasAuthHeader,
+			referer: hasReferer
+		});
+		
+		// Check for valid session first
+		if (sessionId) {
+			const session = bullBoardSessions.get(sessionId);
+			console.log("Bull Board API call - Session found:", !!session);
+			if (session && Date.now() - session.timestamp < 3600000) {
+				// Valid session, extend it
+				session.timestamp = Date.now();
+				console.log("Bull Board API call - Using existing session, proceeding");
+				return next();
+			} else if (session) {
+				// Expired session, remove it
+				console.log("Bull Board API call - Session expired, removing");
+				bullBoardSessions.delete(sessionId);
+			}
+		}
+		
+		// No valid session, check for token as fallback
+		let token = req.query.token;
+		if (!token && req.headers.authorization) {
+			token = req.headers.authorization.replace("Bearer ", "");
+		}
+		if (!token && req.cookies["bull-board-token"]) {
+			token = req.cookies["bull-board-token"];
+		}
+		
+		// For API calls, also check if the token is in the referer URL
+		// This handles cases where the main page hasn't set the cookie yet
+		if (!token && req.headers.referer) {
+			try {
+				const refererUrl = new URL(req.headers.referer);
+				const refererToken = refererUrl.searchParams.get('token');
+				if (refererToken) {
+					token = refererToken;
+					console.log("Bull Board API call - Token found in referer URL:", refererToken.substring(0, 20) + "...");
+				} else {
+					console.log("Bull Board API call - No token found in referer URL");
+					// If no token in referer and no session, return 401 with redirect info
+					if (!sessionId) {
+						console.log("Bull Board API call - No authentication available, returning 401");
+						return res.status(401).json({ 
+							error: "Authentication required", 
+							message: "Please refresh the page to re-authenticate"
+						});
+					}
+				}
+			} catch (error) {
+				console.log("Bull Board API call - Error parsing referer URL:", error.message);
+			}
+		}
+		
+		if (token) {
+			console.log("Bull Board API call - Token found, authenticating");
+			// Add token to headers for authentication
+			req.headers.authorization = `Bearer ${token}`;
+			
+			// Authenticate the user
+			return authenticateToken(req, res, (err) => {
+				if (err) {
+					console.log("Bull Board API call - Token authentication failed");
+					return res.status(401).json({ error: "Authentication failed" });
+				}
+				return requireAdmin(req, res, (adminErr) => {
+					if (adminErr) {
+						console.log("Bull Board API call - Admin access required");
+						return res.status(403).json({ error: "Admin access required" });
+					}
+					console.log("Bull Board API call - Token authentication successful");
+					return next();
+				});
+			});
+		}
+		
+		// No valid session or token for API calls, deny access
+		console.log("Bull Board API call - No valid session or token, denying access");
+		return res.status(401).json({ error: "Valid Bull Board session or token required" });
 	}
 
 	// Check for bull-board-session cookie first
@@ -485,6 +675,9 @@ app.use(`/bullboard`, async (req, res, next) => {
 	let token = req.query.token;
 	if (!token && req.headers.authorization) {
 		token = req.headers.authorization.replace("Bearer ", "");
+	}
+	if (!token && req.cookies["bull-board-token"]) {
+		token = req.cookies["bull-board-token"];
 	}
 
 	// If no token, deny access
@@ -514,13 +707,23 @@ app.use(`/bullboard`, async (req, res, next) => {
 				userId: req.user.id,
 			});
 
-			// Set session cookie
-			res.cookie("bull-board-session", newSessionId, {
+			// Set session cookie with proper configuration for domain access
+			const isHttps = process.env.NODE_ENV === "production" || process.env.SERVER_PROTOCOL === "https";
+			const cookieOptions = {
 				httpOnly: true,
-				secure: process.env.NODE_ENV === "production",
-				sameSite: "lax",
+				secure: isHttps,
 				maxAge: 3600000, // 1 hour
-			});
+				path: "/", // Set path to root so it's available for all Bull Board requests
+			};
+			
+			// Configure sameSite based on protocol and environment
+			if (isHttps) {
+				cookieOptions.sameSite = "none"; // Required for HTTPS cross-origin
+			} else {
+				cookieOptions.sameSite = "lax"; // Better for HTTP same-origin
+			}
+			
+			res.cookie("bull-board-session", newSessionId, cookieOptions);
 
 			// Clean up old sessions periodically
 			if (bullBoardSessions.size > 100) {
@@ -536,13 +739,111 @@ app.use(`/bullboard`, async (req, res, next) => {
 		});
 	});
 });
+*/
 
+// Second middleware block - COMMENTED OUT - using simplified version above instead
+/*
 app.use(`/bullboard`, (req, res, next) => {
 	if (bullBoardRouter) {
+		// If this is the main Bull Board page (not an API call), inject the token and create session
+		if (!req.path.includes("/api/") && !req.path.includes("/static/") && req.path === "/bullboard") {
+			const token = req.query.token;
+			console.log("Bull Board main page - Token:", token ? "present" : "missing");
+			console.log("Bull Board main page - Query params:", req.query);
+			console.log("Bull Board main page - Origin:", req.headers.origin || "missing");
+			console.log("Bull Board main page - Referer:", req.headers.referer || "missing");
+			console.log("Bull Board main page - Cookies:", req.cookies);
+			
+			if (token) {
+				// Authenticate the user and create a session immediately on page load
+				req.headers.authorization = `Bearer ${token}`;
+				
+				return authenticateToken(req, res, (err) => {
+					if (err) {
+						console.log("Bull Board main page - Token authentication failed");
+						return res.status(401).json({ error: "Authentication failed" });
+					}
+					return requireAdmin(req, res, (adminErr) => {
+						if (adminErr) {
+							console.log("Bull Board main page - Admin access required");
+							return res.status(403).json({ error: "Admin access required" });
+						}
+						
+						console.log("Bull Board main page - Token authentication successful, creating session");
+						
+						// Create a Bull Board session immediately
+						const newSessionId = require("node:crypto")
+							.randomBytes(32)
+							.toString("hex");
+						bullBoardSessions.set(newSessionId, {
+							timestamp: Date.now(),
+							userId: req.user.id,
+						});
+
+						// Set session cookie with proper configuration for domain access
+						const sessionCookieOptions = {
+							httpOnly: true,
+							secure: false, // Always false for HTTP
+							maxAge: 3600000, // 1 hour
+							path: "/", // Set path to root so it's available for all Bull Board requests
+							sameSite: "lax", // Always lax for HTTP
+						};
+						
+						res.cookie("bull-board-session", newSessionId, sessionCookieOptions);
+						console.log("Bull Board main page - Session created:", newSessionId);
+						console.log("Bull Board main page - Cookie options:", sessionCookieOptions);
+						
+						// Also set a token cookie for API calls as a fallback
+						const tokenCookieOptions = {
+							httpOnly: false, // Allow JavaScript to access it
+							secure: false, // Always false for HTTP
+							maxAge: 3600000, // 1 hour
+							path: "/", // Set path to root for broader compatibility
+							sameSite: "lax", // Always lax for HTTP
+						};
+						
+						res.cookie("bull-board-token", token, tokenCookieOptions);
+						console.log("Bull Board main page - Token cookie also set for API fallback");
+						
+						// Clean up old sessions periodically
+						if (bullBoardSessions.size > 100) {
+							const now = Date.now();
+							for (const [sid, session] of bullBoardSessions.entries()) {
+								if (now - session.timestamp > 3600000) {
+									bullBoardSessions.delete(sid);
+								}
+							}
+						}
+						
+						// Now proceed to serve the Bull Board page
+						return bullBoardRouter(req, res, next);
+					});
+				});
+			} else {
+				console.log("Bull Board main page - No token provided, checking for existing session");
+				// Check if we have an existing session
+				const sessionId = req.cookies["bull-board-session"];
+				if (sessionId) {
+					const session = bullBoardSessions.get(sessionId);
+					if (session && Date.now() - session.timestamp < 3600000) {
+						console.log("Bull Board main page - Using existing session");
+						// Extend session
+						session.timestamp = Date.now();
+						return bullBoardRouter(req, res, next);
+					} else if (session) {
+						console.log("Bull Board main page - Session expired, removing");
+						bullBoardSessions.delete(sessionId);
+					}
+				}
+				console.log("Bull Board main page - No valid session, denying access");
+				return res.status(401).json({ error: "Access token required" });
+			}
+		}
 		return bullBoardRouter(req, res, next);
 	}
 	return res.status(503).json({ error: "Bull Board not initialized yet" });
 });
+*/
 
 // Error handler specifically for Bull Board routes
 app.use("/bullboard", (err, req, res, _next) => {

@@ -228,7 +228,33 @@ const Automation = () => {
 		// Use the proxied URL through the frontend (port 3000)
 		// This avoids CORS issues as everything goes through the same origin
 		const url = `/bullboard?token=${encodeURIComponent(token)}`;
-		window.open(url, "_blank", "width=1200,height=800");
+		// Open in a new tab instead of a new window
+		const bullBoardWindow = window.open(url, "_blank");
+
+		// Add a message listener to handle authentication failures
+		if (bullBoardWindow) {
+			// Listen for authentication failures and refresh with token
+			const checkAuth = () => {
+				try {
+					// Check if the Bull Board window is still open
+					if (bullBoardWindow.closed) return;
+
+					// Inject a script to handle authentication failures
+					bullBoardWindow.postMessage(
+						{
+							type: "BULL_BOARD_TOKEN",
+							token: token,
+						},
+						window.location.origin,
+					);
+				} catch (e) {
+					console.log("Could not communicate with Bull Board window:", e);
+				}
+			};
+
+			// Send token after a short delay to ensure Bull Board is loaded
+			setTimeout(checkAuth, 1000);
+		}
 	};
 
 	const triggerManualJob = async (jobType, data = {}) => {
