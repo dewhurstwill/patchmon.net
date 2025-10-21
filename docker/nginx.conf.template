@@ -35,17 +35,20 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header Cookie $http_cookie;  # Forward cookies to backend
         proxy_cache_bypass $http_upgrade;
         proxy_read_timeout 300s;
         proxy_connect_timeout 75s;
+        
+        # Enable cookie passthrough in both directions
+        proxy_pass_header Set-Cookie;
+        proxy_cookie_path / /;
 
         # Preserve original client IP through proxy chain
         proxy_set_header X-Original-Forwarded-For $http_x_forwarded_for;
 
-        # CORS headers for Bull Board
-        add_header Access-Control-Allow-Origin * always;
-        add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS" always;
-        add_header Access-Control-Allow-Headers "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization" always;
+        # CORS headers for Bull Board - let backend handle CORS properly
+        # Note: Backend handles CORS with proper origin validation and credentials
 
         # Handle preflight requests
         if ($request_method = 'OPTIONS') {
@@ -78,10 +81,8 @@ server {
         # Preserve original client IP through proxy chain
         proxy_set_header X-Original-Forwarded-For $http_x_forwarded_for;
 
-        # CORS headers for API calls - even though backend is doing it
-        add_header Access-Control-Allow-Origin * always;
-        add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS" always;
-        add_header Access-Control-Allow-Headers "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization" always;
+        # CORS headers for API calls - let backend handle CORS properly
+        # Note: Backend handles CORS with proper origin validation and credentials
 
         # Handle preflight requests
         if ($request_method = 'OPTIONS') {

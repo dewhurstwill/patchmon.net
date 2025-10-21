@@ -1,9 +1,9 @@
 const axios = require("axios");
 const fs = require("node:fs").promises;
 const path = require("node:path");
-const { exec } = require("node:child_process");
+const { exec, spawn } = require("node:child_process");
 const { promisify } = require("node:util");
-const execAsync = promisify(exec);
+const _execAsync = promisify(exec);
 
 // Simple semver comparison function
 function compareVersions(version1, version2) {
@@ -135,16 +135,34 @@ class AgentVersionService {
 
 			// Execute the agent binary with help flag to get version info
 			try {
-				const { stdout, stderr } = await execAsync(`${agentPath} --help`, {
+				const child = spawn(agentPath, ["--help"], {
 					timeout: 10000,
 				});
 
-				if (stderr) {
-					console.log("⚠️ Agent help stderr:", stderr);
+				let stdout = "";
+				let stderr = "";
+
+				child.stdout.on("data", (data) => {
+					stdout += data.toString();
+				});
+
+				child.stderr.on("data", (data) => {
+					stderr += data.toString();
+				});
+
+				const result = await new Promise((resolve, reject) => {
+					child.on("close", (code) => {
+						resolve({ stdout, stderr, code });
+					});
+					child.on("error", reject);
+				});
+
+				if (result.stderr) {
+					console.log("⚠️ Agent help stderr:", result.stderr);
 				}
 
 				// Parse version from help output (e.g., "PatchMon Agent v1.3.0")
-				const versionMatch = stdout.match(
+				const versionMatch = result.stdout.match(
 					/PatchMon Agent v([0-9]+\.[0-9]+\.[0-9]+)/i,
 				);
 				if (versionMatch) {
@@ -153,7 +171,7 @@ class AgentVersionService {
 				} else {
 					console.log(
 						"⚠️ Could not parse version from agent help output:",
-						stdout,
+						result.stdout,
 					);
 					this.currentVersion = null;
 				}

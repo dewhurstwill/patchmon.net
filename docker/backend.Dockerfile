@@ -8,7 +8,7 @@ ENV NODE_ENV=development \
     PM_LOG_TO_CONSOLE=true \
     PORT=3001
 
-RUN apk add --no-cache openssl tini curl
+RUN apk add --no-cache openssl tini curl libc6-compat
 
 USER node
 
@@ -64,7 +64,7 @@ ENV NODE_ENV=production \
     JWT_REFRESH_EXPIRES_IN=7d \
     SESSION_INACTIVITY_TIMEOUT_MINUTES=30
 
-RUN apk add --no-cache openssl tini curl
+RUN apk add --no-cache openssl tini curl libc6-compat
 
 USER node
 

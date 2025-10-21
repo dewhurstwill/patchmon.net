@@ -1,9 +1,33 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { AlertCircle, CheckCircle, Clock, RefreshCw } from "lucide-react";
+import {
+	AlertCircle,
+	CheckCircle,
+	Clock,
+	Download,
+	ExternalLink,
+	RefreshCw,
+	X,
+} from "lucide-react";
+import { useEffect, useState } from "react";
 import api from "../../utils/api";
 
 const AgentManagementTab = () => {
 	const _queryClient = useQueryClient();
+	const [toast, setToast] = useState(null);
+
+	// Auto-hide toast after 5 seconds
+	useEffect(() => {
+		if (toast) {
+			const timer = setTimeout(() => {
+				setToast(null);
+			}, 5000);
+			return () => clearTimeout(timer);
+		}
+	}, [toast]);
+
+	const showToast = (message, type = "success") => {
+		setToast({ message, type });
+	};
 
 	// Agent version queries
 	const {
@@ -57,9 +81,11 @@ const AgentManagementTab = () => {
 		},
 		onSuccess: () => {
 			refetchVersion();
+			showToast("Successfully checked for updates", "success");
 		},
 		onError: (error) => {
 			console.error("Check updates error:", error);
+			showToast(`Failed to check for updates: ${error.message}`, "error");
 		},
 	});
 
@@ -79,11 +105,11 @@ const AgentManagementTab = () => {
 			// Show success message
 			const message =
 				data.data?.message || "Agent binaries downloaded successfully";
-			alert(`✅ ${message}`);
+			showToast(message, "success");
 		},
 		onError: (error) => {
 			console.error("Download update error:", error);
-			alert(`❌ Download failed: ${error.message}`);
+			showToast(`Download failed: ${error.message}`, "error");
 		},
 	});
 
@@ -173,111 +199,255 @@ const AgentManagementTab = () => {
 
 	return (
 		<div className="space-y-6">
-			{/* Header */}
-			<div className="flex items-center justify-between mb-6">
-				<div>
-					<h2 className="text-2xl font-bold text-secondary-900 dark:text-white">
-						Agent Version Management
-					</h2>
-					<p className="text-secondary-600 dark:text-secondary-300">
-						Monitor agent versions and download updates
-					</p>
-				</div>
-				<div className="flex space-x-3">
-					<button
-						type="button"
-						onClick={() => checkUpdatesMutation.mutate()}
-						disabled={checkUpdatesMutation.isPending}
-						className="flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50"
+			{/* Toast Notification */}
+			{toast && (
+				<div
+					className={`fixed top-4 right-4 z-50 max-w-md rounded-lg shadow-lg border-2 p-4 flex items-start space-x-3 animate-in slide-in-from-top-5 ${
+						toast.type === "success"
+							? "bg-green-50 dark:bg-green-900/90 border-green-500 dark:border-green-600"
+							: "bg-red-50 dark:bg-red-900/90 border-red-500 dark:border-red-600"
+					}`}
+				>
+					<div
+						className={`flex-shrink-0 rounded-full p-1 ${
+							toast.type === "success"
+								? "bg-green-100 dark:bg-green-800"
+								: "bg-red-100 dark:bg-red-800"
+						}`}
 					>
-						<RefreshCw
-							className={`h-4 w-4 mr-2 ${checkUpdatesMutation.isPending ? "animate-spin" : ""}`}
-						/>
-						Check Updates
-					</button>
-				</div>
-			</div>
-
-			{/* Download Updates Button */}
-			<div className="bg-white dark:bg-secondary-800 rounded-lg shadow p-6 border border-secondary-200 dark:border-secondary-600">
-				<div className="flex items-center justify-between">
-					<div>
-						<h3 className="text-lg font-semibold text-secondary-900 dark:text-white">
-							{versionInfo?.currentVersion
-								? "Download Agent Updates"
-								: "Download Agent Binaries"}
-						</h3>
-						<p className="text-secondary-600 dark:text-secondary-300">
-							{versionInfo?.currentVersion
-								? "Download the latest agent binaries from GitHub"
-								: "No agent binaries found. Download from GitHub to get started."}
+						{toast.type === "success" ? (
+							<CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
+						) : (
+							<AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
+						)}
+					</div>
+					<div className="flex-1">
+						<p
+							className={`text-sm font-medium ${
+								toast.type === "success"
+									? "text-green-800 dark:text-green-100"
+									: "text-red-800 dark:text-red-100"
+							}`}
+						>
+							{toast.message}
 						</p>
 					</div>
 					<button
 						type="button"
-						onClick={() => downloadUpdateMutation.mutate()}
-						disabled={downloadUpdateMutation.isPending}
-						className="flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+						onClick={() => setToast(null)}
+						className={`flex-shrink-0 rounded-lg p-1 transition-colors ${
+							toast.type === "success"
+								? "hover:bg-green-100 dark:hover:bg-green-800 text-green-600 dark:text-green-400"
+								: "hover:bg-red-100 dark:hover:bg-red-800 text-red-600 dark:text-red-400"
+						}`}
+					>
+						<X className="h-4 w-4" />
+					</button>
+				</div>
+			)}
+
+			{/* Header */}
+			<div className="mb-6">
+				<h2 className="text-2xl font-bold text-secondary-900 dark:text-white mb-2">
+					Agent Version Management
+				</h2>
+				<p className="text-secondary-600 dark:text-secondary-400">
+					Monitor and manage agent versions across your infrastructure
+				</p>
+			</div>
+
+			{/* Status Banner */}
+			<div
+				className={`rounded-xl shadow-sm p-6 border-2 ${
+					versionStatus.status === "up-to-date"
+						? "bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800"
+						: versionStatus.status === "update-available"
+							? "bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800"
+							: versionStatus.status === "no-agent"
+								? "bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800"
+								: "bg-white dark:bg-secondary-800 border-secondary-200 dark:border-secondary-600"
+				}`}
+			>
+				<div className="flex items-start justify-between">
+					<div className="flex items-start space-x-4">
+						<div
+							className={`p-3 rounded-lg ${
+								versionStatus.status === "up-to-date"
+									? "bg-green-100 dark:bg-green-800"
+									: versionStatus.status === "update-available"
+										? "bg-yellow-100 dark:bg-yellow-800"
+										: versionStatus.status === "no-agent"
+											? "bg-orange-100 dark:bg-orange-800"
+											: "bg-secondary-100 dark:bg-secondary-700"
+							}`}
+						>
+							{StatusIcon && (
+								<StatusIcon className={`h-6 w-6 ${versionStatus.color}`} />
+							)}
+						</div>
+						<div>
+							<h3 className="text-lg font-semibold text-secondary-900 dark:text-white mb-1">
+								{versionStatus.message}
+							</h3>
+							<p className="text-sm text-secondary-600 dark:text-secondary-400">
+								{versionStatus.status === "up-to-date" &&
+									"All agent binaries are current"}
+								{versionStatus.status === "update-available" &&
+									"A newer version is available for download"}
+								{versionStatus.status === "no-agent" &&
+									"Download agent binaries to get started"}
+								{versionStatus.status === "github-unavailable" &&
+									"Cannot check for updates at this time"}
+								{![
+									"up-to-date",
+									"update-available",
+									"no-agent",
+									"github-unavailable",
+								].includes(versionStatus.status) &&
+									"Version information unavailable"}
+							</p>
+						</div>
+					</div>
+					<button
+						type="button"
+						onClick={() => checkUpdatesMutation.mutate()}
+						disabled={checkUpdatesMutation.isPending}
+						className="flex items-center px-4 py-2 bg-white dark:bg-secondary-700 text-secondary-700 dark:text-secondary-200 rounded-lg hover:bg-secondary-50 dark:hover:bg-secondary-600 border border-secondary-300 dark:border-secondary-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-sm hover:shadow"
 					>
 						<RefreshCw
-							className={`h-4 w-4 mr-2 ${downloadUpdateMutation.isPending ? "animate-spin" : ""}`}
+							className={`h-4 w-4 mr-2 ${checkUpdatesMutation.isPending ? "animate-spin" : ""}`}
 						/>
-						{downloadUpdateMutation.isPending
-							? "Downloading..."
-							: versionInfo?.currentVersion
-								? "Download Updates"
-								: "Download Agent Binaries"}
+						{checkUpdatesMutation.isPending
+							? "Checking..."
+							: "Check for Updates"}
 					</button>
 				</div>
 			</div>
 
-			{/* Version Status Card */}
-			<div className="bg-white dark:bg-secondary-800 rounded-lg shadow p-6 border border-secondary-200 dark:border-secondary-600">
-				<div className="flex items-center justify-between mb-4">
-					<h3 className="text-lg font-semibold text-secondary-900 dark:text-white">
-						Agent Version Status
-					</h3>
-					<div className="flex items-center space-x-2">
-						{StatusIcon && (
-							<StatusIcon className={`h-5 w-5 ${versionStatus.color}`} />
+			{/* Version Information Grid */}
+			<div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+				{/* Current Version Card */}
+				<div className="bg-white dark:bg-secondary-800 rounded-xl shadow-sm p-6 border border-secondary-200 dark:border-secondary-600 hover:shadow-md transition-shadow duration-200">
+					<h4 className="text-sm font-medium text-secondary-500 dark:text-secondary-400 mb-2">
+						Current Version
+					</h4>
+					<p className="text-2xl font-bold text-secondary-900 dark:text-white">
+						{versionInfo?.currentVersion || (
+							<span className="text-lg text-secondary-400 dark:text-secondary-500">
+								Not detected
+							</span>
 						)}
-						<span className={`text-sm font-medium ${versionStatus.color}`}>
-							{versionStatus.message}
-						</span>
-					</div>
+					</p>
 				</div>
 
-				{versionInfo && (
-					<div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-						<div>
-							<span className="text-secondary-500 dark:text-secondary-400">
-								Current Version:
+				{/* Latest Version Card */}
+				<div className="bg-white dark:bg-secondary-800 rounded-xl shadow-sm p-6 border border-secondary-200 dark:border-secondary-600 hover:shadow-md transition-shadow duration-200">
+					<h4 className="text-sm font-medium text-secondary-500 dark:text-secondary-400 mb-2">
+						Latest Available
+					</h4>
+					<p className="text-2xl font-bold text-secondary-900 dark:text-white">
+						{versionInfo?.latestVersion || (
+							<span className="text-lg text-secondary-400 dark:text-secondary-500">
+								Unknown
 							</span>
-							<span className="ml-2 font-medium text-secondary-900 dark:text-white">
-								{versionInfo.currentVersion || "Unknown"}
-							</span>
+						)}
+					</p>
+				</div>
+
+				{/* Last Checked Card */}
+				<div className="bg-white dark:bg-secondary-800 rounded-xl shadow-sm p-6 border border-secondary-200 dark:border-secondary-600 hover:shadow-md transition-shadow duration-200">
+					<h4 className="text-sm font-medium text-secondary-500 dark:text-secondary-400 mb-2">
+						Last Checked
+					</h4>
+					<p className="text-lg font-semibold text-secondary-900 dark:text-white">
+						{versionInfo?.lastChecked
+							? new Date(versionInfo.lastChecked).toLocaleString("en-US", {
+									month: "short",
+									day: "numeric",
+									hour: "2-digit",
+									minute: "2-digit",
+								})
+							: "Never"}
+					</p>
+				</div>
+			</div>
+
+			{/* Download Updates Section */}
+			<div className="bg-gradient-to-br from-primary-50 to-blue-50 dark:from-secondary-800 dark:to-secondary-800 rounded-xl shadow-sm p-8 border border-primary-200 dark:border-secondary-600">
+				<div className="flex items-center justify-between">
+					<div className="flex-1">
+						<h3 className="text-xl font-bold text-secondary-900 dark:text-white mb-3">
+							{!versionInfo?.currentVersion
+								? "Get Started with Agent Binaries"
+								: versionStatus.status === "update-available"
+									? "New Agent Version Available"
+									: "Agent Binaries"}
+						</h3>
+						<p className="text-secondary-700 dark:text-secondary-300 mb-4">
+							{!versionInfo?.currentVersion
+								? "No agent binaries detected. Download from GitHub to begin managing your agents."
+								: versionStatus.status === "update-available"
+									? `A new agent version (${versionInfo.latestVersion}) is available. Download the latest binaries from GitHub.`
+									: "Download or redownload agent binaries from GitHub."}
+						</p>
+						<div className="flex items-center space-x-4">
+							<button
+								type="button"
+								onClick={() => downloadUpdateMutation.mutate()}
+								disabled={downloadUpdateMutation.isPending}
+								className="flex items-center px-6 py-3 bg-primary-600 text-white rounded-lg hover:bg-primary-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 shadow-md hover:shadow-lg font-medium"
+							>
+								{downloadUpdateMutation.isPending ? (
+									<>
+										<RefreshCw className="h-5 w-5 mr-2 animate-spin" />
+										Downloading...
+									</>
+								) : (
+									<>
+										<Download className="h-5 w-5 mr-2" />
+										{!versionInfo?.currentVersion
+											? "Download Binaries"
+											: versionStatus.status === "update-available"
+												? "Download New Agent Version"
+												: "Redownload Binaries"}
+									</>
+								)}
+							</button>
+							<a
+								href="https://github.com/PatchMon/PatchMon-agent/releases"
+								target="_blank"
+								rel="noopener noreferrer"
+								className="flex items-center px-4 py-3 text-secondary-700 dark:text-secondary-300 hover:text-primary-600 dark:hover:text-primary-400 transition-colors duration-200 font-medium"
+							>
+								<ExternalLink className="h-4 w-4 mr-2" />
+								View on GitHub
+							</a>
 						</div>
-						<div>
-							<span className="text-secondary-500 dark:text-secondary-400">
-								Latest Version:
-							</span>
-							<span className="ml-2 font-medium text-secondary-900 dark:text-white">
-								{versionInfo.latestVersion || "Unknown"}
-							</span>
-						</div>
-						<div>
-							<span className="text-secondary-500 dark:text-secondary-400">
-								Last Checked:
-							</span>
-							<span className="ml-2 font-medium text-secondary-900 dark:text-white">
-								{versionInfo.lastChecked
-									? new Date(versionInfo.lastChecked).toLocaleString()
-									: "Never"}
-							</span>
+					</div>
+				</div>
+			</div>
+
+			{/* Supported Architectures */}
+			{versionInfo?.supportedArchitectures &&
+				versionInfo.supportedArchitectures.length > 0 && (
+					<div className="bg-white dark:bg-secondary-800 rounded-xl shadow-sm p-6 border border-secondary-200 dark:border-secondary-600">
+						<h4 className="text-lg font-semibold text-secondary-900 dark:text-white mb-4">
+							Supported Architectures
+						</h4>
+						<div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+							{versionInfo.supportedArchitectures.map((arch) => (
+								<div
+									key={arch}
+									className="flex items-center justify-center px-4 py-3 bg-secondary-50 dark:bg-secondary-700 rounded-lg border border-secondary-200 dark:border-secondary-600"
+								>
+									<code className="text-sm font-mono text-secondary-700 dark:text-secondary-300">
+										{arch}
+									</code>
+								</div>
+							))}
 						</div>
 					</div>
 				)}
-			</div>
 		</div>
 	);
 };

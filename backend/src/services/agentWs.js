@@ -26,7 +26,37 @@ function init(server, prismaClient) {
 	server.on("upgrade", async (request, socket, head) => {
 		try {
 			const { pathname } = url.parse(request.url);
-			if (!pathname || !pathname.startsWith("/api/")) {
+			if (!pathname) {
+				socket.destroy();
+				return;
+			}
+
+			// Handle Bull Board WebSocket connections
+			if (pathname.startsWith("/bullboard")) {
+				// For Bull Board, we need to check if the user is authenticated
+				// Check for session cookie or authorization header
+				const sessionCookie = request.headers.cookie?.match(
+					/bull-board-session=([^;]+)/,
+				)?.[1];
+				const authHeader = request.headers.authorization;
+
+				if (!sessionCookie && !authHeader) {
+					socket.destroy();
+					return;
+				}
+
+				// Accept the WebSocket connection for Bull Board
+				wss.handleUpgrade(request, socket, head, (ws) => {
+					ws.on("message", (message) => {
+						// Echo back for Bull Board WebSocket
+						ws.send(message);
+					});
+				});
+				return;
+			}
+
+			// Handle agent WebSocket connections
+			if (!pathname.startsWith("/api/")) {
 				socket.destroy();
 				return;
 			}
