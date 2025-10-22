@@ -651,10 +651,11 @@ configure_redis() {
         return 1
     fi
     
-    # Generate Redis username based on instance
+    # Generate Redis username based on instance (global variable for use in create_env_files)
     REDIS_USER="patchmon_${DB_SAFE_NAME}"
     
     # Generate separate user password (more secure than reusing admin password)
+    # This will be stored in the .env file for the application to use
     REDIS_USER_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-32)
     
     print_info "Creating Redis user: $REDIS_USER for database $REDIS_DB"
@@ -761,12 +762,9 @@ configure_redis() {
     redis-cli -h 127.0.0.1 -p 6379 --user "$REDIS_USER" --pass "$REDIS_USER_PASSWORD" --no-auth-warning -n "$REDIS_DB" SET "patchmon:initialized" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /dev/null
     print_status "Marked Redis database $REDIS_DB as in-use"
     
-    # Update .env with the USER PASSWORD, not admin password
-    echo "REDIS_USER=$REDIS_USER" >> .env
-    echo "REDIS_PASSWORD=$REDIS_USER_PASSWORD" >> .env
-    echo "REDIS_DB=$REDIS_DB" >> .env
-    
-    print_status "Redis user password: $REDIS_USER_PASSWORD"
+    # Note: Redis credentials will be written to .env by create_env_files() function
+    print_status "Redis user '$REDIS_USER' configured successfully"
+    print_info "Redis credentials will be saved to backend/.env"
     
     return 0
 }
@@ -1063,12 +1061,17 @@ AGENT_RATE_LIMIT_MAX=1000
 REDIS_HOST=localhost
 REDIS_PORT=6379
 REDIS_USER=$REDIS_USER
-REDIS_PASSWORD=$REDIS_PASSWORD
+REDIS_PASSWORD=$REDIS_USER_PASSWORD
 REDIS_DB=$REDIS_DB
 
 # Logging
 LOG_LEVEL=info
 ENABLE_LOGGING=true
+
+# TFA Configuration
+TFA_REMEMBER_ME_EXPIRES_IN=30d
+TFA_MAX_REMEMBER_SESSIONS=5
+TFA_SUSPICIOUS_ACTIVITY_THRESHOLD=3
 EOF
 
     # Frontend .env
@@ -1130,88 +1133,95 @@ EOF
     print_status "Systemd service created: $SERVICE_NAME (running as $INSTANCE_USER)"
 }
 
-# Setup nginx configuration
-setup_nginx() {
-    print_info "Setting up nginx configuration..."
-    log_message "Setting up nginx configuration for $FQDN"
+# Unified nginx configuration generator
+generate_nginx_config() {
+    local fqdn="$1"
+    local app_dir="$2"
+    local backend_port="$3"
+    local ssl_enabled="$4"  # "true" or "false"
+    local config_file="/etc/nginx/sites-available/$fqdn"
     
-    if [ "$USE_LETSENCRYPT" = "true" ]; then
-        # HTTP-only config first for Certbot challenge
-        cat > "/etc/nginx/sites-available/$FQDN" << EOF
+    print_info "Generating nginx configuration for $fqdn (SSL: $ssl_enabled)"
+    
+    if [ "$ssl_enabled" = "true" ]; then
+        # SSL Configuration
+        cat > "$config_file" << EOF
+# HTTP to HTTPS redirect
 server {
     listen 80;
-    server_name $FQDN;
+    server_name $fqdn;
     
+    # Let's Encrypt challenge location
     location /.well-known/acme-challenge/ {
         root /var/www/html;
     }
     
+    # Redirect all other traffic to HTTPS
     location / {
         return 301 https://\$server_name\$request_uri;
     }
 }
-EOF
-    else
-        # HTTP-only configuration for local hosting
-        cat > "/etc/nginx/sites-available/$FQDN" << EOF
+
+# HTTPS server block
 server {
-    listen 80;
-    server_name $FQDN;
+    listen 443 ssl http2;
+    server_name $fqdn;
+    
+    # SSL Configuration
+    ssl_certificate /etc/letsencrypt/live/$fqdn/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/$fqdn/privkey.pem;
+    include /etc/letsencrypt/options-ssl-nginx.conf;
+    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
+    
+    # SSL Optimization
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+    ssl_session_tickets off;
+    
+    # Security headers (applied to all responses)
+    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
+    add_header X-Frame-Options DENY always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
     
     # Frontend
     location / {
-        root $APP_DIR/frontend/dist;
+        root $app_dir/frontend/dist;
         try_files \$uri \$uri/ /index.html;
-        
-        # Security headers
-        add_header X-Frame-Options DENY;
-        add_header X-Content-Type-Options nosniff;
-        add_header X-XSS-Protection "1; mode=block";
     }
     
     # Bull Board proxy
     location /bullboard {
-        proxy_pass http://127.0.0.1:$BACKEND_PORT;
+        proxy_pass http://127.0.0.1:$backend_port;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto \$scheme;
         proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header Cookie \$http_cookie;
+        proxy_cache_bypass \$http_upgrade;
+        proxy_read_timeout 300s;
+        proxy_connect_timeout 75s;
         
-        # CORS headers for Bull Board
-        add_header Access-Control-Allow-Origin * always;
-        add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS" always;
-        add_header Access-Control-Allow-Headers "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization" always;
+        # Enable cookie passthrough
+        proxy_pass_header Set-Cookie;
+        proxy_cookie_path / /;
         
-        # Handle preflight requests
+        # Preserve original client IP
+        proxy_set_header X-Original-Forwarded-For \$http_x_forwarded_for;
+        
         if (\$request_method = 'OPTIONS') {
             return 204;
         }
     }
     
-    # API routes
-    # Bull Board proxy
-    location /bullboard {
-        proxy_pass http://127.0.0.1:$BACKEND_PORT;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_set_header X-Forwarded-Host \$host;
-        
-        # CORS headers for Bull Board
-        add_header Access-Control-Allow-Origin * always;
-        add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS" always;
-        add_header Access-Control-Allow-Headers "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization" always;
-        
-        # Handle preflight requests
-        if (\$request_method = 'OPTIONS') {
-            return 204;
-        }
-    }
-    
+    # API proxy
     location /api/ {
-        proxy_pass http://127.0.0.1:$BACKEND_PORT;
+        proxy_pass http://127.0.0.1:$backend_port;
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection 'upgrade';
@@ -1222,16 +1232,122 @@ server {
         proxy_cache_bypass \$http_upgrade;
         proxy_read_timeout 300s;
         proxy_connect_timeout 75s;
+        
+        # Preserve original client IP
+        proxy_set_header X-Original-Forwarded-For \$http_x_forwarded_for;
+        
+        if (\$request_method = 'OPTIONS') {
+            return 204;
+        }
     }
     
-    # Health check
+    # Static assets caching (exclude Bull Board assets)
+    location ~* ^/(?!bullboard).*\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+    
+    # Health check endpoint
     location /health {
-        proxy_pass http://127.0.0.1:$BACKEND_PORT/health;
+        proxy_pass http://127.0.0.1:$backend_port/health;
+        access_log off;
+    }
+}
+EOF
+    else
+        # HTTP-only configuration
+        cat > "$config_file" << EOF
+server {
+    listen 80;
+    server_name $fqdn;
+    
+    # Security headers
+    add_header X-Frame-Options DENY always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    
+    # Frontend
+    location / {
+        root $app_dir/frontend/dist;
+        try_files \$uri \$uri/ /index.html;
+    }
+    
+    # Bull Board proxy
+    location /bullboard {
+        proxy_pass http://127.0.0.1:$backend_port;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Host \$host;
+        proxy_set_header Cookie \$http_cookie;
+        proxy_cache_bypass \$http_upgrade;
+        proxy_read_timeout 300s;
+        proxy_connect_timeout 75s;
+        
+        # Enable cookie passthrough
+        proxy_pass_header Set-Cookie;
+        proxy_cookie_path / /;
+        
+        # Preserve original client IP
+        proxy_set_header X-Original-Forwarded-For \$http_x_forwarded_for;
+        
+        if (\$request_method = 'OPTIONS') {
+            return 204;
+        }
+    }
+    
+    # API proxy
+    location /api/ {
+        proxy_pass http://127.0.0.1:$backend_port;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_cache_bypass \$http_upgrade;
+        proxy_read_timeout 300s;
+        proxy_connect_timeout 75s;
+        
+        # Preserve original client IP
+        proxy_set_header X-Original-Forwarded-For \$http_x_forwarded_for;
+        
+        if (\$request_method = 'OPTIONS') {
+            return 204;
+        }
+    }
+    
+    # Static assets caching (exclude Bull Board assets)
+    location ~* ^/(?!bullboard).*\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+    }
+    
+    # Health check endpoint
+    location /health {
+        proxy_pass http://127.0.0.1:$backend_port/health;
         access_log off;
     }
 }
 EOF
     fi
+    
+    print_status "Nginx configuration generated for $fqdn"
+}
+
+# Setup nginx configuration
+setup_nginx() {
+    print_info "Setting up nginx configuration..."
+    log_message "Setting up nginx configuration for $FQDN"
+    
+    # Generate HTTP-only config first (needed for Let's Encrypt challenge if SSL enabled)
+    generate_nginx_config "$FQDN" "$APP_DIR" "$BACKEND_PORT" "false"
 
     # Enable site
     ln -sf "/etc/nginx/sites-available/$FQDN" "/etc/nginx/sites-enabled/"
@@ -1254,96 +1370,10 @@ setup_letsencrypt() {
     
     # Check if a valid certificate already exists
     if certbot certificates 2>/dev/null | grep -q "$FQDN" && certbot certificates 2>/dev/null | grep -A 10 "$FQDN" | grep -q "VALID"; then
-        print_status "Valid SSL certificate already exists for $FQDN, skipping certificate generation"
+        print_status "Valid SSL certificate already exists for $FQDN"
         
-        # Update Nginx config with existing HTTPS configuration
-        cat > "/etc/nginx/sites-available/$FQDN" << EOF
-server {
-    listen 80;
-    server_name $FQDN;
-    return 301 https://\$server_name\$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name $FQDN;
-    
-    ssl_certificate /etc/letsencrypt/live/$FQDN/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/$FQDN/privkey.pem;
-    include /etc/letsencrypt/options-ssl-nginx.conf;
-    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
-    
-    # Security headers
-    add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-    add_header X-Frame-Options DENY;
-    add_header X-Content-Type-Options nosniff;
-    add_header X-XSS-Protection "1; mode=block";
-    
-    # Frontend
-    location / {
-        root $APP_DIR/frontend/dist;
-        try_files \$uri \$uri/ /index.html;
-        
-        # Security headers
-        add_header X-Frame-Options DENY;
-        add_header X-Content-Type-Options nosniff;
-        add_header X-XSS-Protection "1; mode=block";
-    }
-    
-    # Bull Board proxy
-    location /bullboard {
-        proxy_pass http://127.0.0.1:$BACKEND_PORT;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_set_header X-Forwarded-Host \$host;
-        
-        # CORS headers for Bull Board
-        add_header Access-Control-Allow-Origin * always;
-        add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS" always;
-        add_header Access-Control-Allow-Headers "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization" always;
-        
-        # Handle preflight requests
-        if (\$request_method = 'OPTIONS') {
-            return 204;
-        }
-    }
-    
-    # API proxy
-    # Bull Board proxy
-    location /bullboard {
-        proxy_pass http://127.0.0.1:$BACKEND_PORT;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_set_header X-Forwarded-Host \$host;
-        
-        # CORS headers for Bull Board
-        add_header Access-Control-Allow-Origin * always;
-        add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS" always;
-        add_header Access-Control-Allow-Headers "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization" always;
-        
-        # Handle preflight requests
-        if (\$request_method = 'OPTIONS') {
-            return 204;
-        }
-    }
-    
-    location /api/ {
-        proxy_pass http://127.0.0.1:$BACKEND_PORT;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_cache_bypass \$http_upgrade;
-    }
-}
-EOF
+        # Generate SSL config with existing certificate
+        generate_nginx_config "$FQDN" "$APP_DIR" "$BACKEND_PORT" "true"
         
         # Enable the site
         ln -sf "/etc/nginx/sites-available/$FQDN" "/etc/nginx/sites-enabled/"
@@ -1362,7 +1392,7 @@ EOF
     
     print_info "No valid certificate found, generating new SSL certificate..."
     
-    # Wait a moment for nginx to be ready
+    # Wait for nginx to be ready
     sleep 5
     
     # Obtain SSL certificate
@@ -1370,100 +1400,17 @@ EOF
     certbot --nginx -d "$FQDN" --non-interactive --agree-tos --email "$EMAIL" --redirect
     log_message "SSL certificate obtained successfully"
     
-    # Update Nginx config with full HTTPS configuration
-    cat > "/etc/nginx/sites-available/$FQDN" << EOF
-server {
-    listen 80;
-    server_name $FQDN;
-    return 301 https://\$server_name\$request_uri;
-}
-
-server {
-    listen 443 ssl http2;
-    server_name $FQDN;
+    # Generate SSL nginx configuration
+    generate_nginx_config "$FQDN" "$APP_DIR" "$BACKEND_PORT" "true"
     
-    ssl_certificate /etc/letsencrypt/live/$FQDN/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/$FQDN/privkey.pem;
-    include /etc/letsencrypt/options-ssl-nginx.conf;
-    ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
-    
-    # Frontend
-    location / {
-        root $APP_DIR/frontend/dist;
-        try_files \$uri \$uri/ /index.html;
-        
-        # Security headers
-        add_header X-Frame-Options DENY;
-        add_header X-Content-Type-Options nosniff;
-        add_header X-XSS-Protection "1; mode=block";
-        add_header Strict-Transport-Security "max-age=31536000; includeSubDomains" always;
-    }
-    
-    # Bull Board proxy
-    location /bullboard {
-        proxy_pass http://127.0.0.1:$BACKEND_PORT;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_set_header X-Forwarded-Host \$host;
-        
-        # CORS headers for Bull Board
-        add_header Access-Control-Allow-Origin * always;
-        add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS" always;
-        add_header Access-Control-Allow-Headers "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization" always;
-        
-        # Handle preflight requests
-        if (\$request_method = 'OPTIONS') {
-            return 204;
-        }
-    }
-    
-    # API routes
-    # Bull Board proxy
-    location /bullboard {
-        proxy_pass http://127.0.0.1:$BACKEND_PORT;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_set_header X-Forwarded-Host \$host;
-        
-        # CORS headers for Bull Board
-        add_header Access-Control-Allow-Origin * always;
-        add_header Access-Control-Allow-Methods "GET, POST, PUT, DELETE, OPTIONS" always;
-        add_header Access-Control-Allow-Headers "DNT,User-Agent,X-Requested-With,If-Modified-Since,Cache-Control,Content-Type,Range,Authorization" always;
-        
-        # Handle preflight requests
-        if (\$request_method = 'OPTIONS') {
-            return 204;
-        }
-    }
-    
-    location /api/ {
-        proxy_pass http://127.0.0.1:$BACKEND_PORT;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade \$http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
-        proxy_cache_bypass \$http_upgrade;
-        proxy_read_timeout 300s;
-        proxy_connect_timeout 75s;
-    }
-    
-    # Health check
-    location /health {
-        proxy_pass http://127.0.0.1:$BACKEND_PORT/health;
-        access_log off;
-    }
-}
-EOF
-    
-    nginx -t
-    nginx -s reload
+    # Test and reload nginx
+    if nginx -t; then
+        systemctl reload nginx
+        print_status "Nginx configuration updated successfully"
+    else
+        print_error "Nginx configuration test failed"
+        return 1
+    fi
     
     # Setup auto-renewal
     echo "0 12 * * * /usr/bin/certbot renew --quiet" | crontab -
@@ -2022,6 +1969,190 @@ select_installation_to_update() {
     done
 }
 
+# Check and update Redis configuration for existing installation
+update_redis_configuration() {
+    print_info "Checking Redis configuration..."
+    
+    # Check if Redis configuration exists in .env
+    if [ -f "$instance_dir/backend/.env" ]; then
+        if grep -q "^REDIS_HOST=" "$instance_dir/backend/.env" && \
+           grep -q "^REDIS_PASSWORD=" "$instance_dir/backend/.env"; then
+            print_status "Redis configuration already exists in .env"
+            return 0
+        fi
+    fi
+    
+    print_warning "Redis configuration not found in .env - this is a legacy installation"
+    print_info "Setting up Redis for this instance..."
+    
+    # Detect package manager if not already set
+    if [ -z "$PKG_INSTALL" ]; then
+        if command -v apt >/dev/null 2>&1; then
+            PKG_INSTALL="apt install -y"
+        elif command -v apt-get >/dev/null 2>&1; then
+            PKG_INSTALL="apt-get install -y"
+        else
+            print_error "No supported package manager found"
+            return 1
+        fi
+    fi
+    
+    # Ensure Redis is installed and running
+    if ! systemctl is-active --quiet redis-server; then
+        print_info "Installing Redis..."
+        $PKG_INSTALL redis-server
+        systemctl start redis-server
+        systemctl enable redis-server
+    fi
+    
+    # Generate Redis variables for this instance
+    # Extract DB_SAFE_NAME from existing database name
+    DB_SAFE_NAME=$(echo "$DB_NAME" | sed 's/[^a-zA-Z0-9]/_/g')
+    REDIS_USER="patchmon_${DB_SAFE_NAME}"
+    REDIS_USER_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-32)
+    
+    # Find available Redis database
+    print_info "Finding available Redis database..."
+    local redis_db=0
+    local max_attempts=16
+    
+    while [ $redis_db -lt $max_attempts ]; do
+        local key_count
+        key_count=$(redis-cli -h localhost -p 6379 -n "$redis_db" DBSIZE 2>&1 | grep -v "ERR" || echo "1")
+        
+        if [ "$key_count" = "0" ] || [ "$key_count" = "(integer) 0" ]; then
+            print_status "Found available Redis database: $redis_db"
+            REDIS_DB=$redis_db
+            break
+        fi
+        redis_db=$((redis_db + 1))
+    done
+    
+    if [ -z "$REDIS_DB" ]; then
+        print_warning "No empty Redis database found, using database 0"
+        REDIS_DB=0
+    fi
+    
+    # Generate admin password if not exists
+    REDIS_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-32)
+    
+    # Configure Redis with ACL if needed
+    print_info "Configuring Redis ACL..."
+    
+    # Create ACL file if it doesn't exist
+    if [ ! -f /etc/redis/users.acl ]; then
+        touch /etc/redis/users.acl
+        chown redis:redis /etc/redis/users.acl
+        chmod 640 /etc/redis/users.acl
+    fi
+    
+    # Configure ACL file in redis.conf
+    if ! grep -q "^aclfile" /etc/redis/redis.conf 2>/dev/null; then
+        echo "aclfile /etc/redis/users.acl" >> /etc/redis/redis.conf
+    fi
+    
+    # Remove requirepass (incompatible with ACL)
+    if grep -q "^requirepass" /etc/redis/redis.conf 2>/dev/null; then
+        sed -i 's/^requirepass.*/# &/' /etc/redis/redis.conf
+    fi
+    
+    # Create admin user if it doesn't exist
+    if ! grep -q "^user admin" /etc/redis/users.acl; then
+        echo "user admin on sanitize-payload >$REDIS_PASSWORD ~* &* +@all" >> /etc/redis/users.acl
+        systemctl restart redis-server
+        sleep 3
+    fi
+    
+    # Create instance-specific Redis user
+    print_info "Creating Redis user: $REDIS_USER"
+    
+    # Try to authenticate with admin (may already exist from another instance)
+    local acl_result
+    acl_result=$(redis-cli -h 127.0.0.1 -p 6379 --user admin --pass "$REDIS_PASSWORD" --no-auth-warning ACL SETUSER "$REDIS_USER" on ">${REDIS_USER_PASSWORD}" ~* +@all 2>&1)
+    
+    if [ "$acl_result" = "OK" ] || echo "$acl_result" | grep -q "OK"; then
+        print_status "Redis user created successfully"
+        redis-cli -h 127.0.0.1 -p 6379 --user admin --pass "$REDIS_PASSWORD" --no-auth-warning ACL SAVE > /dev/null 2>&1
+    else
+        print_warning "Could not create Redis user with ACL, trying without authentication..."
+        # Fallback for systems without ACL configured
+        redis-cli -h 127.0.0.1 -p 6379 CONFIG SET requirepass "$REDIS_USER_PASSWORD" > /dev/null 2>&1 || true
+    fi
+    
+    # Backup existing .env
+    cp "$instance_dir/backend/.env" "$instance_dir/backend/.env.backup.$(date +%Y%m%d_%H%M%S)"
+    print_info "Backed up existing .env file"
+    
+    # Add Redis configuration to .env
+    print_info "Adding Redis configuration to .env..."
+    cat >> "$instance_dir/backend/.env" << EOF
+
+# Redis Configuration (added during update)
+REDIS_HOST=localhost
+REDIS_PORT=6379
+REDIS_USER=$REDIS_USER
+REDIS_PASSWORD=$REDIS_USER_PASSWORD
+REDIS_DB=$REDIS_DB
+EOF
+    
+    print_status "Redis configuration added to .env"
+    print_info "Redis User: $REDIS_USER"
+    print_info "Redis Database: $REDIS_DB"
+    
+    return 0
+}
+
+# Update nginx configuration for existing installation
+update_nginx_configuration() {
+    print_info "Updating nginx configuration..."
+    
+    # Detect SSL status
+    local ssl_enabled="false"
+    if [ -f "/etc/letsencrypt/live/$SELECTED_INSTANCE/fullchain.pem" ]; then
+        ssl_enabled="true"
+        print_info "SSL certificate detected, updating HTTPS configuration"
+    else
+        print_info "No SSL certificate found, updating HTTP configuration"
+    fi
+    
+    # Backup existing config
+    local backup_file="/etc/nginx/sites-available/$SELECTED_INSTANCE.backup.$(date +%Y%m%d_%H%M%S)"
+    if [ -f "/etc/nginx/sites-available/$SELECTED_INSTANCE" ]; then
+        cp "/etc/nginx/sites-available/$SELECTED_INSTANCE" "$backup_file"
+        print_info "Backed up existing nginx config to: $backup_file"
+    fi
+    
+    # Extract backend port
+    local backend_port=$(grep -o 'proxy_pass http://127.0.0.1:[0-9]*' "/etc/nginx/sites-available/$SELECTED_INSTANCE" 2>/dev/null | grep -o '[0-9]*' | head -1)
+    if [ -z "$backend_port" ] && [ -f "$instance_dir/backend/.env" ]; then
+        backend_port=$(grep '^PORT=' "$instance_dir/backend/.env" | cut -d'=' -f2)
+    fi
+    
+    if [ -z "$backend_port" ]; then
+        print_warning "Could not determine backend port, skipping nginx config update"
+        return 0
+    fi
+    
+    print_info "Detected backend port: $backend_port"
+    
+    # Generate new configuration using the unified function
+    generate_nginx_config "$SELECTED_INSTANCE" "$instance_dir" "$backend_port" "$ssl_enabled"
+    
+    # Test and reload nginx
+    if nginx -t; then
+        systemctl reload nginx
+        print_status "Nginx configuration updated successfully"
+    else
+        print_error "Nginx configuration test failed"
+        # Restore backup
+        if [ -f "$backup_file" ]; then
+            mv "$backup_file" "/etc/nginx/sites-available/$SELECTED_INSTANCE"
+            print_info "Restored backup nginx configuration"
+        fi
+        return 1
+    fi
+}
+
 # Update existing installation
 update_installation() {
     local instance_dir="/opt/$SELECTED_INSTANCE"
@@ -2144,6 +2275,12 @@ update_installation() {
     cd "$instance_dir/backend"
     npx prisma generate
     npx prisma migrate deploy
+    
+    # Check and update Redis configuration if needed (for legacy installations)
+    update_redis_configuration
+    
+    # Update nginx configuration with latest improvements
+    update_nginx_configuration
     
     # Start the service
     print_info "Starting service: $service_name"
