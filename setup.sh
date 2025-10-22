@@ -51,12 +51,12 @@ function log_message() {
 }
 DEPLOYMENT_BRANCH="main"
 GITHUB_REPO=""
-DB_SAFE_DB_DB_USER=""
+DB_SAFE_NAME=""
 DB_PASS=""
 JWT_SECRET=""
 BACKEND_PORT=""
 APP_DIR=""
-SERVICE_USE_LETSENCRYPT="true"  # Will be set based on user input
+USE_LETSENCRYPT="false"  # Will be set based on user input
 SERVER_PROTOCOL_SEL="https"
 SERVER_PORT_SEL=""  # Will be set to BACKEND_PORT in init_instance_vars
 SETUP_NGINX="true"
@@ -449,15 +449,47 @@ find_next_redis_db() {
     local db_num=0
     local max_attempts=16  # Redis default is 16 databases
     
+    # Check if Redis requires authentication
+    local test_output
+    test_output=$(redis-cli -h localhost -p 6379 ping 2>&1)
+    
+    # Determine auth requirements
+    local auth_required=false
+    local redis_auth_args=""
+    
+    if echo "$test_output" | grep -q "NOAUTH\|WRONGPASS"; then
+        auth_required=true
+        
+        # Try to load admin credentials if ACL file exists
+        if [ -f /etc/redis/users.acl ] && grep -q "^user admin" /etc/redis/users.acl; then
+            # Redis is configured with ACL - try to extract admin password
+            print_info "Redis requires authentication, attempting with admin credentials..."
+            
+            # For multi-instance setups, we can't know the admin password yet
+            # So we'll just use database 0 as default
+            print_info "Using database 0 (Redis ACL already configured)"
+            echo "0"
+            return 0
+        fi
+    fi
+    
     while [ $db_num -lt $max_attempts ]; do
         # Test if database is empty
         local key_count
         local redis_output
         
-        # Try to get database size
+        # Try to get database size (with or without auth)
         redis_output=$(redis-cli -h localhost -p 6379 -n "$db_num" DBSIZE 2>&1)
         
-        # Check for errors
+        # Check for authentication errors
+        if echo "$redis_output" | grep -q "NOAUTH\|WRONGPASS"; then
+            # If we hit auth errors and haven't configured yet, use database 0
+            print_info "Redis requires authentication, defaulting to database 0"
+            echo "0"
+            return 0
+        fi
+        
+        # Check for other errors
         if echo "$redis_output" | grep -q "ERR"; then
             if echo "$redis_output" | grep -q "invalid DB index"; then
                 print_warning "Reached maximum database limit at database $db_num"
@@ -471,7 +503,7 @@ find_next_redis_db() {
         key_count="$redis_output"
         
         # If database is empty, use it
-        if [ "$key_count" = "0" ]; then
+        if [ "$key_count" = "0" ] || [ "$key_count" = "(integer) 0" ]; then
             print_status "Found available Redis database: $db_num (empty)"
             echo "$db_num"
             return 0
@@ -1590,7 +1622,13 @@ EOF
         chmod 644 "$APP_DIR/patchmon-install.log" || true
     fi
     
-    print_status "Unified deployment info saved to: $SUMMARY_FILE"
+    # Verify file was created
+    if [ -f "$SUMMARY_FILE" ]; then
+        print_status "Deployment summary appended to: $SUMMARY_FILE"
+    else
+        print_error "⚠️  Failed to append to deployment-info.txt file"
+        return 1
+    fi
 }
 
 # Email notification function removed for self-hosting deployment
@@ -1632,7 +1670,7 @@ Redis Information:
 - Host: localhost
 - Port: 6379
 - User: $REDIS_USER
-- Password: $REDIS_PASSWORD
+- Password: $REDIS_USER_PASSWORD
 - Database: $REDIS_DB
 
 Networking:
@@ -1665,7 +1703,14 @@ EOF
     chmod 644 "$INFO_FILE"
     chown "$INSTANCE_USER:$INSTANCE_USER" "$INFO_FILE"
     
-    print_status "Deployment information saved to: $INFO_FILE"
+    # Verify file was created
+    if [ -f "$INFO_FILE" ]; then
+        print_status "Deployment information saved to: $INFO_FILE"
+        print_info "File details: $(ls -lh "$INFO_FILE" | awk '{print $5, $9}')"
+    else
+        print_error "⚠️  Failed to create deployment-info.txt file"
+        return 1
+    fi
 }
 
 # Restart PatchMon service
@@ -1787,7 +1832,7 @@ deploy_instance() {
     echo -e "${YELLOW}Database User: $DB_USER${NC}"
     echo -e "${YELLOW}Database Password: $DB_PASS${NC}"
     echo -e "${YELLOW}Redis User: $REDIS_USER${NC}"
-    echo -e "${YELLOW}Redis Password: $REDIS_PASSWORD${NC}"
+    echo -e "${YELLOW}Redis User Password: $REDIS_USER_PASSWORD${NC}"
     echo -e "${YELLOW}Redis Database: $REDIS_DB${NC}"
     echo -e "${YELLOW}JWT Secret: $JWT_SECRET${NC}"
     echo -e "${YELLOW}Backend Port: $BACKEND_PORT${NC}"
@@ -1860,7 +1905,8 @@ deploy_instance() {
     echo ""
     print_info "Next steps:"
     echo "  • Visit your URL: $SERVER_PROTOCOL_SEL://$FQDN (ensure DNS is configured)"
-    echo "  • Useful deployment information is stored in: $APP_DIR/deployment-info.txt"
+    echo "  • Deployment information file: $APP_DIR/deployment-info.txt"
+    echo "  • View deployment info: cat $APP_DIR/deployment-info.txt"
     echo ""
     
     # Suppress JSON echo to terminal; details already logged and saved to summary/credentials files
@@ -2099,6 +2145,236 @@ EOF
     return 0
 }
 
+# Update .env file with missing variables while preserving existing values
+update_env_file() {
+    print_info "Checking .env file for missing variables..."
+    
+    local env_file="$instance_dir/backend/.env"
+    
+    if [ ! -f "$env_file" ]; then
+        print_error ".env file not found at $env_file"
+        return 1
+    fi
+    
+    # Backup existing .env
+    cp "$env_file" "$env_file.backup.$(date +%Y%m%d_%H%M%S)"
+    print_info "Backed up existing .env file"
+    
+    # Source existing .env to get current values
+    set -a
+    source "$env_file"
+    set +a
+    
+    # Define all expected variables with their defaults
+    # Only set if not already defined (preserves user values)
+    
+    # Database (already loaded from .env)
+    : ${PM_DB_CONN_MAX_ATTEMPTS:=30}
+    : ${PM_DB_CONN_WAIT_INTERVAL:=2}
+    
+    # JWT (JWT_SECRET should already exist)
+    : ${JWT_EXPIRES_IN:=1h}
+    : ${JWT_REFRESH_EXPIRES_IN:=7d}
+    
+    # Server
+    : ${NODE_ENV:=production}
+    
+    # API
+    : ${API_VERSION:=v1}
+    
+    # CORS (preserve existing or use current FQDN)
+    if [ -z "$CORS_ORIGIN" ]; then
+        # Determine protocol from existing URL or default to https
+        if echo "$DATABASE_URL" | grep -q "localhost"; then
+            CORS_ORIGIN="http://$SELECTED_INSTANCE"
+        else
+            CORS_ORIGIN="https://$SELECTED_INSTANCE"
+        fi
+    fi
+    
+    # Session
+    : ${SESSION_INACTIVITY_TIMEOUT_MINUTES:=30}
+    
+    # User
+    : ${DEFAULT_USER_ROLE:=user}
+    
+    # Rate Limiting
+    : ${RATE_LIMIT_WINDOW_MS:=900000}
+    : ${RATE_LIMIT_MAX:=5000}
+    : ${AUTH_RATE_LIMIT_WINDOW_MS:=600000}
+    : ${AUTH_RATE_LIMIT_MAX:=500}
+    : ${AGENT_RATE_LIMIT_WINDOW_MS:=60000}
+    : ${AGENT_RATE_LIMIT_MAX:=1000}
+    
+    # Redis (already handled by update_redis_configuration if missing)
+    : ${REDIS_HOST:=localhost}
+    : ${REDIS_PORT:=6379}
+    : ${REDIS_DB:=0}
+    
+    # Logging
+    : ${LOG_LEVEL:=info}
+    : ${ENABLE_LOGGING:=true}
+    
+    # TFA
+    : ${TFA_REMEMBER_ME_EXPIRES_IN:=30d}
+    : ${TFA_MAX_REMEMBER_SESSIONS:=5}
+    : ${TFA_SUSPICIOUS_ACTIVITY_THRESHOLD:=3}
+    
+    # Track which variables were added
+    local added_vars=()
+    
+    # Check and add missing variables
+    if ! grep -q "^PM_DB_CONN_MAX_ATTEMPTS=" "$env_file"; then
+        added_vars+=("PM_DB_CONN_MAX_ATTEMPTS")
+    fi
+    if ! grep -q "^PM_DB_CONN_WAIT_INTERVAL=" "$env_file"; then
+        added_vars+=("PM_DB_CONN_WAIT_INTERVAL")
+    fi
+    if ! grep -q "^JWT_EXPIRES_IN=" "$env_file"; then
+        added_vars+=("JWT_EXPIRES_IN")
+    fi
+    if ! grep -q "^JWT_REFRESH_EXPIRES_IN=" "$env_file"; then
+        added_vars+=("JWT_REFRESH_EXPIRES_IN")
+    fi
+    if ! grep -q "^API_VERSION=" "$env_file"; then
+        added_vars+=("API_VERSION")
+    fi
+    if ! grep -q "^CORS_ORIGIN=" "$env_file"; then
+        added_vars+=("CORS_ORIGIN")
+    fi
+    if ! grep -q "^SESSION_INACTIVITY_TIMEOUT_MINUTES=" "$env_file"; then
+        added_vars+=("SESSION_INACTIVITY_TIMEOUT_MINUTES")
+    fi
+    if ! grep -q "^DEFAULT_USER_ROLE=" "$env_file"; then
+        added_vars+=("DEFAULT_USER_ROLE")
+    fi
+    if ! grep -q "^RATE_LIMIT_WINDOW_MS=" "$env_file"; then
+        added_vars+=("RATE_LIMIT_WINDOW_MS")
+    fi
+    if ! grep -q "^RATE_LIMIT_MAX=" "$env_file"; then
+        added_vars+=("RATE_LIMIT_MAX")
+    fi
+    if ! grep -q "^AUTH_RATE_LIMIT_WINDOW_MS=" "$env_file"; then
+        added_vars+=("AUTH_RATE_LIMIT_WINDOW_MS")
+    fi
+    if ! grep -q "^AUTH_RATE_LIMIT_MAX=" "$env_file"; then
+        added_vars+=("AUTH_RATE_LIMIT_MAX")
+    fi
+    if ! grep -q "^AGENT_RATE_LIMIT_WINDOW_MS=" "$env_file"; then
+        added_vars+=("AGENT_RATE_LIMIT_WINDOW_MS")
+    fi
+    if ! grep -q "^AGENT_RATE_LIMIT_MAX=" "$env_file"; then
+        added_vars+=("AGENT_RATE_LIMIT_MAX")
+    fi
+    if ! grep -q "^LOG_LEVEL=" "$env_file"; then
+        added_vars+=("LOG_LEVEL")
+    fi
+    if ! grep -q "^ENABLE_LOGGING=" "$env_file"; then
+        added_vars+=("ENABLE_LOGGING")
+    fi
+    if ! grep -q "^TFA_REMEMBER_ME_EXPIRES_IN=" "$env_file"; then
+        added_vars+=("TFA_REMEMBER_ME_EXPIRES_IN")
+    fi
+    if ! grep -q "^TFA_MAX_REMEMBER_SESSIONS=" "$env_file"; then
+        added_vars+=("TFA_MAX_REMEMBER_SESSIONS")
+    fi
+    if ! grep -q "^TFA_SUSPICIOUS_ACTIVITY_THRESHOLD=" "$env_file"; then
+        added_vars+=("TFA_SUSPICIOUS_ACTIVITY_THRESHOLD")
+    fi
+    
+    # If there are missing variables, add them
+    if [ ${#added_vars[@]} -gt 0 ]; then
+        print_info "Adding ${#added_vars[@]} missing environment variable(s)..."
+        
+        cat >> "$env_file" << EOF
+
+# Environment variables added during update on $(date)
+EOF
+        
+        # Add database config if missing
+        if printf '%s\n' "${added_vars[@]}" | grep -q "PM_DB_CONN_MAX_ATTEMPTS"; then
+            echo "PM_DB_CONN_MAX_ATTEMPTS=$PM_DB_CONN_MAX_ATTEMPTS" >> "$env_file"
+        fi
+        if printf '%s\n' "${added_vars[@]}" | grep -q "PM_DB_CONN_WAIT_INTERVAL"; then
+            echo "PM_DB_CONN_WAIT_INTERVAL=$PM_DB_CONN_WAIT_INTERVAL" >> "$env_file"
+        fi
+        
+        # Add JWT config if missing
+        if printf '%s\n' "${added_vars[@]}" | grep -q "JWT_EXPIRES_IN"; then
+            echo "JWT_EXPIRES_IN=$JWT_EXPIRES_IN" >> "$env_file"
+        fi
+        if printf '%s\n' "${added_vars[@]}" | grep -q "JWT_REFRESH_EXPIRES_IN"; then
+            echo "JWT_REFRESH_EXPIRES_IN=$JWT_REFRESH_EXPIRES_IN" >> "$env_file"
+        fi
+        
+        # Add API config if missing
+        if printf '%s\n' "${added_vars[@]}" | grep -q "API_VERSION"; then
+            echo "API_VERSION=$API_VERSION" >> "$env_file"
+        fi
+        
+        # Add CORS config if missing
+        if printf '%s\n' "${added_vars[@]}" | grep -q "CORS_ORIGIN"; then
+            echo "CORS_ORIGIN=$CORS_ORIGIN" >> "$env_file"
+        fi
+        
+        # Add session config if missing
+        if printf '%s\n' "${added_vars[@]}" | grep -q "SESSION_INACTIVITY_TIMEOUT_MINUTES"; then
+            echo "SESSION_INACTIVITY_TIMEOUT_MINUTES=$SESSION_INACTIVITY_TIMEOUT_MINUTES" >> "$env_file"
+        fi
+        
+        # Add user config if missing
+        if printf '%s\n' "${added_vars[@]}" | grep -q "DEFAULT_USER_ROLE"; then
+            echo "DEFAULT_USER_ROLE=$DEFAULT_USER_ROLE" >> "$env_file"
+        fi
+        
+        # Add rate limiting if missing
+        if printf '%s\n' "${added_vars[@]}" | grep -q "RATE_LIMIT_WINDOW_MS"; then
+            echo "RATE_LIMIT_WINDOW_MS=$RATE_LIMIT_WINDOW_MS" >> "$env_file"
+        fi
+        if printf '%s\n' "${added_vars[@]}" | grep -q "RATE_LIMIT_MAX"; then
+            echo "RATE_LIMIT_MAX=$RATE_LIMIT_MAX" >> "$env_file"
+        fi
+        if printf '%s\n' "${added_vars[@]}" | grep -q "AUTH_RATE_LIMIT_WINDOW_MS"; then
+            echo "AUTH_RATE_LIMIT_WINDOW_MS=$AUTH_RATE_LIMIT_WINDOW_MS" >> "$env_file"
+        fi
+        if printf '%s\n' "${added_vars[@]}" | grep -q "AUTH_RATE_LIMIT_MAX"; then
+            echo "AUTH_RATE_LIMIT_MAX=$AUTH_RATE_LIMIT_MAX" >> "$env_file"
+        fi
+        if printf '%s\n' "${added_vars[@]}" | grep -q "AGENT_RATE_LIMIT_WINDOW_MS"; then
+            echo "AGENT_RATE_LIMIT_WINDOW_MS=$AGENT_RATE_LIMIT_WINDOW_MS" >> "$env_file"
+        fi
+        if printf '%s\n' "${added_vars[@]}" | grep -q "AGENT_RATE_LIMIT_MAX"; then
+            echo "AGENT_RATE_LIMIT_MAX=$AGENT_RATE_LIMIT_MAX" >> "$env_file"
+        fi
+        
+        # Add logging config if missing
+        if printf '%s\n' "${added_vars[@]}" | grep -q "LOG_LEVEL"; then
+            echo "LOG_LEVEL=$LOG_LEVEL" >> "$env_file"
+        fi
+        if printf '%s\n' "${added_vars[@]}" | grep -q "ENABLE_LOGGING"; then
+            echo "ENABLE_LOGGING=$ENABLE_LOGGING" >> "$env_file"
+        fi
+        
+        # Add TFA config if missing
+        if printf '%s\n' "${added_vars[@]}" | grep -q "TFA_REMEMBER_ME_EXPIRES_IN"; then
+            echo "TFA_REMEMBER_ME_EXPIRES_IN=$TFA_REMEMBER_ME_EXPIRES_IN" >> "$env_file"
+        fi
+        if printf '%s\n' "${added_vars[@]}" | grep -q "TFA_MAX_REMEMBER_SESSIONS"; then
+            echo "TFA_MAX_REMEMBER_SESSIONS=$TFA_MAX_REMEMBER_SESSIONS" >> "$env_file"
+        fi
+        if printf '%s\n' "${added_vars[@]}" | grep -q "TFA_SUSPICIOUS_ACTIVITY_THRESHOLD"; then
+            echo "TFA_SUSPICIOUS_ACTIVITY_THRESHOLD=$TFA_SUSPICIOUS_ACTIVITY_THRESHOLD" >> "$env_file"
+        fi
+        
+        print_status ".env file updated with ${#added_vars[@]} new variable(s)"
+        print_info "Added variables: ${added_vars[*]}"
+    else
+        print_status ".env file is up to date - no missing variables"
+    fi
+    
+    return 0
+}
+
 # Update nginx configuration for existing installation
 update_nginx_configuration() {
     print_info "Updating nginx configuration..."
@@ -2275,6 +2551,9 @@ update_installation() {
     
     # Check and update Redis configuration if needed (for legacy installations)
     update_redis_configuration
+    
+    # Update .env file with any missing variables (preserve existing values)
+    update_env_file
     
     # Update nginx configuration with latest improvements
     update_nginx_configuration
