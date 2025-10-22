@@ -1238,6 +1238,7 @@ server {
     
     # Static assets caching (exclude Bull Board assets)
     location ~* ^/(?!bullboard).*\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        root $app_dir/frontend/dist;
         expires 1y;
         add_header Cache-Control "public, immutable";
     }
@@ -1320,6 +1321,7 @@ server {
     
     # Static assets caching (exclude Bull Board assets)
     location ~* ^/(?!bullboard).*\.(js|css|png|jpg|jpeg|gif|ico|svg|woff|woff2|ttf|eot)$ {
+        root $app_dir/frontend/dist;
         expires 1y;
         add_header Cache-Control "public, immutable";
     }
