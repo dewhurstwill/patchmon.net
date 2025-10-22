@@ -1173,11 +1173,6 @@ server {
     include /etc/letsencrypt/options-ssl-nginx.conf;
     ssl_dhparam /etc/letsencrypt/ssl-dhparams.pem;
     
-    # SSL Optimization
-    ssl_session_cache shared:SSL:10m;
-    ssl_session_timeout 10m;
-    ssl_session_tickets off;
-    
     # Security headers (applied to all responses)
     add_header Strict-Transport-Security "max-age=31536000; includeSubDomains; preload" always;
     add_header X-Frame-Options DENY always;
@@ -2123,9 +2118,9 @@ update_nginx_configuration() {
     fi
     
     # Extract backend port
-    local backend_port=$(grep -o 'proxy_pass http://127.0.0.1:[0-9]*' "/etc/nginx/sites-available/$SELECTED_INSTANCE" 2>/dev/null | grep -o '[0-9]*' | head -1)
+    local backend_port=$(grep -o 'proxy_pass http://127.0.0.1:[0-9]*' "/etc/nginx/sites-available/$SELECTED_INSTANCE" 2>/dev/null | grep -oP ':\K[0-9]+' | head -1)
     if [ -z "$backend_port" ] && [ -f "$instance_dir/backend/.env" ]; then
-        backend_port=$(grep '^PORT=' "$instance_dir/backend/.env" | cut -d'=' -f2)
+        backend_port=$(grep '^PORT=' "$instance_dir/backend/.env" | cut -d'=' -f2 | tr -d ' ')
     fi
     
     if [ -z "$backend_port" ]; then
@@ -2349,6 +2344,27 @@ main() {
     fi
     
     # Normal installation mode
+    # Check if existing installations are present
+    local existing_installs=($(detect_installations))
+    if [ ${#existing_installs[@]} -gt 0 ]; then
+        print_warning "⚠️  Found ${#existing_installs[@]} existing PatchMon installation(s):"
+        for install in "${existing_installs[@]}"; do
+            print_info "   - $install"
+        done
+        echo ""
+        print_warning "If you want to UPDATE an existing installation, run:"
+        print_info "   sudo bash $0 --update"
+        echo ""
+        print_warning "If you want to create a NEW installation alongside the existing one(s), continue below."
+        echo ""
+        read_yes_no "Do you want to continue with NEW installation?" CONTINUE_NEW "n"
+        
+        if [ "$CONTINUE_NEW" != "y" ]; then
+            print_info "Installation cancelled. Run with --update flag to update existing installations."
+            exit 0
+        fi
+    fi
+    
     # Run interactive setup
     interactive_setup
     
