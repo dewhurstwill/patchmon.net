@@ -295,7 +295,7 @@ app.disable("x-powered-by");
 // Rate limiting with monitoring
 const limiter = rateLimit({
 	windowMs: parseInt(process.env.RATE_LIMIT_WINDOW_MS, 10) || 15 * 60 * 1000,
-	max: parseInt(process.env.RATE_LIMIT_MAX, 10) || 100,
+	max: parseInt(process.env.RATE_LIMIT_MAX, 10) || 5000,
 	message: {
 		error: "Too many requests from this IP, please try again later.",
 		retryAfter: Math.ceil(
@@ -424,7 +424,7 @@ const apiVersion = process.env.API_VERSION || "v1";
 const authLimiter = rateLimit({
 	windowMs:
 		parseInt(process.env.AUTH_RATE_LIMIT_WINDOW_MS, 10) || 10 * 60 * 1000,
-	max: parseInt(process.env.AUTH_RATE_LIMIT_MAX, 10) || 20,
+	max: parseInt(process.env.AUTH_RATE_LIMIT_MAX, 10) || 500,
 	message: {
 		error: "Too many authentication requests, please try again later.",
 		retryAfter: Math.ceil(
@@ -438,7 +438,7 @@ const authLimiter = rateLimit({
 });
 const agentLimiter = rateLimit({
 	windowMs: parseInt(process.env.AGENT_RATE_LIMIT_WINDOW_MS, 10) || 60 * 1000,
-	max: parseInt(process.env.AGENT_RATE_LIMIT_MAX, 10) || 120,
+	max: parseInt(process.env.AGENT_RATE_LIMIT_MAX, 10) || 1000,
 	message: {
 		error: "Too many agent requests, please try again later.",
 		retryAfter: Math.ceil(
