@@ -1441,10 +1441,12 @@ router.get("/install", async (req, res) => {
 
 		// Determine curl flags dynamically from settings (ignore self-signed)
 		let curlFlags = "-s";
+		let skipSSLVerify = "false";
 		try {
 			const settings = await prisma.settings.findFirst();
 			if (settings && settings.ignore_ssl_self_signed === true) {
 				curlFlags = "-sk";
+				skipSSLVerify = "true";
 			}
 		} catch (_) {}
 
@@ -1454,12 +1456,13 @@ router.get("/install", async (req, res) => {
 		// Get architecture parameter (default to amd64)
 		const architecture = req.query.arch || "amd64";
 
-		// Inject the API credentials, server URL, curl flags, force flag, and architecture into the script
+		// Inject the API credentials, server URL, curl flags, SSL verify flag, force flag, and architecture into the script
 		const envVars = `#!/bin/bash
 export PATCHMON_URL="${serverUrl}"
 export API_ID="${host.api_id}"
 export API_KEY="${host.api_key}"
 export CURL_FLAGS="${curlFlags}"
+export SKIP_SSL_VERIFY="${skipSSLVerify}"
 export FORCE_INSTALL="${forceInstall ? "true" : "false"}"
 export ARCHITECTURE="${architecture}"
 
