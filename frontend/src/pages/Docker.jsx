@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
 	AlertTriangle,
 	ArrowDown,
@@ -11,6 +11,7 @@ import {
 	Search,
 	Server,
 	Shield,
+	Trash2,
 	X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -18,12 +19,15 @@ import { Link } from "react-router-dom";
 import api from "../utils/api";
 
 const Docker = () => {
+	const queryClient = useQueryClient();
 	const [searchTerm, setSearchTerm] = useState("");
 	const [activeTab, setActiveTab] = useState("containers");
 	const [sortField, setSortField] = useState("status");
 	const [sortDirection, setSortDirection] = useState("asc");
 	const [statusFilter, setStatusFilter] = useState("all");
 	const [sourceFilter, setSourceFilter] = useState("all");
+	const [deleteContainerModal, setDeleteContainerModal] = useState(null);
+	const [deleteImageModal, setDeleteImageModal] = useState(null);
 
 	// Fetch Docker dashboard data
 	const { data: dashboard, isLoading: dashboardLoading } = useQuery({
@@ -36,7 +40,11 @@ const Docker = () => {
 	});
 
 	// Fetch containers
-	const { data: containersData, isLoading: containersLoading } = useQuery({
+	const {
+		data: containersData,
+		isLoading: containersLoading,
+		refetch: refetchContainers,
+	} = useQuery({
 		queryKey: ["docker", "containers", statusFilter],
 		queryFn: async () => {
 			const params = new URLSearchParams();
@@ -49,7 +57,11 @@ const Docker = () => {
 	});
 
 	// Fetch images
-	const { data: imagesData, isLoading: imagesLoading } = useQuery({
+	const {
+		data: imagesData,
+		isLoading: imagesLoading,
+		refetch: refetchImages,
+	} = useQuery({
 		queryKey: ["docker", "images", sourceFilter],
 		queryFn: async () => {
 			const params = new URLSearchParams();
@@ -79,6 +91,42 @@ const Docker = () => {
 			return response.data;
 		},
 		enabled: activeTab === "updates",
+	});
+
+	// Delete container mutation
+	const deleteContainerMutation = useMutation({
+		mutationFn: async (containerId) => {
+			const response = await api.delete(`/docker/containers/${containerId}`);
+			return response.data;
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries(["docker", "containers"]);
+			queryClient.invalidateQueries(["docker", "dashboard"]);
+			setDeleteContainerModal(null);
+		},
+		onError: (error) => {
+			alert(
+				`Failed to delete container: ${error.response?.data?.error || error.message}`,
+			);
+		},
+	});
+
+	// Delete image mutation
+	const deleteImageMutation = useMutation({
+		mutationFn: async (imageId) => {
+			const response = await api.delete(`/docker/images/${imageId}`);
+			return response.data;
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries(["docker", "images"]);
+			queryClient.invalidateQueries(["docker", "dashboard"]);
+			setDeleteImageModal(null);
+		},
+		onError: (error) => {
+			alert(
+				`Failed to delete image: ${error.response?.data?.error || error.message}`,
+			);
+		},
 	});
 
 	// Filter and sort containers
@@ -288,32 +336,36 @@ const Docker = () => {
 	};
 
 	return (
-		<div className="space-y-6">
+		<div className="h-[calc(100vh-7rem)] flex flex-col overflow-hidden">
 			{/* Header */}
-			<div className="flex justify-between items-center">
+			<div className="flex items-center justify-between mb-6">
 				<div>
-					<h1 className="text-2xl font-bold text-secondary-900 dark:text-white">
+					<h1 className="text-2xl font-semibold text-secondary-900 dark:text-white">
 						Docker Inventory
 					</h1>
-					<p className="mt-1 text-sm text-secondary-600 dark:text-secondary-400">
+					<p className="text-sm text-secondary-600 dark:text-secondary-400 mt-1">
 						Monitor containers, images, and updates across your infrastructure
 					</p>
 				</div>
-				<button
-					type="button"
-					onClick={() => {
-						// Trigger refresh of all queries
-						window.location.reload();
-					}}
-					className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary-600 hover:bg-primary-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500"
-				>
-					<RefreshCw className="h-4 w-4 mr-2" />
-					Refresh
-				</button>
+				<div className="flex items-center gap-3">
+					<button
+						type="button"
+						onClick={() => {
+							// Trigger refresh based on active tab
+							if (activeTab === "containers") refetchContainers();
+							else if (activeTab === "images") refetchImages();
+							else window.location.reload();
+						}}
+						className="btn-outline flex items-center justify-center p-2"
+						title="Refresh data"
+					>
+						<RefreshCw className="h-4 w-4" />
+					</button>
+				</div>
 			</div>
 
-			{/* Dashboard Cards */}
-			<div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
+			{/* Stats Summary */}
+			<div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
 				<div className="card p-4">
 					<div className="flex items-center">
 						<div className="flex-shrink-0">
@@ -400,11 +452,11 @@ const Docker = () => {
 				</div>
 			</div>
 
-			{/* Tabs and Content */}
-			<div className="card">
+			{/* Docker List */}
+			<div className="card flex-1 flex flex-col overflow-hidden min-h-0">
 				{/* Tab Navigation */}
-				<div className="border-b border-secondary-200 dark:border-secondary-700">
-					<nav className="-mb-px flex space-x-8 px-6" aria-label="Tabs">
+				<div className="border-b border-secondary-200 dark:border-secondary-600">
+					<nav className="-mb-px flex space-x-8 px-4" aria-label="Tabs">
 						{[
 							{ id: "containers", label: "Containers", icon: Container },
 							{ id: "images", label: "Images", icon: Package },
@@ -443,7 +495,7 @@ const Docker = () => {
 				</div>
 
 				{/* Filters and Search */}
-				<div className="p-6 border-b border-secondary-200 dark:border-secondary-700">
+				<div className="p-4 border-b border-secondary-200 dark:border-secondary-600">
 					<div className="flex flex-col sm:flex-row gap-4">
 						<div className="flex-1">
 							<div className="relative">
@@ -498,7 +550,7 @@ const Docker = () => {
 				</div>
 
 				{/* Tab Content */}
-				<div className="p-6">
+				<div className="p-4 flex-1 overflow-auto">
 					{/* Containers Tab */}
 					{activeTab === "containers" && (
 						<div className="overflow-x-auto">
@@ -522,83 +574,80 @@ const Docker = () => {
 									</p>
 								</div>
 							) : (
-								<table className="min-w-full divide-y divide-secondary-200 dark:divide-secondary-700">
-									<thead className="bg-secondary-50 dark:bg-secondary-900">
+								<table className="min-w-full divide-y divide-secondary-200 dark:divide-secondary-600">
+									<thead className="bg-secondary-50 dark:bg-secondary-700">
 										<tr>
-											<th
-												scope="col"
-												className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-secondary-400 uppercase tracking-wider cursor-pointer hover:bg-secondary-100 dark:hover:bg-secondary-800"
-												onClick={() => handleSort("name")}
-											>
-												<div className="flex items-center gap-2">
+											<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
+												<button
+													type="button"
+													onClick={() => handleSort("name")}
+													className="flex items-center gap-2 hover:text-secondary-700"
+												>
 													Container Name
 													{getSortIcon("name")}
-												</div>
+												</button>
 											</th>
-											<th
-												scope="col"
-												className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-secondary-400 uppercase tracking-wider cursor-pointer hover:bg-secondary-100 dark:hover:bg-secondary-800"
-												onClick={() => handleSort("image")}
-											>
-												<div className="flex items-center gap-2">
+											<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
+												<button
+													type="button"
+													onClick={() => handleSort("image")}
+													className="flex items-center gap-2 hover:text-secondary-700"
+												>
 													Image
 													{getSortIcon("image")}
-												</div>
+												</button>
 											</th>
-											<th
-												scope="col"
-												className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-secondary-400 uppercase tracking-wider cursor-pointer hover:bg-secondary-100 dark:hover:bg-secondary-800"
-												onClick={() => handleSort("status")}
-											>
-												<div className="flex items-center gap-2">
+											<th className="px-4 py-2 text-center text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
+												<button
+													type="button"
+													onClick={() => handleSort("status")}
+													className="flex items-center gap-2 hover:text-secondary-700"
+												>
 													Status
 													{getSortIcon("status")}
-												</div>
+												</button>
 											</th>
-											<th
-												scope="col"
-												className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-secondary-400 uppercase tracking-wider cursor-pointer hover:bg-secondary-100 dark:hover:bg-secondary-800"
-												onClick={() => handleSort("host")}
-											>
-												<div className="flex items-center gap-2">
+											<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
+												<button
+													type="button"
+													onClick={() => handleSort("host")}
+													className="flex items-center gap-2 hover:text-secondary-700"
+												>
 													Host
 													{getSortIcon("host")}
-												</div>
+												</button>
 											</th>
-											<th
-												scope="col"
-												className="px-6 py-3 text-right text-xs font-medium text-secondary-500 dark:text-secondary-400 uppercase tracking-wider"
-											>
+											<th className="px-4 py-2 text-center text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
 												Actions
 											</th>
 										</tr>
 									</thead>
-									<tbody className="bg-white dark:bg-secondary-800 divide-y divide-secondary-200 dark:divide-secondary-700">
+									<tbody className="bg-white dark:bg-secondary-800 divide-y divide-secondary-200 dark:divide-secondary-600">
 										{filteredContainers.map((container) => (
 											<tr
 												key={container.id}
-												className="hover:bg-secondary-50 dark:hover:bg-secondary-700"
+												className="hover:bg-secondary-50 dark:hover:bg-secondary-700 transition-colors"
 											>
-												<td className="px-6 py-4 whitespace-nowrap">
-													<div className="flex items-center">
-														<Container className="h-5 w-5 text-secondary-400 mr-3" />
+												<td className="px-4 py-2 whitespace-nowrap">
+													<div className="flex items-center gap-2">
+														<Container className="h-4 w-4 text-secondary-400 dark:text-secondary-500 flex-shrink-0" />
 														<Link
 															to={`/docker/containers/${container.id}`}
-															className="text-sm font-medium text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300"
+															className="text-sm font-medium text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300 truncate"
 														>
 															{container.name}
 														</Link>
 													</div>
 												</td>
-												<td className="px-6 py-4">
+												<td className="px-4 py-2">
 													<div className="text-sm text-secondary-900 dark:text-white">
 														{container.image_name}:{container.image_tag}
 													</div>
 												</td>
-												<td className="px-6 py-4 whitespace-nowrap">
+												<td className="px-4 py-2 whitespace-nowrap text-center">
 													{getStatusBadge(container.status)}
 												</td>
-												<td className="px-6 py-4 whitespace-nowrap">
+												<td className="px-4 py-2 whitespace-nowrap">
 													<Link
 														to={`/hosts/${container.host_id}`}
 														className="text-sm text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300"
@@ -608,14 +657,24 @@ const Docker = () => {
 															"Unknown"}
 													</Link>
 												</td>
-												<td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-													<Link
-														to={`/docker/containers/${container.id}`}
-														className="text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300 inline-flex items-center"
-													>
-														View
-														<ExternalLink className="ml-1 h-4 w-4" />
-													</Link>
+												<td className="px-4 py-2 whitespace-nowrap text-center">
+													<div className="flex items-center justify-center gap-3">
+														<Link
+															to={`/docker/containers/${container.id}`}
+															className="text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300 inline-flex items-center gap-1"
+															title="View details"
+														>
+															<ExternalLink className="h-4 w-4" />
+														</Link>
+														<button
+															type="button"
+															onClick={() => setDeleteContainerModal(container)}
+															className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 inline-flex items-center"
+															title="Delete container from inventory"
+														>
+															<Trash2 className="h-4 w-4" />
+														</button>
+													</div>
 												</td>
 											</tr>
 										))}
@@ -648,88 +707,79 @@ const Docker = () => {
 									</p>
 								</div>
 							) : (
-								<table className="min-w-full divide-y divide-secondary-200 dark:divide-secondary-700">
-									<thead className="bg-secondary-50 dark:bg-secondary-900">
+								<table className="min-w-full divide-y divide-secondary-200 dark:divide-secondary-600">
+									<thead className="bg-secondary-50 dark:bg-secondary-700">
 										<tr>
-											<th
-												scope="col"
-												className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-secondary-400 uppercase tracking-wider cursor-pointer hover:bg-secondary-100 dark:hover:bg-secondary-800"
-												onClick={() => handleSort("repository")}
-											>
-												<div className="flex items-center gap-2">
+											<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
+												<button
+													type="button"
+													onClick={() => handleSort("repository")}
+													className="flex items-center gap-2 hover:text-secondary-700"
+												>
 													Repository
 													{getSortIcon("repository")}
-												</div>
+												</button>
 											</th>
-											<th
-												scope="col"
-												className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-secondary-400 uppercase tracking-wider cursor-pointer hover:bg-secondary-100 dark:hover:bg-secondary-800"
-												onClick={() => handleSort("tag")}
-											>
-												<div className="flex items-center gap-2">
+											<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
+												<button
+													type="button"
+													onClick={() => handleSort("tag")}
+													className="flex items-center gap-2 hover:text-secondary-700"
+												>
 													Tag
 													{getSortIcon("tag")}
-												</div>
+												</button>
 											</th>
-											<th
-												scope="col"
-												className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-secondary-400 uppercase tracking-wider"
-											>
+											<th className="px-4 py-2 text-center text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
 												Source
 											</th>
-											<th
-												scope="col"
-												className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-secondary-400 uppercase tracking-wider cursor-pointer hover:bg-secondary-100 dark:hover:bg-secondary-800"
-												onClick={() => handleSort("containers")}
-											>
-												<div className="flex items-center gap-2">
+											<th className="px-4 py-2 text-center text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
+												<button
+													type="button"
+													onClick={() => handleSort("containers")}
+													className="flex items-center gap-2 hover:text-secondary-700"
+												>
 													Containers
 													{getSortIcon("containers")}
-												</div>
+												</button>
 											</th>
-											<th
-												scope="col"
-												className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-secondary-400 uppercase tracking-wider"
-											>
+											<th className="px-4 py-2 text-center text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
 												Updates
 											</th>
-											<th
-												scope="col"
-												className="px-6 py-3 text-right text-xs font-medium text-secondary-500 dark:text-secondary-400 uppercase tracking-wider"
-											>
+											<th className="px-4 py-2 text-center text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
 												Actions
 											</th>
 										</tr>
 									</thead>
-									<tbody className="bg-white dark:bg-secondary-800 divide-y divide-secondary-200 dark:divide-secondary-700">
+									<tbody className="bg-white dark:bg-secondary-800 divide-y divide-secondary-200 dark:divide-secondary-600">
 										{filteredImages.map((image) => (
 											<tr
 												key={image.id}
-												className="hover:bg-secondary-50 dark:hover:bg-secondary-700"
+												className="hover:bg-secondary-50 dark:hover:bg-secondary-700 transition-colors"
 											>
-												<td className="px-6 py-4 whitespace-nowrap">
-													<div className="flex items-center">
-														<Package className="h-5 w-5 text-secondary-400 mr-3" />
+												<td className="px-4 py-2 whitespace-nowrap">
+													<div className="flex items-center gap-2">
+														<Package className="h-4 w-4 text-secondary-400 dark:text-secondary-500 flex-shrink-0" />
 														<Link
 															to={`/docker/images/${image.id}`}
-															className="text-sm font-medium text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300"
+															className="text-sm font-medium text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300 truncate"
 														>
 															{image.repository}
 														</Link>
 													</div>
 												</td>
-												<td className="px-6 py-4 whitespace-nowrap">
+												<td className="px-4 py-2 whitespace-nowrap">
 													<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-secondary-100 text-secondary-800 dark:bg-secondary-700 dark:text-secondary-200">
 														{image.tag}
 													</span>
 												</td>
-												<td className="px-6 py-4 whitespace-nowrap">
+												<td className="px-4 py-2 whitespace-nowrap text-center">
 													{getSourceBadge(image.source)}
 												</td>
-												<td className="px-6 py-4 whitespace-nowrap text-sm text-secondary-900 dark:text-white">
+												<td className="px-4 py-2 whitespace-nowrap text-center text-sm text-secondary-900 dark:text-white">
 													{image._count?.docker_containers || 0}
 												</td>
-												<td className="px-6 py-4 whitespace-nowrap">
+												<td className="px-4 py-2 whitespace-nowrap text-center">
 													{image.hasUpdates ? (
 														<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
 															<AlertTriangle className="h-3 w-3 mr-1" />
@@ -741,14 +791,24 @@ const Docker = () => {
 														</span>
 													)}
 												</td>
-												<td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-													<Link
-														to={`/docker/images/${image.id}`}
-														className="text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300 inline-flex items-center"
-													>
-														View
-														<ExternalLink className="ml-1 h-4 w-4" />
-													</Link>
+												<td className="px-4 py-2 whitespace-nowrap text-center">
+													<div className="flex items-center justify-center gap-3">
+														<Link
+															to={`/docker/images/${image.id}`}
+															className="text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300 inline-flex items-center"
+															title="View details"
+														>
+															<ExternalLink className="h-4 w-4" />
+														</Link>
+														<button
+															type="button"
+															onClick={() => setDeleteImageModal(image)}
+															className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 inline-flex items-center"
+															title="Delete image from inventory"
+														>
+															<Trash2 className="h-4 w-4" />
+														</button>
+													</div>
 												</td>
 											</tr>
 										))}
@@ -781,86 +841,80 @@ const Docker = () => {
 									</p>
 								</div>
 							) : (
-								<table className="min-w-full divide-y divide-secondary-200 dark:divide-secondary-700">
-									<thead className="bg-secondary-50 dark:bg-secondary-900">
+								<table className="min-w-full divide-y divide-secondary-200 dark:divide-secondary-600">
+									<thead className="bg-secondary-50 dark:bg-secondary-700">
 										<tr>
-											<th
-												scope="col"
-												className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-secondary-400 uppercase tracking-wider cursor-pointer hover:bg-secondary-100 dark:hover:bg-secondary-800"
-												onClick={() => handleSort("name")}
-											>
-												<div className="flex items-center gap-2">
+											<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
+												<button
+													type="button"
+													onClick={() => handleSort("name")}
+													className="flex items-center gap-2 hover:text-secondary-700"
+												>
 													Host Name
 													{getSortIcon("name")}
-												</div>
+												</button>
 											</th>
-											<th
-												scope="col"
-												className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-secondary-400 uppercase tracking-wider cursor-pointer hover:bg-secondary-100 dark:hover:bg-secondary-800"
-												onClick={() => handleSort("containers")}
-											>
-												<div className="flex items-center gap-2">
+											<th className="px-4 py-2 text-center text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
+												<button
+													type="button"
+													onClick={() => handleSort("containers")}
+													className="flex items-center gap-2 hover:text-secondary-700"
+												>
 													Containers
 													{getSortIcon("containers")}
-												</div>
+												</button>
 											</th>
-											<th
-												scope="col"
-												className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-secondary-400 uppercase tracking-wider"
-											>
+											<th className="px-4 py-2 text-center text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
 												Running
 											</th>
-											<th
-												scope="col"
-												className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-secondary-400 uppercase tracking-wider cursor-pointer hover:bg-secondary-100 dark:hover:bg-secondary-800"
-												onClick={() => handleSort("images")}
-											>
-												<div className="flex items-center gap-2">
+											<th className="px-4 py-2 text-center text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
+												<button
+													type="button"
+													onClick={() => handleSort("images")}
+													className="flex items-center gap-2 hover:text-secondary-700"
+												>
 													Images
 													{getSortIcon("images")}
-												</div>
+												</button>
 											</th>
-											<th
-												scope="col"
-												className="px-6 py-3 text-right text-xs font-medium text-secondary-500 dark:text-secondary-400 uppercase tracking-wider"
-											>
+											<th className="px-4 py-2 text-center text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
 												Actions
 											</th>
 										</tr>
 									</thead>
-									<tbody className="bg-white dark:bg-secondary-800 divide-y divide-secondary-200 dark:divide-secondary-700">
+									<tbody className="bg-white dark:bg-secondary-800 divide-y divide-secondary-200 dark:divide-secondary-600">
 										{filteredHosts.map((host) => (
 											<tr
 												key={host.id}
-												className="hover:bg-secondary-50 dark:hover:bg-secondary-700"
+												className="hover:bg-secondary-50 dark:hover:bg-secondary-700 transition-colors"
 											>
-												<td className="px-6 py-4 whitespace-nowrap">
-													<div className="flex items-center">
-														<Server className="h-5 w-5 text-secondary-400 mr-3" />
+												<td className="px-4 py-2 whitespace-nowrap">
+													<div className="flex items-center gap-2">
+														<Server className="h-4 w-4 text-secondary-400 dark:text-secondary-500 flex-shrink-0" />
 														<Link
 															to={`/docker/hosts/${host.id}`}
-															className="text-sm font-medium text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300"
+															className="text-sm font-medium text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300 truncate"
 														>
 															{host.friendly_name || host.hostname}
 														</Link>
 													</div>
 												</td>
-												<td className="px-6 py-4 whitespace-nowrap text-sm text-secondary-900 dark:text-white">
+												<td className="px-4 py-2 whitespace-nowrap text-center text-sm text-secondary-900 dark:text-white">
 													{host.dockerStats?.totalContainers || 0}
 												</td>
-												<td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 dark:text-green-400">
+												<td className="px-4 py-2 whitespace-nowrap text-center text-sm text-green-600 dark:text-green-400 font-medium">
 													{host.dockerStats?.runningContainers || 0}
 												</td>
-												<td className="px-6 py-4 whitespace-nowrap text-sm text-secondary-900 dark:text-white">
+												<td className="px-4 py-2 whitespace-nowrap text-center text-sm text-secondary-900 dark:text-white">
 													{host.dockerStats?.totalImages || 0}
 												</td>
-												<td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+												<td className="px-4 py-2 whitespace-nowrap text-center">
 													<Link
 														to={`/docker/hosts/${host.id}`}
-														className="text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300 inline-flex items-center"
+														className="text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300 inline-flex items-center gap-1"
+														title="View details"
 													>
-														View
-														<ExternalLink className="ml-1 h-4 w-4" />
+														<ExternalLink className="h-4 w-4" />
 													</Link>
 												</td>
 											</tr>
@@ -892,82 +946,64 @@ const Docker = () => {
 									</p>
 								</div>
 							) : (
-								<table className="min-w-full divide-y divide-secondary-200 dark:divide-secondary-700">
-									<thead className="bg-secondary-50 dark:bg-secondary-900">
+								<table className="min-w-full divide-y divide-secondary-200 dark:divide-secondary-600">
+									<thead className="bg-secondary-50 dark:bg-secondary-700">
 										<tr>
-											<th
-												scope="col"
-												className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-secondary-400 uppercase tracking-wider"
-											>
+											<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
 												Image
 											</th>
-											<th
-												scope="col"
-												className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-secondary-400 uppercase tracking-wider"
-											>
+											<th className="px-4 py-2 text-center text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
 												Tag
 											</th>
-											<th
-												scope="col"
-												className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-secondary-400 uppercase tracking-wider"
-											>
+											<th className="px-4 py-2 text-center text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
 												Detection Method
 											</th>
-											<th
-												scope="col"
-												className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-secondary-400 uppercase tracking-wider"
-											>
+											<th className="px-4 py-2 text-center text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
 												Status
 											</th>
-											<th
-												scope="col"
-												className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-secondary-400 uppercase tracking-wider"
-											>
+											<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
 												Affected
 											</th>
-											<th
-												scope="col"
-												className="px-6 py-3 text-right text-xs font-medium text-secondary-500 dark:text-secondary-400 uppercase tracking-wider"
-											>
+											<th className="px-4 py-2 text-center text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
 												Actions
 											</th>
 										</tr>
 									</thead>
-									<tbody className="bg-white dark:bg-secondary-800 divide-y divide-secondary-200 dark:divide-secondary-700">
+									<tbody className="bg-white dark:bg-secondary-800 divide-y divide-secondary-200 dark:divide-secondary-600">
 										{updatesData.updates.map((update) => (
 											<tr
 												key={update.id}
-												className="hover:bg-secondary-50 dark:hover:bg-secondary-700"
+												className="hover:bg-secondary-50 dark:hover:bg-secondary-700 transition-colors"
 											>
-												<td className="px-6 py-4 whitespace-nowrap">
-													<div className="flex items-center">
-														<Package className="h-5 w-5 text-secondary-400 mr-3" />
+												<td className="px-4 py-2 whitespace-nowrap">
+													<div className="flex items-center gap-2">
+														<Package className="h-4 w-4 text-secondary-400 dark:text-secondary-500 flex-shrink-0" />
 														<Link
 															to={`/docker/images/${update.image_id}`}
-															className="text-sm font-medium text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300"
+															className="text-sm font-medium text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300 truncate"
 														>
 															{update.docker_images?.repository}
 														</Link>
 													</div>
 												</td>
-												<td className="px-6 py-4 whitespace-nowrap">
+												<td className="px-4 py-2 whitespace-nowrap text-center">
 													<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-secondary-100 text-secondary-800 dark:bg-secondary-700 dark:text-secondary-200">
 														{update.current_tag}
 													</span>
 												</td>
-												<td className="px-6 py-4 whitespace-nowrap">
+												<td className="px-4 py-2 whitespace-nowrap text-center">
 													<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">
 														<Package className="h-3 w-3 mr-1" />
-														Digest Comparison
+														Digest
 													</span>
 												</td>
-												<td className="px-6 py-4 whitespace-nowrap">
+												<td className="px-4 py-2 whitespace-nowrap text-center">
 													<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
 														<AlertTriangle className="h-3 w-3 mr-1" />
-														Update Available
+														Available
 													</span>
 												</td>
-												<td className="px-6 py-4 whitespace-nowrap text-sm text-secondary-900 dark:text-white">
+												<td className="px-4 py-2 whitespace-nowrap text-sm text-secondary-900 dark:text-white">
 													{update.affectedContainersCount} container
 													{update.affectedContainersCount !== 1 ? "s" : ""}
 													{update.affectedHosts?.length > 0 && (
@@ -978,13 +1014,13 @@ const Docker = () => {
 														</span>
 													)}
 												</td>
-												<td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+												<td className="px-4 py-2 whitespace-nowrap text-center">
 													<Link
 														to={`/docker/images/${update.image_id}`}
-														className="text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300 inline-flex items-center"
+														className="text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300 inline-flex items-center gap-1"
+														title="View details"
 													>
-														View
-														<ExternalLink className="ml-1 h-4 w-4" />
+														<ExternalLink className="h-4 w-4" />
 													</Link>
 												</td>
 											</tr>
@@ -996,6 +1032,141 @@ const Docker = () => {
 					)}
 				</div>
 			</div>
+
+			{/* Delete Container Modal */}
+			{deleteContainerModal && (
+				<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+					<div className="bg-white dark:bg-secondary-800 rounded-lg p-6 max-w-md w-full mx-4">
+						<div className="flex items-start mb-4">
+							<div className="flex-shrink-0">
+								<AlertTriangle className="h-6 w-6 text-red-600" />
+							</div>
+							<div className="ml-3 flex-1">
+								<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
+									Delete Container
+								</h3>
+								<div className="mt-2 text-sm text-secondary-600 dark:text-secondary-300">
+									<p className="mb-2">
+										Are you sure you want to delete this container from the
+										inventory?
+									</p>
+									<div className="bg-secondary-100 dark:bg-secondary-700 p-3 rounded-md">
+										<p className="font-medium text-secondary-900 dark:text-white">
+											{deleteContainerModal.name}
+										</p>
+										<p className="text-xs text-secondary-600 dark:text-secondary-400 mt-1">
+											Image: {deleteContainerModal.image_name}:
+											{deleteContainerModal.image_tag}
+										</p>
+										<p className="text-xs text-secondary-600 dark:text-secondary-400">
+											Host:{" "}
+											{deleteContainerModal.host?.friendly_name || "Unknown"}
+										</p>
+									</div>
+									<p className="mt-3 text-red-600 dark:text-red-400 font-medium">
+										⚠️ This only removes the container from PatchMon's inventory.
+										It does NOT stop or delete the actual Docker container on
+										the host.
+									</p>
+								</div>
+							</div>
+						</div>
+						<div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse gap-3">
+							<button
+								type="button"
+								onClick={() =>
+									deleteContainerMutation.mutate(deleteContainerModal.id)
+								}
+								disabled={deleteContainerMutation.isPending}
+								className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								{deleteContainerMutation.isPending
+									? "Deleting..."
+									: "Delete from Inventory"}
+							</button>
+							<button
+								type="button"
+								onClick={() => setDeleteContainerModal(null)}
+								disabled={deleteContainerMutation.isPending}
+								className="mt-3 w-full inline-flex justify-center rounded-md border border-secondary-300 dark:border-secondary-600 shadow-sm px-4 py-2 bg-white dark:bg-secondary-700 text-base font-medium text-secondary-700 dark:text-secondary-200 hover:bg-secondary-50 dark:hover:bg-secondary-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:mt-0 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								Cancel
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{/* Delete Image Modal */}
+			{deleteImageModal && (
+				<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+					<div className="bg-white dark:bg-secondary-800 rounded-lg p-6 max-w-md w-full mx-4">
+						<div className="flex items-start mb-4">
+							<div className="flex-shrink-0">
+								<AlertTriangle className="h-6 w-6 text-red-600" />
+							</div>
+							<div className="ml-3 flex-1">
+								<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
+									Delete Image
+								</h3>
+								<div className="mt-2 text-sm text-secondary-600 dark:text-secondary-300">
+									<p className="mb-2">
+										Are you sure you want to delete this image from the
+										inventory?
+									</p>
+									<div className="bg-secondary-100 dark:bg-secondary-700 p-3 rounded-md">
+										<p className="font-medium text-secondary-900 dark:text-white">
+											{deleteImageModal.repository}:{deleteImageModal.tag}
+										</p>
+										<p className="text-xs text-secondary-600 dark:text-secondary-400 mt-1">
+											Source: {deleteImageModal.source}
+										</p>
+										<p className="text-xs text-secondary-600 dark:text-secondary-400">
+											Containers using this:{" "}
+											{deleteImageModal._count?.docker_containers || 0}
+										</p>
+									</div>
+									{deleteImageModal._count?.docker_containers > 0 ? (
+										<p className="mt-3 text-red-600 dark:text-red-400 font-medium">
+											⚠️ Cannot delete: This image is in use by{" "}
+											{deleteImageModal._count.docker_containers} container(s).
+											Delete the containers first.
+										</p>
+									) : (
+										<p className="mt-3 text-red-600 dark:text-red-400 font-medium">
+											⚠️ This only removes the image from PatchMon's inventory.
+											It does NOT delete the actual Docker image from hosts.
+										</p>
+									)}
+								</div>
+							</div>
+						</div>
+						<div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse gap-3">
+							<button
+								type="button"
+								onClick={() => deleteImageMutation.mutate(deleteImageModal.id)}
+								disabled={
+									deleteImageMutation.isPending ||
+									deleteImageModal._count?.docker_containers > 0
+								}
+								className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								{deleteImageMutation.isPending
+									? "Deleting..."
+									: "Delete from Inventory"}
+							</button>
+							<button
+								type="button"
+								onClick={() => setDeleteImageModal(null)}
+								disabled={deleteImageMutation.isPending}
+								className="mt-3 w-full inline-flex justify-center rounded-md border border-secondary-300 dark:border-secondary-600 shadow-sm px-4 py-2 bg-white dark:bg-secondary-700 text-base font-medium text-secondary-700 dark:text-secondary-200 hover:bg-secondary-50 dark:hover:bg-secondary-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:mt-0 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								Cancel
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
 		</div>
 	);
 };

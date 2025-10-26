@@ -428,26 +428,29 @@ class AgentVersionService {
 	async getVersionInfo() {
 		let hasUpdate = false;
 		let updateStatus = "unknown";
-		let effectiveLatestVersion = this.currentVersion; // Always use local version if available
 
-		// If we have a local version, use it as the latest regardless of GitHub
-		if (this.currentVersion) {
-			effectiveLatestVersion = this.currentVersion;
+		// Latest version should ALWAYS come from GitHub, not from local binaries
+		// currentVersion = what's installed locally
+		// latestVersion = what's available on GitHub
+		if (this.latestVersion) {
+			console.log(`📦 Latest version from GitHub: ${this.latestVersion}`);
+		} else {
 			console.log(
-				`🔄 Using local agent version ${this.currentVersion} as latest`,
-			);
-		} else if (this.latestVersion) {
-			// Fallback to GitHub version only if no local version
-			effectiveLatestVersion = this.latestVersion;
-			console.log(
-				`🔄 No local version found, using GitHub version ${this.latestVersion}`,
+				`⚠️ No GitHub release version available (API may be unavailable)`,
 			);
 		}
 
-		if (this.currentVersion && effectiveLatestVersion) {
+		if (this.currentVersion) {
+			console.log(`💾 Current local agent version: ${this.currentVersion}`);
+		} else {
+			console.log(`⚠️ No local agent binary found`);
+		}
+
+		// Determine update status by comparing current vs latest (from GitHub)
+		if (this.currentVersion && this.latestVersion) {
 			const comparison = compareVersions(
 				this.currentVersion,
-				effectiveLatestVersion,
+				this.latestVersion,
 			);
 			if (comparison < 0) {
 				hasUpdate = true;
@@ -459,25 +462,25 @@ class AgentVersionService {
 				hasUpdate = false;
 				updateStatus = "up-to-date";
 			}
-		} else if (effectiveLatestVersion && !this.currentVersion) {
+		} else if (this.latestVersion && !this.currentVersion) {
 			hasUpdate = true;
 			updateStatus = "no-agent";
-		} else if (this.currentVersion && !effectiveLatestVersion) {
+		} else if (this.currentVersion && !this.latestVersion) {
 			// We have a current version but no latest version (GitHub API unavailable)
 			hasUpdate = false;
 			updateStatus = "github-unavailable";
-		} else if (!this.currentVersion && !effectiveLatestVersion) {
+		} else if (!this.currentVersion && !this.latestVersion) {
 			updateStatus = "no-data";
 		}
 
 		return {
 			currentVersion: this.currentVersion,
-			latestVersion: effectiveLatestVersion,
+			latestVersion: this.latestVersion, // Always return GitHub version, not local
 			hasUpdate: hasUpdate,
 			updateStatus: updateStatus,
 			lastChecked: this.lastChecked,
 			supportedArchitectures: this.supportedArchitectures,
-			status: effectiveLatestVersion ? "ready" : "no-releases",
+			status: this.latestVersion ? "ready" : "no-releases",
 		};
 	}
 

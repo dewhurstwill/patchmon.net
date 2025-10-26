@@ -52,17 +52,24 @@ class GitHubUpdateCheck {
 			}
 
 			// Read version from package.json
-			let currentVersion = "1.3.0"; // fallback
+			let currentVersion = null;
 			try {
 				const packageJson = require("../../../package.json");
 				if (packageJson?.version) {
 					currentVersion = packageJson.version;
 				}
 			} catch (packageError) {
-				console.warn(
+				console.error(
 					"Could not read version from package.json:",
 					packageError.message,
 				);
+				throw new Error(
+					"Could not determine current version from package.json",
+				);
+			}
+
+			if (!currentVersion) {
+				throw new Error("Version not found in package.json");
 			}
 
 			const isUpdateAvailable =

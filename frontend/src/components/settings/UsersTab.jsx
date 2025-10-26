@@ -54,7 +54,7 @@ const UsersTab = () => {
 	});
 
 	// Update user mutation
-	const _updateUserMutation = useMutation({
+	const updateUserMutation = useMutation({
 		mutationFn: ({ id, data }) => adminUsersAPI.update(id, data),
 		onSuccess: () => {
 			queryClient.invalidateQueries(["users"]);

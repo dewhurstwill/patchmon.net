@@ -99,8 +99,22 @@ function init(server, prismaClient) {
 				// Notify subscribers of connection
 				notifyConnectionChange(apiId, true);
 
-				ws.on("message", () => {
-					// Currently we don't need to handle agent->server messages
+				ws.on("message", async (data) => {
+					// Handle incoming messages from agent (e.g., Docker status updates)
+					try {
+						const message = JSON.parse(data.toString());
+
+						if (message.type === "docker_status") {
+							// Handle Docker container status events
+							await handleDockerStatusEvent(apiId, message);
+						}
+						// Add more message types here as needed
+					} catch (err) {
+						console.error(
+							`[agent-ws] error parsing message from ${apiId}:`,
+							err,
+						);
+					}
 				});
 
 				ws.on("close", () => {
@@ -253,6 +267,62 @@ function subscribeToConnectionChanges(apiId, callback) {
 			}
 		}
 	};
+}
+
+// Handle Docker container status events from agent
+async function handleDockerStatusEvent(apiId, message) {
+	try {
+		const { event, container_id, name, status, timestamp } = message;
+
+		console.log(
+			`[Docker Event] ${apiId}: Container ${name} (${container_id}) - ${status}`,
+		);
+
+		// Find the host
+		const host = await prisma.hosts.findUnique({
+			where: { api_id: apiId },
+		});
+
+		if (!host) {
+			console.error(`[Docker Event] Host not found for api_id: ${apiId}`);
+			return;
+		}
+
+		// Update container status in database
+		const container = await prisma.docker_containers.findUnique({
+			where: {
+				host_id_container_id: {
+					host_id: host.id,
+					container_id: container_id,
+				},
+			},
+		});
+
+		if (container) {
+			await prisma.docker_containers.update({
+				where: { id: container.id },
+				data: {
+					status: status,
+					state: status,
+					updated_at: new Date(timestamp || Date.now()),
+					last_checked: new Date(),
+				},
+			});
+
+			console.log(
+				`[Docker Event] Updated container ${name} status to ${status}`,
+			);
+		} else {
+			console.log(
+				`[Docker Event] Container ${name} not found in database (may be new)`,
+			);
+		}
+
+		// TODO: Broadcast to connected dashboard clients via SSE or WebSocket
+		// This would notify the frontend UI in real-time
+	} catch (error) {
+		console.error(`[Docker Event] Error handling Docker status event:`, error);
+	}
 }
 
 module.exports = {

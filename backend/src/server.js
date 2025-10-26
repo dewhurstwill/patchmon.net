@@ -66,6 +66,7 @@ const autoEnrollmentRoutes = require("./routes/autoEnrollmentRoutes");
 const gethomepageRoutes = require("./routes/gethomepageRoutes");
 const automationRoutes = require("./routes/automationRoutes");
 const dockerRoutes = require("./routes/dockerRoutes");
+const integrationRoutes = require("./routes/integrationRoutes");
 const wsRoutes = require("./routes/wsRoutes");
 const agentVersionRoutes = require("./routes/agentVersionRoutes");
 const { initSettings } = require("./services/settingsService");
@@ -471,6 +472,7 @@ app.use(
 app.use(`/api/${apiVersion}/gethomepage`, gethomepageRoutes);
 app.use(`/api/${apiVersion}/automation`, automationRoutes);
 app.use(`/api/${apiVersion}/docker`, dockerRoutes);
+app.use(`/api/${apiVersion}/integrations`, integrationRoutes);
 app.use(`/api/${apiVersion}/ws`, wsRoutes);
 app.use(`/api/${apiVersion}/agent`, agentVersionRoutes);
 

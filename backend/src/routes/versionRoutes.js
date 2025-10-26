@@ -14,13 +14,16 @@ const router = express.Router();
 function getCurrentVersion() {
 	try {
 		const packageJson = require("../../package.json");
-		return packageJson?.version || "1.3.0";
+		if (!packageJson?.version) {
+			throw new Error("Version not found in package.json");
+		}
+		return packageJson.version;
 	} catch (packageError) {
-		console.warn(
-			"Could not read version from package.json, using fallback:",
+		console.error(
+			"Could not read version from package.json:",
 			packageError.message,
 		);
-		return "1.3.0";
+		return "unknown";
 	}
 }
 

@@ -33,7 +33,8 @@ async function checkPublicRepo(owner, repo) {
 	try {
 		const httpsRepoUrl = `https://api.github.com/repos/${owner}/${repo}/releases/latest`;
 
-		let currentVersion = "1.3.0"; // fallback
+		// Get current version for User-Agent (or use generic if unavailable)
+		let currentVersion = "unknown";
 		try {
 			const packageJson = require("../../../package.json");
 			if (packageJson?.version) {
@@ -41,7 +42,7 @@ async function checkPublicRepo(owner, repo) {
 			}
 		} catch (packageError) {
 			console.warn(
-				"Could not read version from package.json for User-Agent, using fallback:",
+				"Could not read version from package.json for User-Agent:",
 				packageError.message,
 			);
 		}

@@ -169,6 +169,20 @@ const Automation = () => {
 				year: "numeric",
 			});
 		}
+		if (schedule === "Daily at 4 AM") {
+			const now = new Date();
+			const tomorrow = new Date(now);
+			tomorrow.setDate(tomorrow.getDate() + 1);
+			tomorrow.setHours(4, 0, 0, 0);
+			return tomorrow.toLocaleString([], {
+				hour12: true,
+				hour: "numeric",
+				minute: "2-digit",
+				day: "numeric",
+				month: "numeric",
+				year: "numeric",
+			});
+		}
 		if (schedule === "Every hour") {
 			const now = new Date();
 			const nextHour = new Date(now);
@@ -207,6 +221,13 @@ const Automation = () => {
 			const tomorrow = new Date(now);
 			tomorrow.setDate(tomorrow.getDate() + 1);
 			tomorrow.setHours(3, 0, 0, 0);
+			return tomorrow.getTime();
+		}
+		if (schedule === "Daily at 4 AM") {
+			const now = new Date();
+			const tomorrow = new Date(now);
+			tomorrow.setDate(tomorrow.getDate() + 1);
+			tomorrow.setHours(4, 0, 0, 0);
 			return tomorrow.getTime();
 		}
 		if (schedule === "Every hour") {
@@ -269,6 +290,8 @@ const Automation = () => {
 				endpoint = "/automation/trigger/orphaned-repo-cleanup";
 			} else if (jobType === "orphaned-packages") {
 				endpoint = "/automation/trigger/orphaned-package-cleanup";
+			} else if (jobType === "docker-inventory") {
+				endpoint = "/automation/trigger/docker-inventory-cleanup";
 			} else if (jobType === "agent-collection") {
 				endpoint = "/automation/trigger/agent-collection";
 			}
@@ -584,6 +607,10 @@ const Automation = () => {
 																automation.queue.includes("orphaned-package")
 															) {
 																triggerManualJob("orphaned-packages");
+															} else if (
+																automation.queue.includes("docker-inventory")
+															) {
+																triggerManualJob("docker-inventory");
 															} else if (
 																automation.queue.includes("agent-commands")
 															) {
