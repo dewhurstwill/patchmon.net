@@ -5,7 +5,7 @@
 
 set -e
 
-FILE="${1:-/backend/src/config/prisma.js}"
+FILE="${1:-backend/src/config/prisma.js}"
 
 # Get values from arguments or use defaults
 NEW_CONN_LIMIT="${2:-30}"
