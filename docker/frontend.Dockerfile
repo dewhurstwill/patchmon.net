@@ -23,7 +23,7 @@ COPY frontend/package*.json ./
 
 RUN npm cache clean --force &&\
     rm -rf node_modules ~/.npm /root/.npm &&\
-    npm install --ignore-scripts --legacy-peer-deps --no-audit --prefer-online --fetch-retries=0
+    npm install --ignore-scripts --legacy-peer-deps --no-audit --prefer-online --fetch-retries=3 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000
 
 COPY frontend/ ./
 
