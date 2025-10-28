@@ -240,28 +240,33 @@ const Layout = ({ children }) => {
 	// Generate Trianglify background for dark mode
 	useEffect(() => {
 		const generateBackground = () => {
-			if (
-				bgCanvasRef.current &&
-				themeConfig?.login &&
-				document.documentElement.classList.contains("dark")
-			) {
-				// Get current date as seed for daily variation
-				const today = new Date();
-				const dateSeed = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
+			try {
+				if (
+					bgCanvasRef.current &&
+					themeConfig?.login &&
+					document.documentElement.classList.contains("dark")
+				) {
+					// Get current date as seed for daily variation
+					const today = new Date();
+					const dateSeed = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
 
-				// Generate pattern with selected theme configuration
-				const pattern = trianglify({
-					width: window.innerWidth,
-					height: window.innerHeight,
-					cellSize: themeConfig.login.cellSize,
-					variance: themeConfig.login.variance,
-					seed: dateSeed,
-					xColors: themeConfig.login.xColors,
-					yColors: themeConfig.login.yColors,
-				});
+					// Generate pattern with selected theme configuration
+					const pattern = trianglify({
+						width: window.innerWidth,
+						height: window.innerHeight,
+						cellSize: themeConfig.login.cellSize,
+						variance: themeConfig.login.variance,
+						seed: dateSeed,
+						xColors: themeConfig.login.xColors,
+						yColors: themeConfig.login.yColors,
+					});
 
-				// Render to canvas
-				pattern.toCanvas(bgCanvasRef.current);
+					// Render to canvas
+					pattern.toCanvas(bgCanvasRef.current);
+				}
+			} catch (error) {
+				// Canvas/trianglify not available, skip background generation
+				console.warn("Could not generate Trianglify background:", error);
 			}
 		};
 

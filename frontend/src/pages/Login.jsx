@@ -60,24 +60,29 @@ const Login = () => {
 	// Generate Trianglify background based on selected theme
 	useEffect(() => {
 		const generateBackground = () => {
-			if (canvasRef.current && themeConfig?.login) {
-				// Get current date as seed for daily variation
-				const today = new Date();
-				const dateSeed = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
+			try {
+				if (canvasRef.current && themeConfig?.login) {
+					// Get current date as seed for daily variation
+					const today = new Date();
+					const dateSeed = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
 
-				// Generate pattern with selected theme configuration
-				const pattern = trianglify({
-					width: canvasRef.current.offsetWidth,
-					height: canvasRef.current.offsetHeight,
-					cellSize: themeConfig.login.cellSize,
-					variance: themeConfig.login.variance,
-					seed: dateSeed,
-					xColors: themeConfig.login.xColors,
-					yColors: themeConfig.login.yColors,
-				});
+					// Generate pattern with selected theme configuration
+					const pattern = trianglify({
+						width: canvasRef.current.offsetWidth,
+						height: canvasRef.current.offsetHeight,
+						cellSize: themeConfig.login.cellSize,
+						variance: themeConfig.login.variance,
+						seed: dateSeed,
+						xColors: themeConfig.login.xColors,
+						yColors: themeConfig.login.yColors,
+					});
 
-				// Render to canvas
-				pattern.toCanvas(canvasRef.current);
+					// Render to canvas
+					pattern.toCanvas(canvasRef.current);
+				}
+			} catch (error) {
+				// Canvas/trianglify not available, skip background generation
+				console.warn("Could not generate Trianglify background:", error);
 			}
 		};
 
