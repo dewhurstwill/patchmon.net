@@ -245,28 +245,23 @@ const Layout = ({ children }) => {
 				themeConfig?.login &&
 				document.documentElement.classList.contains("dark")
 			) {
-				try {
-					// Get current date as seed for daily variation
-					const today = new Date();
-					const dateSeed = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
+				// Get current date as seed for daily variation
+				const today = new Date();
+				const dateSeed = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
 
-					// Generate pattern with selected theme configuration
-					const pattern = trianglify({
-						width: window.innerWidth,
-						height: window.innerHeight,
-						cellSize: themeConfig.login.cellSize,
-						variance: themeConfig.login.variance,
-						seed: dateSeed,
-						xColors: themeConfig.login.xColors,
-						yColors: themeConfig.login.yColors,
-					});
+				// Generate pattern with selected theme configuration
+				const pattern = trianglify({
+					width: window.innerWidth,
+					height: window.innerHeight,
+					cellSize: themeConfig.login.cellSize,
+					variance: themeConfig.login.variance,
+					seed: dateSeed,
+					xColors: themeConfig.login.xColors,
+					yColors: themeConfig.login.yColors,
+				});
 
-					// Render to canvas
-					pattern.toCanvas(bgCanvasRef.current);
-				} catch (error) {
-					// Silently fail if trianglify/canvas is not available
-					console.debug("Trianglify background not available:", error.message);
-				}
+				// Render to canvas
+				pattern.toCanvas(bgCanvasRef.current);
 			}
 		};
 

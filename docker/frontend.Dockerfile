@@ -17,15 +17,16 @@ CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "3000"]
 # Builder stage for production
 FROM node:lts-alpine AS builder
 
+# Install build dependencies for canvas
+RUN apk add --no-cache python3 make g++ pkgconfig cairo-dev jpeg-dev pango-dev giflib-dev
+
 WORKDIR /app/frontend
 
 COPY frontend/package*.json ./
 
 RUN npm cache clean --force &&\
     rm -rf node_modules ~/.npm /root/.npm &&\
-    npm install --legacy-peer-deps --no-audit --prefer-online --fetch-retries=3 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000 --ignore-scripts &&\
-    echo "package.json" > node_modules/.gitignore &&\
-    echo "Express cors and trianglify are not needed in production build" || true
+    npm install --legacy-peer-deps --no-audit --prefer-online --fetch-retries=3 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000
 
 COPY frontend/ ./
 
