@@ -236,7 +236,7 @@ const Layout = ({ children }) => {
 		navigate("/hosts?action=add");
 	};
 
-	// Generate clean radial gradient background for dark mode - subtle and modern
+	// Generate clean radial gradient background with subtle triangular accents for dark mode
 	useEffect(() => {
 		const generateBackground = () => {
 			if (
@@ -295,6 +295,35 @@ const Layout = ({ children }) => {
 
 			ctx.fillStyle = gradient;
 			ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+			// Add subtle triangular shapes as accents
+			const cellSize = 200;
+			const cols = Math.ceil(canvas.width / cellSize) + 1;
+			const rows = Math.ceil(canvas.height / cellSize) + 1;
+
+			for (let y = 0; y < rows; y++) {
+				for (let x = 0; x < cols; x++) {
+					const idx = y * cols + x;
+					// Only draw some triangles (sparse pattern)
+					if (random(seed + idx + 5000) > 0.7) {
+						const baseX =
+							x * cellSize + random(seed + idx * 3) * cellSize * 0.8;
+						const baseY =
+							y * cellSize + random(seed + idx * 3 + 100) * cellSize * 0.8;
+						const size = 40 + random(seed + idx * 4) * 80;
+
+						ctx.beginPath();
+						ctx.moveTo(baseX, baseY);
+						ctx.lineTo(baseX + size, baseY);
+						ctx.lineTo(baseX + size / 2, baseY - size * 0.866);
+						ctx.closePath();
+
+						// Very faint white with low opacity
+						ctx.fillStyle = `rgba(255, 255, 255, ${0.02 + random(seed + idx * 5) * 0.03})`;
+						ctx.fill();
+					}
+				}
+			}
 		};
 
 		generateBackground();
