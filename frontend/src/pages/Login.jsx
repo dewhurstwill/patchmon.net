@@ -17,7 +17,6 @@ import { useEffect, useId, useRef, useState } from "react";
 import { FaReddit, FaYoutube } from "react-icons/fa";
 
 import { useNavigate } from "react-router-dom";
-import trianglify from "trianglify";
 import DiscordIcon from "../components/DiscordIcon";
 import { useAuth } from "../contexts/AuthContext";
 import { useColorTheme } from "../contexts/ColorThemeContext";
@@ -57,27 +56,87 @@ const Login = () => {
 
 	const navigate = useNavigate();
 
-	// Generate Trianglify background based on selected theme
+	// Generate clean radial gradient background with subtle triangular accents
 	useEffect(() => {
 		const generateBackground = () => {
-			if (canvasRef.current && themeConfig?.login) {
-				// Get current date as seed for daily variation
-				const today = new Date();
-				const dateSeed = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
+			if (!canvasRef.current || !themeConfig?.login) return;
 
-				// Generate pattern with selected theme configuration
-				const pattern = trianglify({
-					width: canvasRef.current.offsetWidth,
-					height: canvasRef.current.offsetHeight,
-					cellSize: themeConfig.login.cellSize,
-					variance: themeConfig.login.variance,
-					seed: dateSeed,
-					xColors: themeConfig.login.xColors,
-					yColors: themeConfig.login.yColors,
-				});
+			const canvas = canvasRef.current;
+			canvas.width = canvas.offsetWidth;
+			canvas.height = canvas.offsetHeight;
+			const ctx = canvas.getContext("2d");
 
-				// Render to canvas
-				pattern.toCanvas(canvasRef.current);
+			// Get theme colors - pick first color from each palette
+			const xColors = themeConfig.login.xColors || [
+				"#667eea",
+				"#764ba2",
+				"#f093fb",
+				"#4facfe",
+			];
+			const yColors = themeConfig.login.yColors || [
+				"#667eea",
+				"#764ba2",
+				"#f093fb",
+				"#4facfe",
+			];
+
+			// Use date for daily color rotation
+			const today = new Date();
+			const seed =
+				today.getFullYear() * 10000 + today.getMonth() * 100 + today.getDate();
+			const random = (s) => {
+				const x = Math.sin(s) * 10000;
+				return x - Math.floor(x);
+			};
+
+			const color1 = xColors[Math.floor(random(seed) * xColors.length)];
+			const color2 = yColors[Math.floor(random(seed + 1000) * yColors.length)];
+
+			// Create clean radial gradient from center to bottom-right corner
+			const gradient = ctx.createRadialGradient(
+				canvas.width * 0.3, // Center slightly left
+				canvas.height * 0.3, // Center slightly up
+				0,
+				canvas.width * 0.5, // Expand to cover screen
+				canvas.height * 0.5,
+				Math.max(canvas.width, canvas.height) * 1.2,
+			);
+
+			// Subtle gradient with darker corners
+			gradient.addColorStop(0, color1);
+			gradient.addColorStop(0.6, color2);
+			gradient.addColorStop(1, "#0a0a0a"); // Very dark edges
+
+			ctx.fillStyle = gradient;
+			ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+			// Add subtle triangular shapes as accents across entire background
+			const cellSize = 180;
+			const cols = Math.ceil(canvas.width / cellSize) + 1;
+			const rows = Math.ceil(canvas.height / cellSize) + 1;
+
+			for (let y = 0; y < rows; y++) {
+				for (let x = 0; x < cols; x++) {
+					const idx = y * cols + x;
+					// Draw more triangles (less sparse)
+					if (random(seed + idx + 5000) > 0.4) {
+						const baseX =
+							x * cellSize + random(seed + idx * 3) * cellSize * 0.8;
+						const baseY =
+							y * cellSize + random(seed + idx * 3 + 100) * cellSize * 0.8;
+						const size = 50 + random(seed + idx * 4) * 100;
+
+						ctx.beginPath();
+						ctx.moveTo(baseX, baseY);
+						ctx.lineTo(baseX + size, baseY);
+						ctx.lineTo(baseX + size / 2, baseY - size * 0.866);
+						ctx.closePath();
+
+						// More visible white with slightly higher opacity
+						ctx.fillStyle = `rgba(255, 255, 255, ${0.05 + random(seed + idx * 5) * 0.08})`;
+						ctx.fill();
+					}
+				}
 			}
 		};
 
@@ -90,7 +149,7 @@ const Login = () => {
 
 		window.addEventListener("resize", handleResize);
 		return () => window.removeEventListener("resize", handleResize);
-	}, [themeConfig]); // Regenerate when theme changes
+	}, [themeConfig]);
 
 	// Check if signup is enabled
 	useEffect(() => {
