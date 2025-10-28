@@ -39,6 +39,9 @@ RUN npm run build
 # Production stage
 FROM nginxinc/nginx-unprivileged:alpine
 
+# Install runtime dependencies for canvas
+RUN apk add --no-cache cairo pango jpeg libpng giflib
+
 ENV BACKEND_HOST=backend \
     BACKEND_PORT=3001
 

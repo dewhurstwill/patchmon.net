@@ -265,11 +265,8 @@ const Layout = ({ children }) => {
 					pattern.toCanvas(bgCanvasRef.current);
 				}
 			} catch (error) {
-				// Canvas/trianglify not available, skip background generation silently
-				// Only log in development for debugging
-				if (import.meta.env.DEV) {
-					console.warn("Could not generate Trianglify background:", error);
-				}
+				// Canvas/trianglify not available, skip background generation
+				console.warn("Could not generate Trianglify background:", error);
 			}
 		};
 
