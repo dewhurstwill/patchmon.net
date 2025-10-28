@@ -272,7 +272,7 @@ function subscribeToConnectionChanges(apiId, callback) {
 // Handle Docker container status events from agent
 async function handleDockerStatusEvent(apiId, message) {
 	try {
-		const { event, container_id, name, status, timestamp } = message;
+		const { event: _event, container_id, name, status, timestamp } = message;
 
 		console.log(
 			`[Docker Event] ${apiId}: Container ${name} (${container_id}) - ${status}`,

@@ -14,10 +14,10 @@ router.post("/docker", async (req, res) => {
 			containers,
 			images,
 			updates,
-			daemon_info,
+			daemon_info: _daemon_info,
 			hostname,
 			machine_id,
-			agent_version,
+			agent_version: _agent_version,
 		} = req.body;
 
 		console.log(

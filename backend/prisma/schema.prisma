@@ -170,27 +170,31 @@ model role_permissions {
 }
 
 model settings {
-  id                String    @id
-  server_url        String    @default("http://localhost:3001")
-  server_protocol   String    @default("http")
-  server_host       String    @default("localhost")
-  server_port       Int       @default(3001)
-  created_at        DateTime  @default(now())
-  updated_at        DateTime
-  update_interval   Int       @default(60)
-  auto_update       Boolean   @default(false)
-  github_repo_url   String    @default("https://github.com/PatchMon/PatchMon.git")
-  ssh_key_path      String?
-  repository_type   String    @default("public")
-  last_update_check DateTime?
-  latest_version    String?
-  update_available  Boolean   @default(false)
-  signup_enabled    Boolean   @default(false)
-  default_user_role String    @default("user")
-  ignore_ssl_self_signed Boolean @default(false)
-  logo_dark         String?   @default("/assets/logo_dark.png")
-  logo_light        String?   @default("/assets/logo_light.png")
-  favicon           String?   @default("/assets/logo_square.svg")
+  id                     String    @id
+  server_url             String    @default("http://localhost:3001")
+  server_protocol        String    @default("http")
+  server_host            String    @default("localhost")
+  server_port            Int       @default(3001)
+  created_at             DateTime  @default(now())
+  updated_at             DateTime
+  update_interval        Int       @default(60)
+  auto_update            Boolean   @default(false)
+  github_repo_url        String    @default("https://github.com/PatchMon/PatchMon.git")
+  ssh_key_path           String?
+  repository_type        String    @default("public")
+  last_update_check      DateTime?
+  latest_version         String?
+  update_available       Boolean   @default(false)
+  signup_enabled         Boolean   @default(false)
+  default_user_role      String    @default("user")
+  ignore_ssl_self_signed Boolean   @default(false)
+  logo_dark              String?   @default("/assets/logo_dark.png")
+  logo_light             String?   @default("/assets/logo_light.png")
+  favicon                String?   @default("/assets/logo_square.svg")
+  metrics_enabled        Boolean   @default(true)
+  metrics_anonymous_id   String?
+  metrics_last_sent      DateTime?
+  color_theme            String    @default("default")
 }
 
 model update_history {

@@ -26,9 +26,11 @@ import {
 	Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { FaYoutube } from "react-icons/fa";
+import { FaReddit, FaYoutube } from "react-icons/fa";
 import { Link, useLocation, useNavigate } from "react-router-dom";
+import trianglify from "trianglify";
 import { useAuth } from "../contexts/AuthContext";
+import { useColorTheme } from "../contexts/ColorThemeContext";
 import { useUpdateNotification } from "../contexts/UpdateNotificationContext";
 import { dashboardAPI, versionAPI } from "../utils/api";
 import DiscordIcon from "./DiscordIcon";
@@ -61,7 +63,9 @@ const Layout = ({ children }) => {
 		canManageSettings,
 	} = useAuth();
 	const { updateAvailable } = useUpdateNotification();
+	const { themeConfig } = useColorTheme();
 	const userMenuRef = useRef(null);
+	const bgCanvasRef = useRef(null);
 
 	// Fetch dashboard stats for the "Last updated" info
 	const {
@@ -233,27 +237,103 @@ const Layout = ({ children }) => {
 		navigate("/hosts?action=add");
 	};
 
+	// Generate Trianglify background for dark mode
+	useEffect(() => {
+		const generateBackground = () => {
+			if (
+				bgCanvasRef.current &&
+				themeConfig?.login &&
+				document.documentElement.classList.contains("dark")
+			) {
+				// Get current date as seed for daily variation
+				const today = new Date();
+				const dateSeed = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
+
+				// Generate pattern with selected theme configuration
+				const pattern = trianglify({
+					width: window.innerWidth,
+					height: window.innerHeight,
+					cellSize: themeConfig.login.cellSize,
+					variance: themeConfig.login.variance,
+					seed: dateSeed,
+					xColors: themeConfig.login.xColors,
+					yColors: themeConfig.login.yColors,
+				});
+
+				// Render to canvas
+				pattern.toCanvas(bgCanvasRef.current);
+			}
+		};
+
+		generateBackground();
+
+		// Regenerate on window resize or theme change
+		const handleResize = () => {
+			generateBackground();
+		};
+
+		window.addEventListener("resize", handleResize);
+
+		// Watch for dark mode changes
+		const observer = new MutationObserver((mutations) => {
+			mutations.forEach((mutation) => {
+				if (mutation.attributeName === "class") {
+					generateBackground();
+				}
+			});
+		});
+
+		observer.observe(document.documentElement, {
+			attributes: true,
+			attributeFilter: ["class"],
+		});
+
+		return () => {
+			window.removeEventListener("resize", handleResize);
+			observer.disconnect();
+		};
+	}, [themeConfig]);
+
 	// Fetch GitHub stars count
 	const fetchGitHubStars = useCallback(async () => {
-		// Skip if already fetched recently
+		// Try to load cached star count first
+		const cachedStars = localStorage.getItem("githubStarsCount");
+		if (cachedStars) {
+			setGithubStars(parseInt(cachedStars, 10));
+		}
+
+		// Skip API call if fetched recently
 		const lastFetch = localStorage.getItem("githubStarsFetchTime");
 		const now = Date.now();
-		if (lastFetch && now - parseInt(lastFetch, 15) < 600000) {
-			// 15 minute cache
+		if (lastFetch && now - parseInt(lastFetch, 10) < 600000) {
+			// 10 minute cache
 			return;
 		}
 
 		try {
 			const response = await fetch(
 				"https://api.github.com/repos/9technologygroup/patchmon.net",
+				{
+					headers: {
+						Accept: "application/vnd.github.v3+json",
+					},
+				},
 			);
+
 			if (response.ok) {
 				const data = await response.json();
 				setGithubStars(data.stargazers_count);
+				localStorage.setItem(
+					"githubStarsCount",
+					data.stargazers_count.toString(),
+				);
 				localStorage.setItem("githubStarsFetchTime", now.toString());
+			} else if (response.status === 403 || response.status === 429) {
+				console.warn("GitHub API rate limit exceeded, using cached value");
 			}
 		} catch (error) {
 			console.error("Failed to fetch GitHub stars:", error);
+			// Keep using cached value if available
 		}
 	}, []);
 
@@ -303,11 +383,76 @@ const Layout = ({ children }) => {
 		fetchGitHubStars();
 	}, [fetchGitHubStars]);
 
+	// Set CSS custom properties for glassmorphism and theme colors in dark mode
+	useEffect(() => {
+		const updateThemeStyles = () => {
+			const isDark = document.documentElement.classList.contains("dark");
+			const root = document.documentElement;
+
+			if (isDark && themeConfig?.app) {
+				// Glass navigation bars - very light for pattern visibility
+				root.style.setProperty("--sidebar-bg", "rgba(0, 0, 0, 0.15)");
+				root.style.setProperty("--sidebar-blur", "blur(12px)");
+				root.style.setProperty("--topbar-bg", "rgba(0, 0, 0, 0.15)");
+				root.style.setProperty("--topbar-blur", "blur(12px)");
+				root.style.setProperty("--button-bg", "rgba(255, 255, 255, 0.15)");
+				root.style.setProperty("--button-blur", "blur(8px)");
+
+				// Theme-colored cards and buttons - darker to stand out
+				root.style.setProperty("--card-bg", themeConfig.app.cardBg);
+				root.style.setProperty("--card-border", themeConfig.app.cardBorder);
+				root.style.setProperty("--card-bg-hover", themeConfig.app.bgTertiary);
+				root.style.setProperty("--theme-button-bg", themeConfig.app.buttonBg);
+				root.style.setProperty(
+					"--theme-button-hover",
+					themeConfig.app.buttonHover,
+				);
+			} else {
+				// Light mode - standard colors
+				root.style.setProperty("--sidebar-bg", "white");
+				root.style.setProperty("--sidebar-blur", "none");
+				root.style.setProperty("--topbar-bg", "white");
+				root.style.setProperty("--topbar-blur", "none");
+				root.style.setProperty("--button-bg", "white");
+				root.style.setProperty("--button-blur", "none");
+				root.style.setProperty("--card-bg", "white");
+				root.style.setProperty("--card-border", "#e5e7eb");
+				root.style.setProperty("--card-bg-hover", "#f9fafb");
+				root.style.setProperty("--theme-button-bg", "#f3f4f6");
+				root.style.setProperty("--theme-button-hover", "#e5e7eb");
+			}
+		};
+
+		updateThemeStyles();
+
+		// Watch for dark mode changes
+		const observer = new MutationObserver(() => {
+			updateThemeStyles();
+		});
+
+		observer.observe(document.documentElement, {
+			attributes: true,
+			attributeFilter: ["class"],
+		});
+
+		return () => observer.disconnect();
+	}, [themeConfig]);
+
 	return (
-		<div className="min-h-screen bg-secondary-50">
+		<div className="min-h-screen bg-secondary-50 dark:bg-black relative overflow-hidden">
+			{/* Full-screen Trianglify Background (Dark Mode Only) */}
+			<canvas
+				ref={bgCanvasRef}
+				className="fixed inset-0 w-full h-full hidden dark:block"
+				style={{ zIndex: 0 }}
+			/>
+			<div
+				className="fixed inset-0 bg-gradient-to-br from-black/10 to-black/20 hidden dark:block pointer-events-none"
+				style={{ zIndex: 1 }}
+			/>
 			{/* Mobile sidebar */}
 			<div
-				className={`fixed inset-0 z-50 lg:hidden ${sidebarOpen ? "block" : "hidden"}`}
+				className={`fixed inset-0 z-[60] lg:hidden ${sidebarOpen ? "block" : "hidden"}`}
 			>
 				<button
 					type="button"
@@ -315,7 +460,14 @@ const Layout = ({ children }) => {
 					onClick={() => setSidebarOpen(false)}
 					aria-label="Close sidebar"
 				/>
-				<div className="relative flex w-full max-w-[280px] flex-col bg-white dark:bg-secondary-800 pb-4 pt-5 shadow-xl">
+				<div
+					className="relative flex w-full max-w-[280px] flex-col bg-white dark:border-r dark:border-white/10 pb-4 pt-5 shadow-xl"
+					style={{
+						backgroundColor: "var(--sidebar-bg, white)",
+						backdropFilter: "var(--sidebar-blur, none)",
+						WebkitBackdropFilter: "var(--sidebar-blur, none)",
+					}}
+				>
 					<div className="absolute right-0 top-0 -mr-12 pt-2">
 						<button
 							type="button"
@@ -534,17 +686,43 @@ const Layout = ({ children }) => {
 
 			{/* Desktop sidebar */}
 			<div
-				className={`hidden lg:fixed lg:inset-y-0 lg:z-50 lg:flex lg:flex-col transition-all duration-300 relative ${
+				className={`hidden lg:fixed lg:inset-y-0 z-[100] lg:flex lg:flex-col transition-all duration-300 relative ${
 					sidebarCollapsed ? "lg:w-16" : "lg:w-56"
-				} bg-white dark:bg-secondary-800`}
+				} bg-white dark:bg-transparent`}
 			>
+				{/* Collapse/Expand button on border */}
+				<button
+					type="button"
+					onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
+					className="absolute top-5 -right-3 z-[200] flex items-center justify-center w-6 h-6 rounded-full bg-white border border-secondary-300 dark:border-white/20 shadow-md hover:bg-secondary-50 transition-colors"
+					style={{
+						backgroundColor: "var(--button-bg, white)",
+						backdropFilter: "var(--button-blur, none)",
+						WebkitBackdropFilter: "var(--button-blur, none)",
+					}}
+					title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+				>
+					{sidebarCollapsed ? (
+						<ChevronRight className="h-4 w-4 text-secondary-700 dark:text-white" />
+					) : (
+						<ChevronLeft className="h-4 w-4 text-secondary-700 dark:text-white" />
+					)}
+				</button>
+
 				<div
-					className={`flex grow flex-col gap-y-5 overflow-y-auto border-r border-secondary-200 dark:border-secondary-600 bg-white dark:bg-secondary-800 ${
+					className={`flex grow flex-col gap-y-5 border-r border-secondary-200 dark:border-white/10 bg-white ${
 						sidebarCollapsed ? "px-2 shadow-lg" : "px-6"
 					}`}
+					style={{
+						backgroundColor: "var(--sidebar-bg, white)",
+						backdropFilter: "var(--sidebar-blur, none)",
+						WebkitBackdropFilter: "var(--sidebar-blur, none)",
+						overflowY: "auto",
+						overflowX: "visible",
+					}}
 				>
 					<div
-						className={`flex h-16 shrink-0 items-center border-b border-secondary-200 dark:border-secondary-600 ${
+						className={`flex h-16 shrink-0 items-center border-b border-secondary-200 dark:border-white/10 ${
 							sidebarCollapsed ? "justify-center" : "justify-center"
 						}`}
 					>
@@ -562,19 +740,6 @@ const Layout = ({ children }) => {
 							</Link>
 						)}
 					</div>
-					{/* Collapse/Expand button on border */}
-					<button
-						type="button"
-						onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
-						className="absolute top-5 -right-3 z-10 flex items-center justify-center w-6 h-6 rounded-full bg-white dark:bg-secondary-800 border border-secondary-300 dark:border-secondary-600 shadow-md hover:bg-secondary-50 dark:hover:bg-secondary-700 transition-colors"
-						title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-					>
-						{sidebarCollapsed ? (
-							<ChevronRight className="h-4 w-4 text-secondary-700 dark:text-white" />
-						) : (
-							<ChevronLeft className="h-4 w-4 text-secondary-700 dark:text-white" />
-						)}
-					</button>
 					<nav className="flex flex-1 flex-col">
 						<ul className="flex flex-1 flex-col gap-y-6">
 							{/* Show message for users with very limited permissions */}
@@ -930,12 +1095,19 @@ const Layout = ({ children }) => {
 
 			{/* Main content */}
 			<div
-				className={`flex flex-col min-h-screen transition-all duration-300 ${
+				className={`flex flex-col min-h-screen transition-all duration-300 relative z-10 ${
 					sidebarCollapsed ? "lg:pl-16" : "lg:pl-56"
 				}`}
 			>
 				{/* Top bar */}
-				<div className="sticky top-0 z-40 flex h-16 shrink-0 items-center gap-x-4 border-b border-secondary-200 dark:border-secondary-600 bg-white dark:bg-secondary-800 px-4 shadow-sm sm:gap-x-6 sm:px-6 lg:px-8">
+				<div
+					className="sticky top-0 z-[90] flex h-16 shrink-0 items-center gap-x-4 border-b border-secondary-200 dark:border-white/10 bg-white px-4 shadow-sm sm:gap-x-6 sm:px-6 lg:px-8"
+					style={{
+						backgroundColor: "var(--topbar-bg, white)",
+						backdropFilter: "var(--topbar-blur, none)",
+						WebkitBackdropFilter: "var(--topbar-blur, none)",
+					}}
+				>
 					<button
 						type="button"
 						className="-m-2.5 p-2.5 text-secondary-700 dark:text-white lg:hidden"
@@ -987,8 +1159,8 @@ const Layout = ({ children }) => {
 								>
 									<Github className="h-5 w-5 flex-shrink-0" />
 									{githubStars !== null && (
-										<div className="flex items-center gap-0.5">
-											<Star className="h-3 w-3 fill-current text-yellow-500" />
+										<div className="flex items-center gap-1">
+											<Star className="h-4 w-4 fill-current text-yellow-500" />
 											<span className="text-sm font-medium">{githubStars}</span>
 										</div>
 									)}
@@ -1059,7 +1231,17 @@ const Layout = ({ children }) => {
 								>
 									<FaYoutube className="h-5 w-5" />
 								</a>
-								{/* 7) Web */}
+								{/* 8) Reddit */}
+								<a
+									href="https://www.reddit.com/r/patchmon"
+									target="_blank"
+									rel="noopener noreferrer"
+									className="flex items-center justify-center w-10 h-10 bg-gray-50 dark:bg-gray-800 text-secondary-600 dark:text-secondary-300 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors shadow-sm"
+									title="Reddit Community"
+								>
+									<FaReddit className="h-5 w-5" />
+								</a>
+								{/* 9) Web */}
 								<a
 									href="https://patchmon.net"
 									target="_blank"
@@ -1074,7 +1256,7 @@ const Layout = ({ children }) => {
 					</div>
 				</div>
 
-				<main className="flex-1 py-6 bg-secondary-50 dark:bg-secondary-800">
+				<main className="flex-1 py-6 bg-secondary-50 dark:bg-transparent">
 					<div className="px-4 sm:px-6 lg:px-8">{children}</div>
 				</main>
 			</div>

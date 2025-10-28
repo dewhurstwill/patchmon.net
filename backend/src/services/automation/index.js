@@ -9,6 +9,7 @@ const SessionCleanup = require("./sessionCleanup");
 const OrphanedRepoCleanup = require("./orphanedRepoCleanup");
 const OrphanedPackageCleanup = require("./orphanedPackageCleanup");
 const DockerInventoryCleanup = require("./dockerInventoryCleanup");
+const MetricsReporting = require("./metricsReporting");
 
 // Queue names
 const QUEUE_NAMES = {
@@ -17,6 +18,7 @@ const QUEUE_NAMES = {
 	ORPHANED_REPO_CLEANUP: "orphaned-repo-cleanup",
 	ORPHANED_PACKAGE_CLEANUP: "orphaned-package-cleanup",
 	DOCKER_INVENTORY_CLEANUP: "docker-inventory-cleanup",
+	METRICS_REPORTING: "metrics-reporting",
 	AGENT_COMMANDS: "agent-commands",
 };
 
@@ -95,6 +97,9 @@ class QueueManager {
 			new OrphanedPackageCleanup(this);
 		this.automations[QUEUE_NAMES.DOCKER_INVENTORY_CLEANUP] =
 			new DockerInventoryCleanup(this);
+		this.automations[QUEUE_NAMES.METRICS_REPORTING] = new MetricsReporting(
+			this,
+		);
 
 		console.log("✅ All automation classes initialized");
 	}
@@ -162,6 +167,15 @@ class QueueManager {
 			workerOptions,
 		);
 
+		// Metrics Reporting Worker
+		this.workers[QUEUE_NAMES.METRICS_REPORTING] = new Worker(
+			QUEUE_NAMES.METRICS_REPORTING,
+			this.automations[QUEUE_NAMES.METRICS_REPORTING].process.bind(
+				this.automations[QUEUE_NAMES.METRICS_REPORTING],
+			),
+			workerOptions,
+		);
+
 		// Agent Commands Worker
 		this.workers[QUEUE_NAMES.AGENT_COMMANDS] = new Worker(
 			QUEUE_NAMES.AGENT_COMMANDS,
@@ -219,6 +233,7 @@ class QueueManager {
 		await this.automations[QUEUE_NAMES.ORPHANED_REPO_CLEANUP].schedule();
 		await this.automations[QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP].schedule();
 		await this.automations[QUEUE_NAMES.DOCKER_INVENTORY_CLEANUP].schedule();
+		await this.automations[QUEUE_NAMES.METRICS_REPORTING].schedule();
 	}
 
 	/**
@@ -246,6 +261,10 @@ class QueueManager {
 		return this.automations[
 			QUEUE_NAMES.DOCKER_INVENTORY_CLEANUP
 		].triggerManual();
+	}
+
+	async triggerMetricsReporting() {
+		return this.automations[QUEUE_NAMES.METRICS_REPORTING].triggerManual();
 	}
 
 	/**

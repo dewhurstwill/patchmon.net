@@ -366,13 +366,10 @@ router.post(
 			) {
 				console.error("⚠️  DATABASE CONNECTION POOL EXHAUSTED!");
 				console.error(
-					"⚠️  Current limit: DB_CONNECTION_LIMIT=" +
-						(process.env.DB_CONNECTION_LIMIT || "30"),
+					`⚠️  Current limit: DB_CONNECTION_LIMIT=${process.env.DB_CONNECTION_LIMIT || "30"}`,
 				);
 				console.error(
-					"⚠️  Pool timeout: DB_POOL_TIMEOUT=" +
-						(process.env.DB_POOL_TIMEOUT || "20") +
-						"s",
+					`⚠️  Pool timeout: DB_POOL_TIMEOUT=${process.env.DB_POOL_TIMEOUT || "20"}s`,
 				);
 				console.error(
 					"⚠️  Suggestion: Increase DB_CONNECTION_LIMIT in your .env file",

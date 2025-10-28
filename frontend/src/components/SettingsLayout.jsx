@@ -1,4 +1,5 @@
 import {
+	BarChart3,
 	Bell,
 	ChevronLeft,
 	ChevronRight,
@@ -140,6 +141,11 @@ const SettingsLayout = ({ children }) => {
 						name: "Server Version",
 						href: "/settings/server-version",
 						icon: Code,
+					},
+					{
+						name: "Metrics",
+						href: "/settings/metrics",
+						icon: BarChart3,
 					},
 				],
 			});

@@ -158,6 +158,7 @@ router.put(
 				logoDark,
 				logoLight,
 				favicon,
+				colorTheme,
 			} = req.body;
 
 			// Get current settings to check for update interval changes
@@ -189,6 +190,7 @@ router.put(
 			if (logoDark !== undefined) updateData.logo_dark = logoDark;
 			if (logoLight !== undefined) updateData.logo_light = logoLight;
 			if (favicon !== undefined) updateData.favicon = favicon;
+			if (colorTheme !== undefined) updateData.color_theme = colorTheme;
 
 			const updatedSettings = await updateSettings(
 				currentSettings.id,

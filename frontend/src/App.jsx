@@ -7,6 +7,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import SettingsLayout from "./components/SettingsLayout";
 import { isAuthPhase } from "./constants/authPhases";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
+import { ColorThemeProvider } from "./contexts/ColorThemeContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { UpdateNotificationProvider } from "./contexts/UpdateNotificationContext";
 
@@ -41,6 +42,7 @@ const SettingsServerConfig = lazy(
 	() => import("./pages/settings/SettingsServerConfig"),
 );
 const SettingsUsers = lazy(() => import("./pages/settings/SettingsUsers"));
+const SettingsMetrics = lazy(() => import("./pages/settings/SettingsMetrics"));
 
 // Loading fallback component
 const LoadingFallback = () => (
@@ -389,6 +391,16 @@ function AppRoutes() {
 					}
 				/>
 				<Route
+					path="/settings/metrics"
+					element={
+						<ProtectedRoute requirePermission="can_manage_settings">
+							<Layout>
+								<SettingsMetrics />
+							</Layout>
+						</ProtectedRoute>
+					}
+				/>
+				<Route
 					path="/options"
 					element={
 						<ProtectedRoute requirePermission="can_manage_hosts">
@@ -416,13 +428,15 @@ function AppRoutes() {
 function App() {
 	return (
 		<ThemeProvider>
-			<AuthProvider>
-				<UpdateNotificationProvider>
-					<LogoProvider>
-						<AppRoutes />
-					</LogoProvider>
-				</UpdateNotificationProvider>
-			</AuthProvider>
+			<ColorThemeProvider>
+				<AuthProvider>
+					<UpdateNotificationProvider>
+						<LogoProvider>
+							<AppRoutes />
+						</LogoProvider>
+					</UpdateNotificationProvider>
+				</AuthProvider>
+			</ColorThemeProvider>
 		</ThemeProvider>
 	);
 }
