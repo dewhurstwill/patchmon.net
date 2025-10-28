@@ -56,7 +56,7 @@ const Login = () => {
 
 	const navigate = useNavigate();
 
-	// Generate low-poly triangular background pattern based on selected theme
+	// Generate clean radial gradient background - subtle and modern
 	useEffect(() => {
 		const generateBackground = () => {
 			if (!canvasRef.current || !themeConfig?.login) return;
@@ -66,7 +66,7 @@ const Login = () => {
 			canvas.height = canvas.offsetHeight;
 			const ctx = canvas.getContext("2d");
 
-			// Get theme colors
+			// Get theme colors - pick first color from each palette
 			const xColors = themeConfig.login.xColors || [
 				"#667eea",
 				"#764ba2",
@@ -79,79 +79,36 @@ const Login = () => {
 				"#f093fb",
 				"#4facfe",
 			];
-			const allColors = [...xColors, ...yColors];
 
-			// Use date for daily variation
+			// Use date for daily color rotation
 			const today = new Date();
 			const seed =
 				today.getFullYear() * 10000 + today.getMonth() * 100 + today.getDate();
-
-			// Simple seeded random
 			const random = (s) => {
 				const x = Math.sin(s) * 10000;
 				return x - Math.floor(x);
 			};
 
-			// Create a grid of points with some variance
-			const cellSize = themeConfig.login.cellSize || 150; // Larger cells for more subtle effect
-			const variance = themeConfig.login.variance || 0.5;
-			const cols = Math.ceil(canvas.width / cellSize) + 2;
-			const rows = Math.ceil(canvas.height / cellSize) + 2;
+			const color1 = xColors[Math.floor(random(seed) * xColors.length)];
+			const color2 = yColors[Math.floor(random(seed + 1000) * yColors.length)];
 
-			const points = [];
-			for (let y = -1; y < rows; y++) {
-				for (let x = -1; x < cols; x++) {
-					const idx = y * cols + x;
-					const offsetX = (random(seed + idx * 2) - 0.5) * cellSize * variance;
-					const offsetY =
-						(random(seed + idx * 2 + 1000) - 0.5) * cellSize * variance;
-					points.push({
-						x: x * cellSize + offsetX,
-						y: y * cellSize + offsetY,
-						color: allColors[Math.floor(random(seed + idx) * allColors.length)],
-					});
-				}
-			}
+			// Create clean radial gradient from center to bottom-right corner
+			const gradient = ctx.createRadialGradient(
+				canvas.width * 0.3, // Center slightly left
+				canvas.height * 0.3, // Center slightly up
+				0,
+				canvas.width * 0.5, // Expand to cover screen
+				canvas.height * 0.5,
+				Math.max(canvas.width, canvas.height) * 1.2,
+			);
 
-			// Draw triangles between points
-			for (let y = 0; y < rows - 1; y++) {
-				for (let x = 0; x < cols - 1; x++) {
-					const idx = y * cols + x;
-					const p1 = points[idx];
-					const p2 = points[idx + 1];
-					const p3 = points[idx + cols];
-					const p4 = points[idx + cols + 1];
+			// Subtle gradient with darker corners
+			gradient.addColorStop(0, color1);
+			gradient.addColorStop(0.6, color2);
+			gradient.addColorStop(1, "#0a0a0a"); // Very dark edges
 
-					// Draw two triangles per cell
-					// Triangle 1
-					ctx.beginPath();
-					ctx.moveTo(p1.x, p1.y);
-					ctx.lineTo(p2.x, p2.y);
-					ctx.lineTo(p3.x, p3.y);
-					ctx.closePath();
-
-					const gradient1 = ctx.createLinearGradient(p1.x, p1.y, p2.x, p2.y);
-					gradient1.addColorStop(0, p1.color);
-					gradient1.addColorStop(0.5, p2.color);
-					gradient1.addColorStop(1, p3.color);
-					ctx.fillStyle = gradient1;
-					ctx.fill();
-
-					// Triangle 2
-					ctx.beginPath();
-					ctx.moveTo(p2.x, p2.y);
-					ctx.lineTo(p4.x, p4.y);
-					ctx.lineTo(p3.x, p3.y);
-					ctx.closePath();
-
-					const gradient2 = ctx.createLinearGradient(p2.x, p2.y, p4.x, p4.y);
-					gradient2.addColorStop(0, p2.color);
-					gradient2.addColorStop(0.5, p4.color);
-					gradient2.addColorStop(1, p3.color);
-					ctx.fillStyle = gradient2;
-					ctx.fill();
-				}
-			}
+			ctx.fillStyle = gradient;
+			ctx.fillRect(0, 0, canvas.width, canvas.height);
 		};
 
 		generateBackground();
