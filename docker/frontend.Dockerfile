@@ -23,7 +23,7 @@ COPY frontend/package*.json ./
 
 RUN npm cache clean --force &&\
     rm -rf node_modules ~/.npm /root/.npm &&\
-    npm install --omit=dev --ignore-scripts --legacy-peer-deps --no-audit --prefer-online --fetch-retries=0
+    npm install --ignore-scripts --legacy-peer-deps --no-audit --prefer-online --fetch-retries=0
 
 COPY frontend/ ./
 
