@@ -1430,6 +1430,69 @@ router.patch(
 	},
 );
 
+// Force agent update for specific host
+router.post(
+	"/:hostId/force-agent-update",
+	authenticateToken,
+	requireManageHosts,
+	async (req, res) => {
+		try {
+			const { hostId } = req.params;
+
+			// Get host to verify it exists
+			const host = await prisma.hosts.findUnique({
+				where: { id: hostId },
+			});
+
+			if (!host) {
+				return res.status(404).json({ error: "Host not found" });
+			}
+
+			// Get queue manager
+			const { QUEUE_NAMES } = require("../services/automation");
+			const queueManager = req.app.locals.queueManager;
+
+			if (!queueManager) {
+				return res.status(500).json({
+					error: "Queue manager not available",
+				});
+			}
+
+			// Get the agent-commands queue
+			const queue = queueManager.queues[QUEUE_NAMES.AGENT_COMMANDS];
+
+			// Add job to queue
+			await queue.add(
+				"update_agent",
+				{
+					api_id: host.api_id,
+					type: "update_agent",
+				},
+				{
+					attempts: 3,
+					backoff: {
+						type: "exponential",
+						delay: 2000,
+					},
+				},
+			);
+
+			res.json({
+				success: true,
+				message: "Agent update queued successfully",
+				host: {
+					id: host.id,
+					friendlyName: host.friendly_name,
+					apiId: host.api_id,
+				},
+			});
+		} catch (error) {
+			console.error("Force agent update error:", error);
+			res.status(500).json({ error: "Failed to force agent update" });
+		}
+	},
+);
+
 // Serve the installation script (requires API authentication)
 router.get("/install", async (req, res) => {
 	try {

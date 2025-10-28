@@ -190,6 +190,19 @@ class QueueManager {
 					// For settings update, we need additional data
 					const { update_interval } = job.data;
 					agentWs.pushSettingsUpdate(api_id, update_interval);
+				} else if (type === "update_agent") {
+					// Force agent to update by sending WebSocket command
+					const ws = agentWs.getConnectionByApiId(api_id);
+					if (ws && ws.readyState === 1) {
+						// WebSocket.OPEN
+						agentWs.pushUpdateAgent(api_id);
+						console.log(`✅ Update command sent to agent ${api_id}`);
+					} else {
+						console.error(`❌ Agent ${api_id} is not connected`);
+						throw new Error(
+							`Agent ${api_id} is not connected. Cannot send update command.`,
+						);
+					}
 				} else {
 					console.error(`Unknown agent command type: ${type}`);
 				}
