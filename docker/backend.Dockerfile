@@ -47,8 +47,8 @@ COPY --chown=node:node backend/ ./backend/
 WORKDIR /app/backend
 
 RUN npm cache clean --force &&\
-    rm -rf node_modules ~/.npm /root/.npm &&\
-    npm ci --ignore-scripts --legacy-peer-deps --no-audit --prefer-online --fetch-retries=0 &&\
+    rm -rf node_modules ~/.npm /root/.npm package-lock.json &&\
+    npm install --omit=dev --ignore-scripts --legacy-peer-deps --no-audit --prefer-online --fetch-retries=0 &&\
     npm run db:generate &&\
     npm prune --omit=dev &&\
     npm cache clean --force
