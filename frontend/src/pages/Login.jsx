@@ -17,7 +17,6 @@ import { useEffect, useId, useRef, useState } from "react";
 import { FaReddit, FaYoutube } from "react-icons/fa";
 
 import { useNavigate } from "react-router-dom";
-import trianglify from "trianglify";
 import DiscordIcon from "../components/DiscordIcon";
 import { useAuth } from "../contexts/AuthContext";
 import { useColorTheme } from "../contexts/ColorThemeContext";
@@ -57,47 +56,67 @@ const Login = () => {
 
 	const navigate = useNavigate();
 
-	// Generate Trianglify background based on selected theme
+	// Generate geometric background pattern based on selected theme
 	useEffect(() => {
 		const generateBackground = () => {
-			try {
-				if (canvasRef.current && themeConfig?.login) {
-					// Get current date as seed for daily variation
-					const today = new Date();
-					const dateSeed = `${today.getFullYear()}-${today.getMonth()}-${today.getDate()}`;
+			if (!canvasRef.current || !themeConfig?.login) return;
 
-					// Generate pattern with selected theme configuration
-					const pattern = trianglify({
-						width: canvasRef.current.offsetWidth,
-						height: canvasRef.current.offsetHeight,
-						cellSize: themeConfig.login.cellSize,
-						variance: themeConfig.login.variance,
-						seed: dateSeed,
-						xColors: themeConfig.login.xColors,
-						yColors: themeConfig.login.yColors,
-					});
+			const canvas = canvasRef.current;
+			canvas.width = canvas.offsetWidth;
+			canvas.height = canvas.offsetHeight;
+			const ctx = canvas.getContext("2d");
 
-					// Render to canvas using SVG (browser-compatible)
-					const svg = pattern.toSVG();
-					const ctx = canvasRef.current.getContext("2d");
-					const img = new Image();
-					const blob = new Blob([svg], { type: "image/svg+xml" });
-					const url = URL.createObjectURL(blob);
-					img.onload = () => {
-						ctx.drawImage(
-							img,
-							0,
-							0,
-							canvasRef.current.width,
-							canvasRef.current.height,
-						);
-						URL.revokeObjectURL(url);
-					};
-					img.src = url;
+			// Get theme colors
+			const xColors = themeConfig.login.xColors || [
+				"#667eea",
+				"#764ba2",
+				"#f093fb",
+				"#4facfe",
+			];
+			const yColors = themeConfig.login.yColors || [
+				"#667eea",
+				"#764ba2",
+				"#f093fb",
+				"#4facfe",
+			];
+
+			// Use date for daily variation
+			const today = new Date();
+			const seed =
+				today.getFullYear() * 10000 + today.getMonth() * 100 + today.getDate();
+
+			// Simple seeded random
+			const random = (s) => {
+				const x = Math.sin(s) * 10000;
+				return x - Math.floor(x);
+			};
+
+			// Draw gradient mesh
+			const cellSize = themeConfig.login.cellSize || 75;
+			const cols = Math.ceil(canvas.width / cellSize) + 1;
+			const rows = Math.ceil(canvas.height / cellSize) + 1;
+
+			for (let y = 0; y < rows; y++) {
+				for (let x = 0; x < cols; x++) {
+					const idx = y * cols + x;
+					const color1 =
+						xColors[Math.floor(random(seed + idx) * xColors.length)];
+					const color2 =
+						yColors[Math.floor(random(seed + idx + 1000) * yColors.length)];
+
+					// Create gradient
+					const gradient = ctx.createLinearGradient(
+						x * cellSize,
+						y * cellSize,
+						(x + 1) * cellSize,
+						(y + 1) * cellSize,
+					);
+					gradient.addColorStop(0, color1);
+					gradient.addColorStop(1, color2);
+
+					ctx.fillStyle = gradient;
+					ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
 				}
-			} catch (error) {
-				// Canvas/trianglify not available, skip background generation
-				console.warn("Could not generate Trianglify background:", error);
 			}
 		};
 
@@ -110,7 +129,7 @@ const Login = () => {
 
 		window.addEventListener("resize", handleResize);
 		return () => window.removeEventListener("resize", handleResize);
-	}, [themeConfig]); // Regenerate when theme changes
+	}, [themeConfig]);
 
 	// Check if signup is enabled
 	useEffect(() => {
