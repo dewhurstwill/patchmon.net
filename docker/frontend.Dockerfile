@@ -24,9 +24,13 @@ WORKDIR /app/frontend
 
 COPY frontend/package*.json ./
 
-RUN npm cache clean --force &&\
+RUN echo "=== Starting npm install ===" &&\
+    npm cache clean --force &&\
     rm -rf node_modules ~/.npm /root/.npm &&\
-    npm install --legacy-peer-deps --no-audit --prefer-online --fetch-retries=3 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000
+    echo "=== npm install with verbose logging ===" &&\
+    npm install --legacy-peer-deps --no-audit --prefer-online --fetch-retries=3 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000 --loglevel=verbose &&\
+    echo "=== npm install completed ===" &&\
+    npm cache clean --force
 
 COPY frontend/ ./
 
