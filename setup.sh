@@ -2931,6 +2931,8 @@ update_installation() {
     
     # Load existing .env to get database credentials
     if [ -f "$instance_dir/backend/.env" ]; then
+        # Unset color variables before sourcing to prevent ANSI escape sequences from leaking into .env
+        unset RED GREEN YELLOW BLUE NC
         source "$instance_dir/backend/.env"
         print_status "Loaded existing configuration"
         
