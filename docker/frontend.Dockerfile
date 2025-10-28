@@ -17,18 +17,17 @@ CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "3000"]
 # Builder stage for production
 FROM node:lts-alpine AS builder
 
-WORKDIR /app
+WORKDIR /app/frontend
 
-COPY package*.json ./
-COPY frontend/package*.json ./frontend/
+COPY frontend/package*.json ./
 
 RUN npm cache clean --force &&\
     rm -rf node_modules ~/.npm /root/.npm &&\
     npm ci --legacy-peer-deps --no-audit --prefer-online --fetch-retries=0
 
-COPY frontend/ ./frontend/
+COPY frontend/ ./
 
-RUN npm run build:frontend
+RUN npm run build
 
 # Production stage
 FROM nginxinc/nginx-unprivileged:alpine
