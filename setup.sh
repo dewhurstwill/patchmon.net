@@ -2918,11 +2918,37 @@ update_installation() {
     print_info "Installation directory: $instance_dir"
     print_info "Service name: $service_name"
     
-    # Verify it's a git repository
+    # Verify it's a git repository, if not, initialize it
     if [ ! -d "$instance_dir/.git" ]; then
-        print_error "Installation directory is not a git repository"
-        print_error "Cannot perform git-based update"
-        exit 1
+        print_warning "Installation directory is not a git repository"
+        print_info "Attempting to re-initialize as git repository..."
+        
+        cd "$instance_dir" || exit 1
+        
+        # Initialize git repository
+        git init
+        git remote add origin https://github.com/PatchMon/PatchMon.git
+        
+        # Fetch all branches
+        git fetch origin
+        
+        # Try to determine current version from package.json or default to main
+        local current_branch="main"
+        if [ -f "$instance_dir/backend/package.json" ]; then
+            local pkg_version=$(grep '"version"' "$instance_dir/backend/package.json" | head -1 | sed 's/.*"version": "\(.*\)".*/\1/')
+            if [ -n "$pkg_version" ]; then
+                # Check if there's a release branch for this version
+                if git ls-remote --heads origin | grep -q "release/$(echo $pkg_version | sed 's/\./-/g')"; then
+                    current_branch="release/$(echo $pkg_version | sed 's/\./-/g')"
+                fi
+            fi
+        fi
+        
+        # Reset to the determined branch
+        git reset --hard "origin/$current_branch"
+        git checkout -B "$current_branch" "origin/$current_branch"
+        
+        print_success "Repository initialized successfully"
     fi
     
     # Add git safe.directory to avoid ownership issues when running as root
