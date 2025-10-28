@@ -47,10 +47,11 @@ COPY --chown=node:node backend/ ./backend/
 WORKDIR /app/backend
 
 RUN npm cache clean --force &&\
-    rm -rf node_modules &&\
-    npm ci --ignore-scripts --legacy-peer-deps &&\
+    rm -rf node_modules ~/.npm &&\
+    npm ci --ignore-scripts --legacy-peer-deps --no-audit &&\
     npx prisma generate &&\
-    npm prune --omit=dev
+    npm prune --omit=dev &&\
+    npm cache clean --force
 
 # Production stage
 FROM node:lts-alpine
