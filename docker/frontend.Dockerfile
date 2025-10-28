@@ -22,7 +22,9 @@ WORKDIR /app
 COPY package*.json ./
 COPY frontend/package*.json ./frontend/
 
-RUN npm ci --ignore-scripts
+RUN npm cache clean --force &&\
+    rm -rf node_modules ~/.npm /root/.npm &&\
+    npm ci --legacy-peer-deps --no-audit --prefer-online --fetch-retries=0
 
 COPY frontend/ ./frontend/
 
