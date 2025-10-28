@@ -1,9 +1,6 @@
 const axios = require("axios");
 const { prisma } = require("./shared/prisma");
-const {
-	getSettings,
-	updateSettings,
-} = require("../../services/settingsService");
+const { updateSettings } = require("../../services/settingsService");
 
 const METRICS_API_URL =
 	process.env.METRICS_API_URL || "https://metrics.patchmon.cloud";
