@@ -36,8 +36,8 @@ COPY frontend/ ./
 
 RUN npm run build
 
-# Production stage
-FROM nginxinc/nginx-unprivileged:alpine
+# Production stage - use standard nginx to allow apk install
+FROM nginx:alpine
 
 # Install runtime dependencies for canvas
 RUN apk add --no-cache cairo pango jpeg libpng giflib
