@@ -47,7 +47,8 @@ COPY --chown=node:node backend/ ./backend/
 WORKDIR /app/backend
 
 RUN npm cache clean --force &&\
-    npm ci --ignore-scripts &&\
+    rm -rf node_modules &&\
+    npm ci --ignore-scripts --legacy-peer-deps &&\
     npx prisma generate &&\
     npm prune --omit=dev
 
