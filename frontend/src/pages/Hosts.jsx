@@ -403,104 +403,70 @@ const Hosts = () => {
 		if (!token) return;
 
 		// Fetch initial WebSocket status for all hosts
+		// Fetch initial WebSocket status for all hosts
 		const fetchInitialStatus = async () => {
-			const statusPromises = hosts
+			const apiIds = hosts
 				.filter((host) => host.api_id)
-				.map(async (host) => {
-					try {
-						const response = await fetch(`/api/v1/ws/status/${host.api_id}`, {
-							headers: {
-								Authorization: `Bearer ${token}`,
-							},
-						});
-						if (response.ok) {
-							const data = await response.json();
-							return { apiId: host.api_id, status: data.data };
-						}
-					} catch (_error) {
-						// Silently handle errors
-					}
-					return {
-						apiId: host.api_id,
-						status: { connected: false, secure: false },
-					};
-				});
+				.map((host) => host.api_id);
 
-			const results = await Promise.all(statusPromises);
-			const initialStatusMap = {};
-			results.forEach(({ apiId, status }) => {
-				initialStatusMap[apiId] = status;
-			});
+			if (apiIds.length === 0) return;
 
-			setWsStatusMap(initialStatusMap);
+			try {
+				const response = await fetch(
+					`/api/v1/ws/status?apiIds=${apiIds.join(",")}`,
+					{
+						headers: {
+							Authorization: `Bearer ${token}`,
+						},
+					},
+				);
+				if (response.ok) {
+					const result = await response.json();
+					setWsStatusMap(result.data);
+				}
+			} catch (_error) {
+				// Silently handle errors
+			}
 		};
 
 		fetchInitialStatus();
 	}, [hosts]);
 
-	// Subscribe to WebSocket status changes for all hosts via SSE
+	// Subscribe to WebSocket status changes for all hosts via polling (lightweight alternative to SSE)
 	useEffect(() => {
 		if (!hosts || hosts.length === 0) return;
 
 		const token = localStorage.getItem("token");
 		if (!token) return;
 
-		const eventSources = new Map();
-		let isMounted = true;
+		// Use polling instead of SSE to avoid connection pool issues
+		// Poll every 10 seconds instead of 19 persistent connections
+		const pollInterval = setInterval(() => {
+			const apiIds = hosts
+				.filter((host) => host.api_id)
+				.map((host) => host.api_id);
 
-		const connectHost = (apiId) => {
-			if (!isMounted || eventSources.has(apiId)) return;
+			if (apiIds.length === 0) return;
 
-			try {
-				const es = new EventSource(
-					`/api/v1/ws/status/${apiId}/stream?token=${encodeURIComponent(token)}`,
-				);
-
-				es.onmessage = (event) => {
-					try {
-						const data = JSON.parse(event.data);
-						if (isMounted) {
-							setWsStatusMap((prev) => {
-								const newMap = { ...prev, [apiId]: data };
-								return newMap;
-							});
-						}
-					} catch (_err) {
-						// Silently handle parse errors
+			fetch(`/api/v1/ws/status?apiIds=${apiIds.join(",")}`, {
+				headers: {
+					Authorization: `Bearer ${token}`,
+				},
+			})
+				.then((response) => response.json())
+				.then((result) => {
+					if (result.success && result.data) {
+						setWsStatusMap(result.data);
 					}
-				};
-
-				es.onerror = (_error) => {
-					console.log(`[SSE] Connection error for ${apiId}, retrying...`);
-					es?.close();
-					eventSources.delete(apiId);
-					if (isMounted) {
-						// Retry connection after 5 seconds with exponential backoff
-						setTimeout(() => connectHost(apiId), 5000);
-					}
-				};
-
-				eventSources.set(apiId, es);
-			} catch (_err) {
-				// Silently handle connection errors
-			}
-		};
-
-		// Connect to all hosts
-		for (const host of hosts) {
-			if (host.api_id) {
-				connectHost(host.api_id);
-			} else {
-			}
-		}
+				})
+				.catch(() => {
+					// Silently handle errors
+				});
+		}, 10000); // Poll every 10 seconds
 
 		// Cleanup function
 		return () => {
-			isMounted = false;
-			for (const es of eventSources.values()) {
-				es.close();
-			}
-			eventSources.clear();
+			clearInterval(pollInterval);
 		};
 	}, [hosts]);
 

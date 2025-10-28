@@ -11,7 +11,31 @@ const {
 
 const router = express.Router();
 
-// Get WebSocket connection status by api_id (no database access - pure memory lookup)
+// Get WebSocket connection status for multiple hosts at once (bulk endpoint)
+router.get("/status", authenticateToken, async (req, res) => {
+	try {
+		const { apiIds } = req.query; // Comma-separated list of api_ids
+		const idArray = apiIds ? apiIds.split(",").filter((id) => id.trim()) : [];
+
+		const statusMap = {};
+		idArray.forEach((apiId) => {
+			statusMap[apiId] = getConnectionInfo(apiId);
+		});
+
+		res.json({
+			success: true,
+			data: statusMap,
+		});
+	} catch (error) {
+		console.error("Error fetching bulk WebSocket status:", error);
+		res.status(500).json({
+			success: false,
+			error: "Failed to fetch WebSocket status",
+		});
+	}
+});
+
+// Get WebSocket connection status by api_id (single endpoint)
 router.get("/status/:apiId", authenticateToken, async (req, res) => {
 	try {
 		const { apiId } = req.params;
