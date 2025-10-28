@@ -47,9 +47,9 @@ COPY --chown=node:node backend/ ./backend/
 WORKDIR /app/backend
 
 RUN npm cache clean --force &&\
-    rm -rf node_modules ~/.npm &&\
-    npm ci --ignore-scripts --legacy-peer-deps --no-audit &&\
-    PRISMA_CLI_BINARY_TYPE=binary npm run db:generate &&\
+    rm -rf node_modules ~/.npm /root/.npm &&\
+    npm ci --ignore-scripts --legacy-peer-deps --no-audit --prefer-online --fetch-retries=0 &&\
+    npm run db:generate &&\
     npm prune --omit=dev &&\
     npm cache clean --force
 
