@@ -2703,6 +2703,13 @@ update_env_file() {
     : ${TFA_MAX_REMEMBER_SESSIONS:=5}
     : ${TFA_SUSPICIOUS_ACTIVITY_THRESHOLD:=3}
     
+    # Prisma Connection Pool
+    : ${DB_CONNECTION_LIMIT:=30}
+    : ${DB_POOL_TIMEOUT:=20}
+    : ${DB_CONNECT_TIMEOUT:=10}
+    : ${DB_IDLE_TIMEOUT:=300}
+    : ${DB_MAX_LIFETIME:=1800}
+    
     # Track which variables were added
     local added_vars=()
     
@@ -2763,6 +2770,21 @@ update_env_file() {
     fi
     if ! grep -q "^TFA_SUSPICIOUS_ACTIVITY_THRESHOLD=" "$env_file"; then
         added_vars+=("TFA_SUSPICIOUS_ACTIVITY_THRESHOLD")
+    fi
+    if ! grep -q "^DB_CONNECTION_LIMIT=" "$env_file"; then
+        added_vars+=("DB_CONNECTION_LIMIT")
+    fi
+    if ! grep -q "^DB_POOL_TIMEOUT=" "$env_file"; then
+        added_vars+=("DB_POOL_TIMEOUT")
+    fi
+    if ! grep -q "^DB_CONNECT_TIMEOUT=" "$env_file"; then
+        added_vars+=("DB_CONNECT_TIMEOUT")
+    fi
+    if ! grep -q "^DB_IDLE_TIMEOUT=" "$env_file"; then
+        added_vars+=("DB_IDLE_TIMEOUT")
+    fi
+    if ! grep -q "^DB_MAX_LIFETIME=" "$env_file"; then
+        added_vars+=("DB_MAX_LIFETIME")
     fi
     
     # If there are missing variables, add them
@@ -2847,6 +2869,25 @@ EOF
         fi
         if printf '%s\n' "${added_vars[@]}" | grep -q "TFA_SUSPICIOUS_ACTIVITY_THRESHOLD"; then
             echo "TFA_SUSPICIOUS_ACTIVITY_THRESHOLD=$TFA_SUSPICIOUS_ACTIVITY_THRESHOLD" >> "$env_file"
+        fi
+        
+        # Add Prisma connection pool config if missing
+        if printf '%s\n' "${added_vars[@]}" | grep -q "DB_CONNECTION_LIMIT"; then
+            echo "" >> "$env_file"
+            echo "# Database Connection Pool Configuration (Prisma)" >> "$env_file"
+            echo "DB_CONNECTION_LIMIT=$DB_CONNECTION_LIMIT" >> "$env_file"
+        fi
+        if printf '%s\n' "${added_vars[@]}" | grep -q "DB_POOL_TIMEOUT"; then
+            echo "DB_POOL_TIMEOUT=$DB_POOL_TIMEOUT" >> "$env_file"
+        fi
+        if printf '%s\n' "${added_vars[@]}" | grep -q "DB_CONNECT_TIMEOUT"; then
+            echo "DB_CONNECT_TIMEOUT=$DB_CONNECT_TIMEOUT" >> "$env_file"
+        fi
+        if printf '%s\n' "${added_vars[@]}" | grep -q "DB_IDLE_TIMEOUT"; then
+            echo "DB_IDLE_TIMEOUT=$DB_IDLE_TIMEOUT" >> "$env_file"
+        fi
+        if printf '%s\n' "${added_vars[@]}" | grep -q "DB_MAX_LIFETIME"; then
+            echo "DB_MAX_LIFETIME=$DB_MAX_LIFETIME" >> "$env_file"
         fi
         
         print_status ".env file updated with ${#added_vars[@]} new variable(s)"
