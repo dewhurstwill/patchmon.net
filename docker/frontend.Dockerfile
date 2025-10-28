@@ -23,8 +23,9 @@ COPY frontend/package*.json ./
 
 RUN npm cache clean --force &&\
     rm -rf node_modules ~/.npm /root/.npm &&\
-    npm install --legacy-peer-deps --no-audit --prefer-online --fetch-retries=3 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000 &&\
-    (npm rebuild canvas || echo "Canvas rebuild failed, continuing without native bindings")
+    npm install --legacy-peer-deps --no-audit --prefer-online --fetch-retries=3 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000 --ignore-scripts &&\
+    echo "package.json" > node_modules/.gitignore &&\
+    echo "Express cors and trianglify are not needed in production build" || true
 
 COPY frontend/ ./
 
