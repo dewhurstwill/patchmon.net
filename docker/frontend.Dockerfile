@@ -36,11 +36,23 @@ COPY frontend/ ./
 
 RUN npm run build
 
-# Production stage - use standard nginx to allow apk install
-FROM nginx:alpine
+# Production stage - use temporary stage to install packages as root, then copy to unprivileged
+FROM nginx:alpine AS runtime-builder
 
 # Install runtime dependencies for canvas
 RUN apk add --no-cache cairo pango jpeg libpng giflib
+
+# Final production stage - unprivileged
+FROM nginxinc/nginx-unprivileged:alpine
+
+# Copy runtime libraries from runtime-builder
+COPY --from=runtime-builder /usr/lib/libcairo.so.2 /usr/lib/
+COPY --from=runtime-builder /usr/lib/libpango-1.0.so.0 /usr/lib/
+COPY --from=runtime-builder /usr/lib/libpangocairo-1.0.so.0 /usr/lib/
+COPY --from=runtime-builder /usr/lib/libpangoft2-1.0.so.0 /usr/lib/
+COPY --from=runtime-builder /usr/lib/libpng16.so.16 /usr/lib/
+COPY --from=runtime-builder /usr/lib/libgif.so.7 /usr/lib/
+COPY --from=runtime-builder /usr/lib/libjpeg.so.8 /usr/lib/
 
 ENV BACKEND_HOST=backend \
     BACKEND_PORT=3001
