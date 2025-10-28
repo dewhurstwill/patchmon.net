@@ -101,74 +101,107 @@ router.get("/", async (req, res) => {
 			prisma.packages.count({ where }),
 		]);
 
-		// Get additional stats for each package
-		const packagesWithStats = await Promise.all(
-			packages.map(async (pkg) => {
-				// Build base where clause for this package
-				const baseWhere = { package_id: pkg.id };
+		// OPTIMIZATION: Batch query all stats instead of N individual queries
+		const packageIds = packages.map((pkg) => pkg.id);
 
-				// If host filter is specified, add host filter to all queries
-				const hostWhere = host ? { ...baseWhere, host_id: host } : baseWhere;
-
-				const [updatesCount, securityCount, packageHosts] = await Promise.all([
-					prisma.host_packages.count({
-						where: {
-							...hostWhere,
-							needs_update: true,
-						},
-					}),
-					prisma.host_packages.count({
-						where: {
-							...hostWhere,
-							needs_update: true,
-							is_security_update: true,
-						},
-					}),
-					prisma.host_packages.findMany({
-						where: {
-							...hostWhere,
-							// If host filter is specified, include all packages for that host
-							// Otherwise, only include packages that need updates
-							...(host ? {} : { needs_update: true }),
-						},
-						select: {
-							hosts: {
-								select: {
-									id: true,
-									friendly_name: true,
-									hostname: true,
-									os_type: true,
-								},
-							},
-							current_version: true,
-							available_version: true,
-							needs_update: true,
-							is_security_update: true,
-						},
-						take: 10, // Limit to first 10 for performance
-					}),
-				]);
-
-				return {
-					...pkg,
-					packageHostsCount: pkg._count.host_packages,
-					packageHosts: packageHosts.map((hp) => ({
-						hostId: hp.hosts.id,
-						friendlyName: hp.hosts.friendly_name,
-						osType: hp.hosts.os_type,
-						currentVersion: hp.current_version,
-						availableVersion: hp.available_version,
-						needsUpdate: hp.needs_update,
-						isSecurityUpdate: hp.is_security_update,
-					})),
-					stats: {
-						totalInstalls: pkg._count.host_packages,
-						updatesNeeded: updatesCount,
-						securityUpdates: securityCount,
+		// Get all counts and host data in 3 batch queries instead of N*3 queries
+		const [allUpdatesCounts, allSecurityCounts, allPackageHostsData] =
+			await Promise.all([
+				// Batch count all packages that need updates
+				prisma.host_packages.groupBy({
+					by: ["package_id"],
+					where: {
+						package_id: { in: packageIds },
+						needs_update: true,
+						...(host ? { host_id: host } : {}),
 					},
-				};
-			}),
+					_count: { id: true },
+				}),
+				// Batch count all packages with security updates
+				prisma.host_packages.groupBy({
+					by: ["package_id"],
+					where: {
+						package_id: { in: packageIds },
+						needs_update: true,
+						is_security_update: true,
+						...(host ? { host_id: host } : {}),
+					},
+					_count: { id: true },
+				}),
+				// Batch fetch all host data for packages
+				prisma.host_packages.findMany({
+					where: {
+						package_id: { in: packageIds },
+						...(host ? { host_id: host } : { needs_update: true }),
+					},
+					select: {
+						package_id: true,
+						hosts: {
+							select: {
+								id: true,
+								friendly_name: true,
+								hostname: true,
+								os_type: true,
+							},
+						},
+						current_version: true,
+						available_version: true,
+						needs_update: true,
+						is_security_update: true,
+					},
+					// Limit to first 10 per package
+					take: 100, // Increased from package-based limit
+				}),
+			]);
+
+		// Create lookup maps for O(1) access
+		const updatesCountMap = new Map(
+			allUpdatesCounts.map((item) => [item.package_id, item._count.id]),
 		);
+		const securityCountMap = new Map(
+			allSecurityCounts.map((item) => [item.package_id, item._count.id]),
+		);
+		const packageHostsMap = new Map();
+
+		// Group host data by package_id
+		for (const hp of allPackageHostsData) {
+			if (!packageHostsMap.has(hp.package_id)) {
+				packageHostsMap.set(hp.package_id, []);
+			}
+			const hosts = packageHostsMap.get(hp.package_id);
+			hosts.push({
+				hostId: hp.hosts.id,
+				friendlyName: hp.hosts.friendly_name,
+				osType: hp.hosts.os_type,
+				currentVersion: hp.current_version,
+				availableVersion: hp.available_version,
+				needsUpdate: hp.needs_update,
+				isSecurityUpdate: hp.is_security_update,
+			});
+
+			// Limit to 10 hosts per package
+			if (hosts.length > 10) {
+				packageHostsMap.set(hp.package_id, hosts.slice(0, 10));
+			}
+		}
+
+		// Map packages with stats from lookup maps (no more DB queries!)
+		const packagesWithStats = packages.map((pkg) => {
+			const updatesCount = updatesCountMap.get(pkg.id) || 0;
+			const securityCount = securityCountMap.get(pkg.id) || 0;
+			const packageHosts = packageHostsMap.get(pkg.id) || [];
+
+			return {
+				...pkg,
+				packageHostsCount: pkg._count.host_packages,
+				packageHosts,
+				stats: {
+					totalInstalls: pkg._count.host_packages,
+					updatesNeeded: updatesCount,
+					securityUpdates: securityCount,
+				},
+			};
+		});
 
 		res.json({
 			packages: packagesWithStats,
