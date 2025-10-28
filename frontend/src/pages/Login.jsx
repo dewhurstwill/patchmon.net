@@ -77,8 +77,23 @@ const Login = () => {
 						yColors: themeConfig.login.yColors,
 					});
 
-					// Render to canvas
-					pattern.toCanvas(canvasRef.current);
+					// Render to canvas using SVG (browser-compatible)
+					const svg = pattern.toSVG();
+					const ctx = canvasRef.current.getContext("2d");
+					const img = new Image();
+					const blob = new Blob([svg], { type: "image/svg+xml" });
+					const url = URL.createObjectURL(blob);
+					img.onload = () => {
+						ctx.drawImage(
+							img,
+							0,
+							0,
+							canvasRef.current.width,
+							canvasRef.current.height,
+						);
+						URL.revokeObjectURL(url);
+					};
+					img.src = url;
 				}
 			} catch (error) {
 				// Canvas/trianglify not available, skip background generation
