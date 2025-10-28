@@ -66,8 +66,10 @@ const autoEnrollmentRoutes = require("./routes/autoEnrollmentRoutes");
 const gethomepageRoutes = require("./routes/gethomepageRoutes");
 const automationRoutes = require("./routes/automationRoutes");
 const dockerRoutes = require("./routes/dockerRoutes");
+const integrationRoutes = require("./routes/integrationRoutes");
 const wsRoutes = require("./routes/wsRoutes");
 const agentVersionRoutes = require("./routes/agentVersionRoutes");
+const metricsRoutes = require("./routes/metricsRoutes");
 const { initSettings } = require("./services/settingsService");
 const { queueManager } = require("./services/automation");
 const { authenticateToken, requireAdmin } = require("./middleware/auth");
@@ -471,8 +473,10 @@ app.use(
 app.use(`/api/${apiVersion}/gethomepage`, gethomepageRoutes);
 app.use(`/api/${apiVersion}/automation`, automationRoutes);
 app.use(`/api/${apiVersion}/docker`, dockerRoutes);
+app.use(`/api/${apiVersion}/integrations`, integrationRoutes);
 app.use(`/api/${apiVersion}/ws`, wsRoutes);
 app.use(`/api/${apiVersion}/agent`, agentVersionRoutes);
+app.use(`/api/${apiVersion}/metrics`, metricsRoutes);
 
 // Bull Board - will be populated after queue manager initializes
 let bullBoardRouter = null;
@@ -1197,6 +1201,15 @@ async function startServer() {
 		// Initialize WS layer with the underlying HTTP server
 		initAgentWs(server, prisma);
 		await agentVersionService.initialize();
+
+		// Send metrics on startup (silent - no console output)
+		try {
+			const metricsReporting =
+				queueManager.automations[QUEUE_NAMES.METRICS_REPORTING];
+			await metricsReporting.sendSilent();
+		} catch (_error) {
+			// Silent failure - don't block server startup if metrics fail
+		}
 
 		server.listen(PORT, () => {
 			if (process.env.ENABLE_LOGGING === "true") {

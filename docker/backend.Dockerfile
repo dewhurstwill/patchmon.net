@@ -46,8 +46,10 @@ COPY --chown=node:node backend/ ./backend/
 
 WORKDIR /app/backend
 
-RUN npm ci --ignore-scripts &&\
-    npx prisma generate &&\
+RUN npm cache clean --force &&\
+    rm -rf node_modules ~/.npm /root/.npm &&\
+    npm ci --ignore-scripts --legacy-peer-deps --no-audit --prefer-online --fetch-retries=0 &&\
+    PRISMA_CLI_BINARY_TYPE=binary npm run db:generate &&\
     npm prune --omit=dev &&\
     npm cache clean --force
 

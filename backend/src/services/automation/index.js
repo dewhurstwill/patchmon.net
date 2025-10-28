@@ -8,6 +8,8 @@ const GitHubUpdateCheck = require("./githubUpdateCheck");
 const SessionCleanup = require("./sessionCleanup");
 const OrphanedRepoCleanup = require("./orphanedRepoCleanup");
 const OrphanedPackageCleanup = require("./orphanedPackageCleanup");
+const DockerInventoryCleanup = require("./dockerInventoryCleanup");
+const MetricsReporting = require("./metricsReporting");
 
 // Queue names
 const QUEUE_NAMES = {
@@ -15,6 +17,8 @@ const QUEUE_NAMES = {
 	SESSION_CLEANUP: "session-cleanup",
 	ORPHANED_REPO_CLEANUP: "orphaned-repo-cleanup",
 	ORPHANED_PACKAGE_CLEANUP: "orphaned-package-cleanup",
+	DOCKER_INVENTORY_CLEANUP: "docker-inventory-cleanup",
+	METRICS_REPORTING: "metrics-reporting",
 	AGENT_COMMANDS: "agent-commands",
 };
 
@@ -91,6 +95,11 @@ class QueueManager {
 			new OrphanedRepoCleanup(this);
 		this.automations[QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP] =
 			new OrphanedPackageCleanup(this);
+		this.automations[QUEUE_NAMES.DOCKER_INVENTORY_CLEANUP] =
+			new DockerInventoryCleanup(this);
+		this.automations[QUEUE_NAMES.METRICS_REPORTING] = new MetricsReporting(
+			this,
+		);
 
 		console.log("✅ All automation classes initialized");
 	}
@@ -145,6 +154,24 @@ class QueueManager {
 			QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP,
 			this.automations[QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP].process.bind(
 				this.automations[QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP],
+			),
+			workerOptions,
+		);
+
+		// Docker Inventory Cleanup Worker
+		this.workers[QUEUE_NAMES.DOCKER_INVENTORY_CLEANUP] = new Worker(
+			QUEUE_NAMES.DOCKER_INVENTORY_CLEANUP,
+			this.automations[QUEUE_NAMES.DOCKER_INVENTORY_CLEANUP].process.bind(
+				this.automations[QUEUE_NAMES.DOCKER_INVENTORY_CLEANUP],
+			),
+			workerOptions,
+		);
+
+		// Metrics Reporting Worker
+		this.workers[QUEUE_NAMES.METRICS_REPORTING] = new Worker(
+			QUEUE_NAMES.METRICS_REPORTING,
+			this.automations[QUEUE_NAMES.METRICS_REPORTING].process.bind(
+				this.automations[QUEUE_NAMES.METRICS_REPORTING],
 			),
 			workerOptions,
 		);
@@ -205,6 +232,8 @@ class QueueManager {
 		await this.automations[QUEUE_NAMES.SESSION_CLEANUP].schedule();
 		await this.automations[QUEUE_NAMES.ORPHANED_REPO_CLEANUP].schedule();
 		await this.automations[QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP].schedule();
+		await this.automations[QUEUE_NAMES.DOCKER_INVENTORY_CLEANUP].schedule();
+		await this.automations[QUEUE_NAMES.METRICS_REPORTING].schedule();
 	}
 
 	/**
@@ -226,6 +255,16 @@ class QueueManager {
 		return this.automations[
 			QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP
 		].triggerManual();
+	}
+
+	async triggerDockerInventoryCleanup() {
+		return this.automations[
+			QUEUE_NAMES.DOCKER_INVENTORY_CLEANUP
+		].triggerManual();
+	}
+
+	async triggerMetricsReporting() {
+		return this.automations[QUEUE_NAMES.METRICS_REPORTING].triggerManual();
 	}
 
 	/**

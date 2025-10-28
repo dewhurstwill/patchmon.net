@@ -356,6 +356,26 @@ router.post(
 			});
 		} catch (error) {
 			console.error("Host creation error:", error);
+
+			// Check if error is related to connection pool exhaustion
+			if (
+				error.message &&
+				(error.message.includes("connection pool") ||
+					error.message.includes("Timed out fetching") ||
+					error.message.includes("pool timeout"))
+			) {
+				console.error("⚠️  DATABASE CONNECTION POOL EXHAUSTED!");
+				console.error(
+					`⚠️  Current limit: DB_CONNECTION_LIMIT=${process.env.DB_CONNECTION_LIMIT || "30"}`,
+				);
+				console.error(
+					`⚠️  Pool timeout: DB_POOL_TIMEOUT=${process.env.DB_POOL_TIMEOUT || "20"}s`,
+				);
+				console.error(
+					"⚠️  Suggestion: Increase DB_CONNECTION_LIMIT in your .env file",
+				);
+			}
+
 			res.status(500).json({ error: "Failed to create host" });
 		}
 	},
@@ -786,19 +806,41 @@ router.get("/info", validateApiCredentials, async (req, res) => {
 // Ping endpoint for health checks (now uses API credentials)
 router.post("/ping", validateApiCredentials, async (req, res) => {
 	try {
-		// Update last update timestamp
+		const now = new Date();
+		const lastUpdate = req.hostRecord.last_update;
+
+		// Detect if this is an agent startup (first ping or after long absence)
+		const timeSinceLastUpdate = lastUpdate ? now - lastUpdate : null;
+		const isStartup =
+			!timeSinceLastUpdate || timeSinceLastUpdate > 5 * 60 * 1000; // 5 minutes
+
+		// Log agent startup
+		if (isStartup) {
+			console.log(
+				`🚀 Agent startup detected: ${req.hostRecord.friendly_name} (${req.hostRecord.hostname || req.hostRecord.api_id})`,
+			);
+
+			// Check if status was previously offline
+			if (req.hostRecord.status === "offline") {
+				console.log(`✅ Agent back online: ${req.hostRecord.friendly_name}`);
+			}
+		}
+
+		// Update last update timestamp and set status to active
 		await prisma.hosts.update({
 			where: { id: req.hostRecord.id },
 			data: {
-				last_update: new Date(),
-				updated_at: new Date(),
+				last_update: now,
+				updated_at: now,
+				status: "active",
 			},
 		});
 
 		const response = {
 			message: "Ping successful",
-			timestamp: new Date().toISOString(),
+			timestamp: now.toISOString(),
 			friendlyName: req.hostRecord.friendly_name,
+			agentStartup: isStartup,
 		};
 
 		// Check if this is a crontab update trigger
@@ -1441,10 +1483,12 @@ router.get("/install", async (req, res) => {
 
 		// Determine curl flags dynamically from settings (ignore self-signed)
 		let curlFlags = "-s";
+		let skipSSLVerify = "false";
 		try {
 			const settings = await prisma.settings.findFirst();
 			if (settings && settings.ignore_ssl_self_signed === true) {
 				curlFlags = "-sk";
+				skipSSLVerify = "true";
 			}
 		} catch (_) {}
 
@@ -1454,12 +1498,13 @@ router.get("/install", async (req, res) => {
 		// Get architecture parameter (default to amd64)
 		const architecture = req.query.arch || "amd64";
 
-		// Inject the API credentials, server URL, curl flags, force flag, and architecture into the script
+		// Inject the API credentials, server URL, curl flags, SSL verify flag, force flag, and architecture into the script
 		const envVars = `#!/bin/bash
 export PATCHMON_URL="${serverUrl}"
 export API_ID="${host.api_id}"
 export API_KEY="${host.api_key}"
 export CURL_FLAGS="${curlFlags}"
+export SKIP_SSL_VERIFY="${skipSSLVerify}"
 export FORCE_INSTALL="${forceInstall ? "true" : "false"}"
 export ARCHITECTURE="${architecture}"
 

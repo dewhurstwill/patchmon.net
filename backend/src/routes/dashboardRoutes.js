@@ -193,11 +193,16 @@ router.get(
 	},
 );
 
-// Get hosts with their update status
+// Get hosts with their update status - OPTIMIZED
 router.get("/hosts", authenticateToken, requireViewHosts, async (_req, res) => {
 	try {
+		// Get settings once (outside the loop)
+		const settings = await prisma.settings.findFirst();
+		const updateIntervalMinutes = settings?.update_interval || 60;
+		const thresholdMinutes = updateIntervalMinutes * 2;
+
+		// Fetch hosts with groups
 		const hosts = await prisma.hosts.findMany({
-			// Show all hosts regardless of status
 			select: {
 				id: true,
 				machine_id: true,
@@ -223,61 +228,65 @@ router.get("/hosts", authenticateToken, requireViewHosts, async (_req, res) => {
 						},
 					},
 				},
-				_count: {
-					select: {
-						host_packages: {
-							where: {
-								needs_update: true,
-							},
-						},
-					},
-				},
 			},
 			orderBy: { last_update: "desc" },
 		});
 
-		// Get update counts for each host separately
-		const hostsWithUpdateInfo = await Promise.all(
-			hosts.map(async (host) => {
-				const updatesCount = await prisma.host_packages.count({
-					where: {
-						host_id: host.id,
-						needs_update: true,
-					},
-				});
+		// OPTIMIZATION: Get all package counts in 2 batch queries instead of N*2 queries
+		const hostIds = hosts.map((h) => h.id);
 
-				// Get total packages count for this host
-				const totalPackagesCount = await prisma.host_packages.count({
-					where: {
-						host_id: host.id,
-					},
-				});
-
-				// Get the agent update interval setting for stale calculation
-				const settings = await prisma.settings.findFirst();
-				const updateIntervalMinutes = settings?.update_interval || 60;
-				const thresholdMinutes = updateIntervalMinutes * 2;
-
-				// Calculate effective status based on reporting interval
-				const isStale = moment(host.last_update).isBefore(
-					moment().subtract(thresholdMinutes, "minutes"),
-				);
-				let effectiveStatus = host.status;
-
-				// Override status if host hasn't reported within threshold
-				if (isStale && host.status === "active") {
-					effectiveStatus = "inactive";
-				}
-
-				return {
-					...host,
-					updatesCount,
-					totalPackagesCount,
-					isStale,
-					effectiveStatus,
-				};
+		const [updateCounts, totalCounts] = await Promise.all([
+			// Get update counts for all hosts at once
+			prisma.host_packages.groupBy({
+				by: ["host_id"],
+				where: {
+					host_id: { in: hostIds },
+					needs_update: true,
+				},
+				_count: { id: true },
 			}),
+			// Get total counts for all hosts at once
+			prisma.host_packages.groupBy({
+				by: ["host_id"],
+				where: {
+					host_id: { in: hostIds },
+				},
+				_count: { id: true },
+			}),
+		]);
+
+		// Create lookup maps for O(1) access
+		const updateCountMap = new Map(
+			updateCounts.map((item) => [item.host_id, item._count.id]),
 		);
+		const totalCountMap = new Map(
+			totalCounts.map((item) => [item.host_id, item._count.id]),
+		);
+
+		// Process hosts with counts from maps (no more DB queries!)
+		const hostsWithUpdateInfo = hosts.map((host) => {
+			const updatesCount = updateCountMap.get(host.id) || 0;
+			const totalPackagesCount = totalCountMap.get(host.id) || 0;
+
+			// Calculate effective status based on reporting interval
+			const isStale = moment(host.last_update).isBefore(
+				moment().subtract(thresholdMinutes, "minutes"),
+			);
+			let effectiveStatus = host.status;
+
+			// Override status if host hasn't reported within threshold
+			if (isStale && host.status === "active") {
+				effectiveStatus = "inactive";
+			}
+
+			return {
+				...host,
+				updatesCount,
+				totalPackagesCount,
+				isStale,
+				effectiveStatus,
+			};
+		});
 
 		res.json(hostsWithUpdateInfo);
 	} catch (error) {

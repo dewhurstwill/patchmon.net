@@ -16,12 +16,28 @@ function getOptimizedDatabaseUrl() {
 	// Parse the URL
 	const url = new URL(originalUrl);
 
-	// Add connection pooling parameters for multiple instances
-	url.searchParams.set("connection_limit", "5"); // Reduced from default 10
-	url.searchParams.set("pool_timeout", "10"); // 10 seconds
-	url.searchParams.set("connect_timeout", "10"); // 10 seconds
-	url.searchParams.set("idle_timeout", "300"); // 5 minutes
-	url.searchParams.set("max_lifetime", "1800"); // 30 minutes
+	// Add connection pooling parameters - configurable via environment variables
+	const connectionLimit = process.env.DB_CONNECTION_LIMIT || "30";
+	const poolTimeout = process.env.DB_POOL_TIMEOUT || "20";
+	const connectTimeout = process.env.DB_CONNECT_TIMEOUT || "10";
+	const idleTimeout = process.env.DB_IDLE_TIMEOUT || "300";
+	const maxLifetime = process.env.DB_MAX_LIFETIME || "1800";
+
+	url.searchParams.set("connection_limit", connectionLimit);
+	url.searchParams.set("pool_timeout", poolTimeout);
+	url.searchParams.set("connect_timeout", connectTimeout);
+	url.searchParams.set("idle_timeout", idleTimeout);
+	url.searchParams.set("max_lifetime", maxLifetime);
+
+	// Log connection pool settings in development/debug mode
+	if (
+		process.env.ENABLE_LOGGING === "true" ||
+		process.env.LOG_LEVEL === "debug"
+	) {
+		console.log(
+			`[Database Pool] connection_limit=${connectionLimit}, pool_timeout=${poolTimeout}s, connect_timeout=${connectTimeout}s`,
+		);
+	}
 
 	return url.toString();
 }

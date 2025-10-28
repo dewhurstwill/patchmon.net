@@ -218,6 +218,30 @@ router.post(
 	},
 );
 
+// Trigger manual Docker inventory cleanup
+router.post(
+	"/trigger/docker-inventory-cleanup",
+	authenticateToken,
+	async (_req, res) => {
+		try {
+			const job = await queueManager.triggerDockerInventoryCleanup();
+			res.json({
+				success: true,
+				data: {
+					jobId: job.id,
+					message: "Docker inventory cleanup triggered successfully",
+				},
+			});
+		} catch (error) {
+			console.error("Error triggering Docker inventory cleanup:", error);
+			res.status(500).json({
+				success: false,
+				error: "Failed to trigger Docker inventory cleanup",
+			});
+		}
+	},
+);
+
 // Get queue health status
 router.get("/health", authenticateToken, async (_req, res) => {
 	try {
@@ -274,6 +298,7 @@ router.get("/overview", authenticateToken, async (_req, res) => {
 			queueManager.getRecentJobs(QUEUE_NAMES.SESSION_CLEANUP, 1),
 			queueManager.getRecentJobs(QUEUE_NAMES.ORPHANED_REPO_CLEANUP, 1),
 			queueManager.getRecentJobs(QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP, 1),
+			queueManager.getRecentJobs(QUEUE_NAMES.DOCKER_INVENTORY_CLEANUP, 1),
 			queueManager.getRecentJobs(QUEUE_NAMES.AGENT_COMMANDS, 1),
 		]);
 
@@ -283,19 +308,22 @@ router.get("/overview", authenticateToken, async (_req, res) => {
 				stats[QUEUE_NAMES.GITHUB_UPDATE_CHECK].delayed +
 				stats[QUEUE_NAMES.SESSION_CLEANUP].delayed +
 				stats[QUEUE_NAMES.ORPHANED_REPO_CLEANUP].delayed +
-				stats[QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP].delayed,
+				stats[QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP].delayed +
+				stats[QUEUE_NAMES.DOCKER_INVENTORY_CLEANUP].delayed,
 
 			runningTasks:
 				stats[QUEUE_NAMES.GITHUB_UPDATE_CHECK].active +
 				stats[QUEUE_NAMES.SESSION_CLEANUP].active +
 				stats[QUEUE_NAMES.ORPHANED_REPO_CLEANUP].active +
-				stats[QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP].active,
+				stats[QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP].active +
+				stats[QUEUE_NAMES.DOCKER_INVENTORY_CLEANUP].active,
 
 			failedTasks:
 				stats[QUEUE_NAMES.GITHUB_UPDATE_CHECK].failed +
 				stats[QUEUE_NAMES.SESSION_CLEANUP].failed +
 				stats[QUEUE_NAMES.ORPHANED_REPO_CLEANUP].failed +
-				stats[QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP].failed,
+				stats[QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP].failed +
+				stats[QUEUE_NAMES.DOCKER_INVENTORY_CLEANUP].failed,
 
 			totalAutomations: Object.values(stats).reduce((sum, queueStats) => {
 				return (
@@ -375,10 +403,11 @@ router.get("/overview", authenticateToken, async (_req, res) => {
 					stats: stats[QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP],
 				},
 				{
-					name: "Collect Host Statistics",
-					queue: QUEUE_NAMES.AGENT_COMMANDS,
-					description: "Collects package statistics from connected agents only",
-					schedule: `Every ${settings.update_interval} minutes (Agent-driven)`,
+					name: "Docker Inventory Cleanup",
+					queue: QUEUE_NAMES.DOCKER_INVENTORY_CLEANUP,
+					description:
+						"Removes Docker containers and images for non-existent hosts",
+					schedule: "Daily at 4 AM",
 					lastRun: recentJobs[4][0]?.finishedOn
 						? new Date(recentJobs[4][0].finishedOn).toLocaleString()
 						: "Never",
@@ -386,6 +415,22 @@ router.get("/overview", authenticateToken, async (_req, res) => {
 					status: recentJobs[4][0]?.failedReason
 						? "Failed"
 						: recentJobs[4][0]
+							? "Success"
+							: "Never run",
+					stats: stats[QUEUE_NAMES.DOCKER_INVENTORY_CLEANUP],
+				},
+				{
+					name: "Collect Host Statistics",
+					queue: QUEUE_NAMES.AGENT_COMMANDS,
+					description: "Collects package statistics from connected agents only",
+					schedule: `Every ${settings.update_interval} minutes (Agent-driven)`,
+					lastRun: recentJobs[5][0]?.finishedOn
+						? new Date(recentJobs[5][0].finishedOn).toLocaleString()
+						: "Never",
+					lastRunTimestamp: recentJobs[5][0]?.finishedOn || 0,
+					status: recentJobs[5][0]?.failedReason
+						? "Failed"
+						: recentJobs[5][0]
 							? "Success"
 							: "Never run",
 					stats: stats[QUEUE_NAMES.AGENT_COMMANDS],

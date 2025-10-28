@@ -1,3 +1,4 @@
+import { Agent as HttpAgent } from "node:http";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
@@ -14,6 +15,15 @@ export default defineConfig({
 				target: `http://${process.env.BACKEND_HOST || "localhost"}:${process.env.BACKEND_PORT || "3001"}`,
 				changeOrigin: true,
 				secure: false,
+				// Configure HTTP agent to support more concurrent connections
+				// Fixes 1000ms timeout issue when using HTTP (not HTTPS) with multiple hosts
+				agent: new HttpAgent({
+					keepAlive: true,
+					maxSockets: 50, // Increase from default 6 to handle multiple hosts
+					maxFreeSockets: 10,
+					timeout: 60000,
+					keepAliveMsecs: 1000,
+				}),
 				configure:
 					process.env.VITE_ENABLE_LOGGING === "true"
 						? (proxy, _options) => {

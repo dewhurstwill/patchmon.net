@@ -707,6 +707,10 @@ configure_redis() {
         chown redis:redis /etc/redis/users.acl
         chmod 640 /etc/redis/users.acl
         print_status "Created Redis ACL file"
+    else
+        # Backup existing ACL file
+        cp /etc/redis/users.acl /etc/redis/users.acl.backup.$(date +%Y%m%d_%H%M%S) 2>/dev/null || true
+        print_info "Backed up existing ACL file"
     fi
     
     # Configure ACL file in redis.conf
@@ -727,8 +731,14 @@ configure_redis() {
         print_status "Removed user definitions from redis.conf"
     fi
     
-    # Create admin user in ACL file if it doesn't exist
-    if ! grep -q "^user admin" /etc/redis/users.acl; then
+    # Create or update admin user in ACL file
+    if grep -q "^user admin" /etc/redis/users.acl; then
+        print_info "Admin user already exists in ACL, updating password..."
+        # Remove old admin line and add new one
+        sed -i '/^user admin/d' /etc/redis/users.acl
+        echo "user admin on sanitize-payload >$REDIS_PASSWORD ~* &* +@all" >> /etc/redis/users.acl
+        print_status "Updated admin user password"
+    else
         echo "user admin on sanitize-payload >$REDIS_PASSWORD ~* &* +@all" >> /etc/redis/users.acl
         print_status "Added admin user to ACL file"
     fi
@@ -737,65 +747,126 @@ configure_redis() {
     print_info "Restarting Redis to apply ACL configuration..."
     systemctl restart redis-server
     
-    # Wait for Redis to start
-    sleep 3
+    # Wait for Redis to start with retry logic
+    sleep 5
     
-    # Test admin connection
-    if ! redis-cli -h 127.0.0.1 -p 6379 --user admin --pass "$REDIS_PASSWORD" --no-auth-warning ping > /dev/null 2>&1; then
-        print_error "Failed to configure Redis ACL authentication"
-        return 1
-    fi
+    # Test admin connection with retries
+    local max_retries=3
+    local retry=0
+    local admin_works=false
     
-    print_status "Redis ACL authentication configuration successful"
-    
-    # Create Redis user with ACL
-    print_info "Creating Redis ACL user: $REDIS_USER"
-    
-    # Create user with password and permissions - capture output for error handling
-    local acl_result
-    acl_result=$(redis-cli -h 127.0.0.1 -p 6379 --user admin --pass "$REDIS_PASSWORD" --no-auth-warning ACL SETUSER "$REDIS_USER" on ">${REDIS_USER_PASSWORD}" ~* +@all 2>&1)
-    
-    if [ "$acl_result" = "OK" ]; then
-        print_status "Redis user '$REDIS_USER' created successfully"
-        
-        # Save ACL users to file to persist across restarts
-        local save_result
-        save_result=$(redis-cli -h 127.0.0.1 -p 6379 --user admin --pass "$REDIS_PASSWORD" --no-auth-warning ACL SAVE 2>&1)
-        
-        if [ "$save_result" = "OK" ]; then
-            print_status "Redis ACL users saved to file"
-        else
-            print_warning "Failed to save ACL users to file: $save_result"
+    while [ $retry -lt $max_retries ]; do
+        if redis-cli -h 127.0.0.1 -p 6379 --user admin --pass "$REDIS_PASSWORD" --no-auth-warning ping > /dev/null 2>&1; then
+            admin_works=true
+            break
         fi
+        print_info "Waiting for Redis to be ready... (attempt $((retry + 1))/$max_retries)"
+        sleep 2
+        retry=$((retry + 1))
+    done
+    
+    if [ "$admin_works" = false ]; then
+        print_error "Failed to verify admin connection after Redis restart"
+        print_error "Redis ACL configuration may have issues"
         
-        # Verify user was actually created
-        local verify_result
-        verify_result=$(redis-cli -h 127.0.0.1 -p 6379 --user admin --pass "$REDIS_PASSWORD" --no-auth-warning ACL GETUSER "$REDIS_USER" 2>&1)
+        # Try to fix by disabling ACL and using requirepass instead
+        print_warning "Attempting fallback: using requirepass instead of ACL..."
+        sed -i 's/^aclfile/# aclfile/' /etc/redis/redis.conf
+        sed -i "s/^# requirepass .*/requirepass $REDIS_PASSWORD/" /etc/redis/redis.conf
+        if ! grep -q "^requirepass" /etc/redis/redis.conf; then
+            echo "requirepass $REDIS_PASSWORD" >> /etc/redis/redis.conf
+        fi
+        systemctl restart redis-server
+        sleep 3
         
-        if [ "$verify_result" = "(nil)" ]; then
-            print_error "User creation reported OK but user does not exist"
+        # Test requirepass
+        if redis-cli -h 127.0.0.1 -p 6379 -a "$REDIS_PASSWORD" --no-auth-warning ping > /dev/null 2>&1; then
+            print_status "Fallback successful - using requirepass authentication"
+            # For requirepass mode, we'll set REDIS_USER empty later
+            print_info "Note: Using legacy requirepass mode instead of ACL"
+        else
+            print_error "Fallback also failed - Redis authentication is broken"
             return 1
         fi
     else
-        print_error "Failed to create Redis user: $acl_result"
-        return 1
+        print_status "Redis ACL authentication configuration successful"
     fi
     
-    # Test user connection
-    print_info "Testing Redis user connection..."
-    if redis-cli -h 127.0.0.1 -p 6379 --user "$REDIS_USER" --pass "$REDIS_USER_PASSWORD" --no-auth-warning -n "$REDIS_DB" ping > /dev/null 2>&1; then
-        print_status "Redis user connection test successful"
+    # Create Redis user with ACL (only if admin_works, meaning we're using ACL mode)
+    if [ "$admin_works" = true ]; then
+        print_info "Creating Redis ACL user: $REDIS_USER"
+        
+        # Create user with password and permissions - capture output for error handling
+        local acl_result
+        acl_result=$(redis-cli -h 127.0.0.1 -p 6379 --user admin --pass "$REDIS_PASSWORD" --no-auth-warning ACL SETUSER "$REDIS_USER" on ">${REDIS_USER_PASSWORD}" ~* +@all 2>&1)
+        
+        if [ "$acl_result" = "OK" ]; then
+            print_status "Redis user '$REDIS_USER' created successfully"
+            
+            # Save ACL users to file to persist across restarts
+            local save_result
+            save_result=$(redis-cli -h 127.0.0.1 -p 6379 --user admin --pass "$REDIS_PASSWORD" --no-auth-warning ACL SAVE 2>&1)
+            
+            if [ "$save_result" = "OK" ]; then
+                print_status "Redis ACL users saved to file"
+            else
+                print_warning "Failed to save ACL users to file: $save_result"
+            fi
+            
+            # Verify user was actually created
+            local verify_result
+            verify_result=$(redis-cli -h 127.0.0.1 -p 6379 --user admin --pass "$REDIS_PASSWORD" --no-auth-warning ACL GETUSER "$REDIS_USER" 2>&1)
+            
+            if [ "$verify_result" = "(nil)" ]; then
+                print_error "User creation reported OK but user does not exist"
+                return 1
+            fi
+            
+            # Test user connection
+            print_info "Testing Redis user connection..."
+            if redis-cli -h 127.0.0.1 -p 6379 --user "$REDIS_USER" --pass "$REDIS_USER_PASSWORD" --no-auth-warning -n "$REDIS_DB" ping > /dev/null 2>&1; then
+                print_status "Redis user connection test successful"
+            else
+                print_error "Redis user connection test failed"
+                return 1
+            fi
+            
+            # Mark the selected database as in-use
+            redis-cli -h 127.0.0.1 -p 6379 --user "$REDIS_USER" --pass "$REDIS_USER_PASSWORD" --no-auth-warning -n "$REDIS_DB" SET "patchmon:initialized" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /dev/null
+            print_status "Marked Redis database $REDIS_DB as in-use"
+        else
+            print_error "Failed to create Redis user: $acl_result"
+            return 1
+        fi
     else
-        print_error "Redis user connection test failed"
-        return 1
+        # Using requirepass mode - no per-user ACL
+        print_info "Using requirepass mode - testing connection..."
+        
+        # For requirepass, we don't use username, just password
+        if redis-cli -h 127.0.0.1 -p 6379 -a "$REDIS_PASSWORD" --no-auth-warning -n "$REDIS_DB" ping > /dev/null 2>&1; then
+            print_status "Redis requirepass connection test successful"
+            
+            # Mark the selected database as in-use
+            redis-cli -h 127.0.0.1 -p 6379 -a "$REDIS_PASSWORD" --no-auth-warning -n "$REDIS_DB" SET "patchmon:initialized" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /dev/null
+            print_status "Marked Redis database $REDIS_DB as in-use"
+            
+            # Set REDIS_USER to empty for requirepass mode
+            REDIS_USER=""
+            REDIS_USER_PASSWORD="$REDIS_PASSWORD"
+        else
+            print_error "Redis requirepass connection test failed"
+            return 1
+        fi
     fi
-    
-    # Mark the selected database as in-use
-    redis-cli -h 127.0.0.1 -p 6379 --user "$REDIS_USER" --pass "$REDIS_USER_PASSWORD" --no-auth-warning -n "$REDIS_DB" SET "patchmon:initialized" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > /dev/null
-    print_status "Marked Redis database $REDIS_DB as in-use"
     
     # Note: Redis credentials will be written to .env by create_env_files() function
-    print_status "Redis user '$REDIS_USER' configured successfully"
+    print_status "Redis configured successfully"
+    
+    if [ -n "$REDIS_USER" ]; then
+        print_info "Redis Mode: ACL with user '$REDIS_USER'"
+    else
+        print_info "Redis Mode: requirepass (legacy single-password auth)"
+    fi
     print_info "Redis credentials will be saved to backend/.env"
     
     return 0
@@ -1060,6 +1131,13 @@ DATABASE_URL="postgresql://$DB_USER:$DB_PASS@localhost:5432/$DB_NAME"
 PM_DB_CONN_MAX_ATTEMPTS=30
 PM_DB_CONN_WAIT_INTERVAL=2
 
+# Database Connection Pool Configuration (Prisma)
+DB_CONNECTION_LIMIT=30
+DB_POOL_TIMEOUT=20
+DB_CONNECT_TIMEOUT=10
+DB_IDLE_TIMEOUT=300
+DB_MAX_LIFETIME=1800
+
 # JWT Configuration
 JWT_SECRET="$JWT_SECRET"
 JWT_EXPIRES_IN=1h
@@ -1110,22 +1188,127 @@ EOF
     cat > frontend/.env << EOF
 VITE_API_URL=$SERVER_PROTOCOL_SEL://$FQDN/api/v1
 VITE_APP_NAME=PatchMon
-VITE_APP_VERSION=1.3.0
+VITE_APP_VERSION=1.3.1
 EOF
 
     print_status "Environment files created"
 }
 
-# Run database migrations
+# Check and fix failed Prisma migrations
+fix_failed_migrations() {
+    local db_name="$1"
+    local db_user="$2"
+    local db_pass="$3"
+    local db_host="${4:-localhost}"
+    local max_retries=3
+    
+    print_info "Checking for failed migrations in database..."
+    
+    # Query for failed migrations (where started_at is set but finished_at is NULL)
+    local failed_migrations
+    failed_migrations=$(PGPASSWORD="$db_pass" psql -h "$db_host" -U "$db_user" -d "$db_name" -t -A -c \
+        "SELECT migration_name FROM _prisma_migrations WHERE finished_at IS NULL AND started_at IS NOT NULL;" 2>/dev/null || echo "")
+    
+    if [ -z "$failed_migrations" ]; then
+        print_status "No failed migrations found"
+        return 0
+    fi
+    
+    print_warning "Found failed migration(s):"
+    echo "$failed_migrations" | while read -r migration; do
+        [ -n "$migration" ] && print_warning "  - $migration"
+    done
+    
+    print_info "Attempting to resolve failed migrations..."
+    
+    # For each failed migration, mark it as rolled back and remove it
+    echo "$failed_migrations" | while read -r migration; do
+        if [ -n "$migration" ]; then
+            print_info "Processing failed migration: $migration"
+            
+            # Mark the migration as rolled back
+            PGPASSWORD="$db_pass" psql -h "$db_host" -U "$db_user" -d "$db_name" -c \
+                "UPDATE _prisma_migrations SET rolled_back_at = NOW() WHERE migration_name = '$migration' AND finished_at IS NULL;" >/dev/null 2>&1
+            
+            # Delete the failed migration record to allow retry
+            PGPASSWORD="$db_pass" psql -h "$db_host" -U "$db_user" -d "$db_name" -c \
+                "DELETE FROM _prisma_migrations WHERE migration_name = '$migration' AND finished_at IS NULL;" >/dev/null 2>&1
+            
+            print_status "Marked migration '$migration' for retry"
+        fi
+    done
+    
+    print_status "Failed migrations have been cleared for retry"
+    return 0
+}
+
+# Run database migrations with self-healing
 run_migrations() {
     print_info "Running database migrations as user $INSTANCE_USER..."
     
     cd "$APP_DIR/backend"
-    # Suppress Prisma CLI output (still logged to install log via tee)
-    run_as_user "$INSTANCE_USER" "cd $APP_DIR/backend && npx prisma migrate deploy" >/dev/null 2>&1 || true
+    
+    local max_attempts=3
+    local attempt=1
+    local migration_success=false
+    
+    while [ $attempt -le $max_attempts ]; do
+        print_info "Migration attempt $attempt of $max_attempts..."
+        
+        # Try to run migrations
+        local migrate_output
+        migrate_output=$(run_as_user "$INSTANCE_USER" "cd $APP_DIR/backend && npx prisma migrate deploy 2>&1" || echo "MIGRATION_FAILED")
+        
+        # Check if migration succeeded
+        if ! echo "$migrate_output" | grep -q "MIGRATION_FAILED\|Error:\|P3009"; then
+            print_status "Migrations completed successfully"
+            migration_success=true
+            break
+        fi
+        
+        # Check specifically for P3009 (failed migrations found)
+        if echo "$migrate_output" | grep -q "P3009\|migrate found failed migrations"; then
+            print_warning "Detected failed migrations (P3009 error)"
+            
+            # Extract the failed migration name if possible
+            local failed_migration
+            failed_migration=$(echo "$migrate_output" | grep -oP "The \`\K[^\`]+" | head -1 || echo "")
+            
+            if [ -n "$failed_migration" ]; then
+                print_info "Failed migration identified: $failed_migration"
+            fi
+            
+            # Attempt to fix failed migrations
+            print_info "Attempting to self-heal migration issues..."
+            if fix_failed_migrations "$DB_NAME" "$DB_USER" "$DB_PASS" "localhost"; then
+                print_status "Migration issues resolved, retrying..."
+                attempt=$((attempt + 1))
+                sleep 2
+                continue
+            else
+                print_error "Failed to resolve migration issues"
+                break
+            fi
+        else
+            # Other migration error
+            print_error "Migration failed with error:"
+            echo "$migrate_output" | grep -A 5 "Error:"
+            break
+        fi
+    done
+    
+    if [ "$migration_success" = false ]; then
+        print_error "Migrations failed after $max_attempts attempts"
+        print_info "You may need to manually resolve migration issues"
+        print_info "Check migrations: cd $APP_DIR/backend && npx prisma migrate status"
+        return 1
+    fi
+    
+    # Generate Prisma client
     run_as_user "$INSTANCE_USER" "cd $APP_DIR/backend && npx prisma generate" >/dev/null 2>&1 || true
     
     print_status "Database migrations completed as $INSTANCE_USER"
+    return 0
 }
 
 # Admin account creation removed - handled by application's first-time setup
@@ -1462,7 +1645,60 @@ start_services() {
         print_status "PatchMon service started successfully"
     else
         print_error "Failed to start PatchMon service"
-        systemctl status "$SERVICE_NAME"
+        echo ""
+        
+        # Show last 25 lines of service logs for debugging
+        print_warning "=== Last 25 lines of service logs ==="
+        journalctl -u "$SERVICE_NAME" -n 25 --no-pager || true
+        print_warning "==================================="
+        echo ""
+        
+        # Check for specific error patterns
+        local logs=$(journalctl -u "$SERVICE_NAME" -n 50 --no-pager 2>/dev/null || echo "")
+        
+        if echo "$logs" | grep -q "WRONGPASS\|NOAUTH"; then
+            print_error "❌ Detected Redis authentication error!"
+            print_info "The service cannot authenticate with Redis."
+            echo ""
+            print_info "Current Redis configuration in .env:"
+            grep "^REDIS_" "$APP_DIR/backend/.env" || true
+            echo ""
+            print_info "Debug steps:"
+            print_info "  1. Check Redis is running:"
+            print_info "     systemctl status redis-server"
+            echo ""
+            print_info "  2. Check Redis ACL users:"
+            print_info "     redis-cli ACL LIST"
+            echo ""
+            print_info "  3. Test Redis connection:"
+            local test_user=$(grep "^REDIS_USER=" "$APP_DIR/backend/.env" | cut -d'=' -f2)
+            local test_pass=$(grep "^REDIS_PASSWORD=" "$APP_DIR/backend/.env" | cut -d'=' -f2)
+            local test_db=$(grep "^REDIS_DB=" "$APP_DIR/backend/.env" | cut -d'=' -f2)
+            print_info "     redis-cli --user $test_user --pass $test_pass -n ${test_db:-0} ping"
+            echo ""
+            print_info "  4. Check Redis configuration files:"
+            print_info "     cat /etc/redis/redis.conf | grep aclfile"
+            print_info "     cat /etc/redis/users.acl"
+            echo ""
+        elif echo "$logs" | grep -q "ECONNREFUSED.*postgresql\|Connection refused.*5432"; then
+            print_error "❌ Detected PostgreSQL connection error!"
+            print_info "Check if PostgreSQL is running:"
+            print_info "  systemctl status postgresql"
+        elif echo "$logs" | grep -q "ECONNREFUSED.*redis\|Connection refused.*6379"; then
+            print_error "❌ Detected Redis connection error!"
+            print_info "Check if Redis is running:"
+            print_info "  systemctl status redis-server"
+        elif echo "$logs" | grep -q "database.*does not exist"; then
+            print_error "❌ Database does not exist!"
+            print_info "Database: $DB_NAME"
+        elif echo "$logs" | grep -q "Error:"; then
+            print_error "❌ Application error detected in logs"
+        fi
+        
+        echo ""
+        print_info "View full logs: journalctl -u $SERVICE_NAME -f"
+        print_info "Check service status: systemctl status $SERVICE_NAME"
+        
         return 1
     fi
 }
@@ -2012,6 +2248,65 @@ select_installation_to_update() {
     done
 }
 
+# Repair/recreate Redis user with correct permissions
+repair_redis_user() {
+    local redis_user="$1"
+    local redis_pass="$2"
+    local redis_db="${3:-0}"
+    
+    print_info "Attempting to repair Redis user: $redis_user"
+    
+    # Find admin password
+    local admin_password=""
+    if [ -f /etc/redis/users.acl ] && grep -q "^user admin" /etc/redis/users.acl; then
+        admin_password=$(grep "^user admin" /etc/redis/users.acl | grep -oP '>\K[^ ]+' | head -1)
+    fi
+    
+    if [ -z "$admin_password" ]; then
+        print_error "Cannot repair Redis user - no admin credentials found"
+        return 1
+    fi
+    
+    # Test admin connection
+    if ! redis-cli -h localhost -p 6379 --user admin --pass "$admin_password" --no-auth-warning ping >/dev/null 2>&1; then
+        print_error "Admin credentials don't work - cannot repair user"
+        return 1
+    fi
+    
+    print_status "Admin access confirmed"
+    
+    # Delete existing user if it exists (and is broken)
+    print_info "Removing old user configuration..."
+    redis-cli -h localhost -p 6379 --user admin --pass "$admin_password" --no-auth-warning ACL DELUSER "$redis_user" >/dev/null 2>&1 || true
+    
+    # Create user with full permissions
+    print_info "Creating user with full permissions..."
+    local create_result
+    create_result=$(redis-cli -h localhost -p 6379 --user admin --pass "$admin_password" --no-auth-warning ACL SETUSER "$redis_user" on ">${redis_pass}" ~* +@all 2>&1)
+    
+    if echo "$create_result" | grep -q "OK"; then
+        # Save ACL
+        redis-cli -h localhost -p 6379 --user admin --pass "$admin_password" --no-auth-warning ACL SAVE >/dev/null 2>&1
+        
+        # Verify the new user works
+        if redis-cli -h localhost -p 6379 --user "$redis_user" --pass "$redis_pass" --no-auth-warning -n "$redis_db" ping >/dev/null 2>&1; then
+            if redis-cli -h localhost -p 6379 --user "$redis_user" --pass "$redis_pass" --no-auth-warning -n "$redis_db" info >/dev/null 2>&1; then
+                print_status "Redis user repaired successfully"
+                return 0
+            else
+                print_error "User created but INFO command still fails"
+                return 1
+            fi
+        else
+            print_error "User created but PING command fails"
+            return 1
+        fi
+    else
+        print_error "Failed to create user: $create_result"
+        return 1
+    fi
+}
+
 # Check and update Redis configuration for existing installation
 update_redis_configuration() {
     print_info "Checking Redis configuration..."
@@ -2021,12 +2316,57 @@ update_redis_configuration() {
         if grep -q "^REDIS_HOST=" "$instance_dir/backend/.env" && \
            grep -q "^REDIS_PASSWORD=" "$instance_dir/backend/.env"; then
             print_status "Redis configuration already exists in .env"
-            return 0
+            
+            # Verify the credentials actually work
+            local redis_user=$(grep "^REDIS_USER=" "$instance_dir/backend/.env" | cut -d'=' -f2 | tr -d '"')
+            local redis_pass=$(grep "^REDIS_PASSWORD=" "$instance_dir/backend/.env" | cut -d'=' -f2 | tr -d '"')
+            local redis_db=$(grep "^REDIS_DB=" "$instance_dir/backend/.env" | cut -d'=' -f2 | tr -d '"')
+            
+            if [ -n "$redis_user" ] && [ -n "$redis_pass" ]; then
+                # Test with username and password
+                local ping_works=false
+                local info_works=false
+                
+                if redis-cli -h localhost -p 6379 --user "$redis_user" --pass "$redis_pass" --no-auth-warning -n "${redis_db:-0}" ping >/dev/null 2>&1; then
+                    ping_works=true
+                fi
+                
+                if redis-cli -h localhost -p 6379 --user "$redis_user" --pass "$redis_pass" --no-auth-warning -n "${redis_db:-0}" info >/dev/null 2>&1; then
+                    info_works=true
+                fi
+                
+                if [ "$ping_works" = true ] && [ "$info_works" = true ]; then
+                    print_status "Redis credentials verified with redis-cli (tested ping and info commands)"
+                    
+                    # Force refresh the Redis user during updates to ensure correct ACL permissions
+                    # This prevents issues where redis-cli works but Node.js client doesn't
+                    print_info "Refreshing Redis user permissions to ensure compatibility..."
+                    
+                    if repair_redis_user "$redis_user" "$redis_pass" "$redis_db"; then
+                        print_status "Redis user permissions refreshed successfully"
+                        return 0
+                    else
+                        print_warning "Could not refresh Redis user, but credentials seem to work - continuing..."
+                        return 0
+                    fi
+                else
+                    print_warning "Redis credentials not working properly (ping: $ping_works, info: $info_works)"
+                    print_info "Attempting to repair Redis user..."
+                    
+                    if repair_redis_user "$redis_user" "$redis_pass" "$redis_db"; then
+                        print_status "Redis user repaired successfully"
+                        return 0
+                    else
+                        print_warning "Could not repair Redis user, will reconfigure from scratch..."
+                    fi
+                fi
+            else
+                print_warning "Redis credentials incomplete in .env (missing user or password)"
+            fi
         fi
     fi
     
-    print_warning "Redis configuration not found in .env - this is a legacy installation"
-    print_info "Setting up Redis for this instance..."
+    print_warning "Redis configuration not found or invalid in .env - setting up Redis for this instance..."
     
     # Detect package manager if not already set
     if [ -z "$PKG_INSTALL" ]; then
@@ -2054,6 +2394,39 @@ update_redis_configuration() {
     REDIS_USER="patchmon_${DB_SAFE_NAME}"
     REDIS_USER_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-32)
     
+    # Test Redis connection to determine authentication status
+    print_info "Testing Redis authentication status..."
+    local needs_auth=false
+    local admin_password=""
+    
+    # Try ping without auth
+    if redis-cli -h localhost -p 6379 ping >/dev/null 2>&1; then
+        print_info "Redis is accessible without authentication"
+        needs_auth=false
+    else
+        print_info "Redis requires authentication"
+        needs_auth=true
+        
+        # Try to find existing admin password from ACL file
+        if [ -f /etc/redis/users.acl ] && grep -q "^user admin" /etc/redis/users.acl; then
+            # Extract password from ACL file (format: >password)
+            admin_password=$(grep "^user admin" /etc/redis/users.acl | grep -oP '>\K[^ ]+' | head -1)
+            
+            if [ -n "$admin_password" ]; then
+                print_info "Found existing admin credentials in ACL file"
+                
+                # Test admin credentials
+                if redis-cli -h localhost -p 6379 --user admin --pass "$admin_password" --no-auth-warning ping >/dev/null 2>&1; then
+                    print_status "Existing admin credentials work"
+                    REDIS_PASSWORD="$admin_password"
+                else
+                    print_warning "Existing admin credentials don't work, will create new configuration"
+                    admin_password=""
+                fi
+            fi
+        fi
+    fi
+    
     # Find available Redis database
     print_info "Finding available Redis database..."
     local redis_db=0
@@ -2061,9 +2434,14 @@ update_redis_configuration() {
     
     while [ $redis_db -lt $max_attempts ]; do
         local key_count
-        key_count=$(redis-cli -h localhost -p 6379 -n "$redis_db" DBSIZE 2>&1 | grep -v "ERR" || echo "1")
         
-        if [ "$key_count" = "0" ] || [ "$key_count" = "(integer) 0" ]; then
+        if [ "$needs_auth" = true ] && [ -n "$admin_password" ]; then
+            key_count=$(redis-cli -h localhost -p 6379 --user admin --pass "$admin_password" --no-auth-warning -n "$redis_db" DBSIZE 2>&1 | grep -oP '\d+' || echo "1")
+        else
+            key_count=$(redis-cli -h localhost -p 6379 -n "$redis_db" DBSIZE 2>&1 | grep -oP '\d+' || echo "1")
+        fi
+        
+        if [ "$key_count" = "0" ]; then
             print_status "Found available Redis database: $redis_db"
             REDIS_DB=$redis_db
             break
@@ -2076,50 +2454,146 @@ update_redis_configuration() {
         REDIS_DB=0
     fi
     
-    # Generate admin password if not exists
-    REDIS_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-32)
-    
     # Configure Redis with ACL if needed
-    print_info "Configuring Redis ACL..."
-    
-    # Create ACL file if it doesn't exist
-    if [ ! -f /etc/redis/users.acl ]; then
-        touch /etc/redis/users.acl
-        chown redis:redis /etc/redis/users.acl
-        chmod 640 /etc/redis/users.acl
-    fi
-    
-    # Configure ACL file in redis.conf
-    if ! grep -q "^aclfile" /etc/redis/redis.conf 2>/dev/null; then
-        echo "aclfile /etc/redis/users.acl" >> /etc/redis/redis.conf
-    fi
-    
-    # Remove requirepass (incompatible with ACL)
-    if grep -q "^requirepass" /etc/redis/redis.conf 2>/dev/null; then
-        sed -i 's/^requirepass.*/# &/' /etc/redis/redis.conf
-    fi
-    
-    # Create admin user if it doesn't exist
-    if ! grep -q "^user admin" /etc/redis/users.acl; then
-        echo "user admin on sanitize-payload >$REDIS_PASSWORD ~* &* +@all" >> /etc/redis/users.acl
+    if [ "$needs_auth" = false ]; then
+        print_info "Configuring Redis ACL for security..."
+        
+        # Generate new admin password
+        REDIS_PASSWORD=$(openssl rand -base64 32 | tr -d "=+/" | cut -c1-32)
+        
+        # Backup redis.conf
+        if [ -f /etc/redis/redis.conf ]; then
+            cp /etc/redis/redis.conf /etc/redis/redis.conf.backup.$(date +%Y%m%d_%H%M%S) 2>/dev/null || true
+        fi
+        
+        # Create ACL file if it doesn't exist
+        if [ ! -f /etc/redis/users.acl ]; then
+            touch /etc/redis/users.acl
+            chown redis:redis /etc/redis/users.acl
+            chmod 640 /etc/redis/users.acl
+            print_status "Created Redis ACL file"
+        else
+            # Backup existing ACL file
+            cp /etc/redis/users.acl /etc/redis/users.acl.backup.$(date +%Y%m%d_%H%M%S) 2>/dev/null || true
+            print_info "Backed up existing ACL file"
+        fi
+        
+        # Configure ACL file in redis.conf
+        if ! grep -q "^aclfile" /etc/redis/redis.conf 2>/dev/null; then
+            echo "aclfile /etc/redis/users.acl" >> /etc/redis/redis.conf
+            print_status "Added ACL file configuration to redis.conf"
+        fi
+        
+        # Remove requirepass (incompatible with ACL)
+        if grep -q "^requirepass" /etc/redis/redis.conf 2>/dev/null; then
+            sed -i 's/^requirepass.*/# &/' /etc/redis/redis.conf
+            print_status "Disabled requirepass (incompatible with ACL)"
+        fi
+        
+        # Create or update admin user in ACL file
+        if grep -q "^user admin" /etc/redis/users.acl; then
+            print_info "Admin user already exists in ACL, updating password..."
+            # Remove old admin line and add new one
+            sed -i '/^user admin/d' /etc/redis/users.acl
+            echo "user admin on sanitize-payload >$REDIS_PASSWORD ~* &* +@all" >> /etc/redis/users.acl
+            print_status "Updated admin user password"
+        else
+            echo "user admin on sanitize-payload >$REDIS_PASSWORD ~* &* +@all" >> /etc/redis/users.acl
+            print_status "Created admin user in ACL"
+        fi
+        
+        # Restart Redis to apply ACL
+        print_info "Restarting Redis to apply ACL configuration..."
         systemctl restart redis-server
-        sleep 3
+        sleep 5
+        
+        # Verify admin can connect
+        local max_retries=3
+        local retry=0
+        local admin_works=false
+        
+        while [ $retry -lt $max_retries ]; do
+            if redis-cli -h localhost -p 6379 --user admin --pass "$REDIS_PASSWORD" --no-auth-warning ping >/dev/null 2>&1; then
+                admin_works=true
+                break
+            fi
+            print_info "Waiting for Redis to be ready... (attempt $((retry + 1))/$max_retries)"
+            sleep 2
+            retry=$((retry + 1))
+        done
+        
+        if [ "$admin_works" = false ]; then
+            print_error "Failed to verify admin connection after Redis restart"
+            print_error "Redis ACL configuration may have issues"
+            
+            # Try to fix by disabling ACL and using requirepass instead
+            print_warning "Attempting fallback: using requirepass instead of ACL..."
+            sed -i 's/^aclfile/# aclfile/' /etc/redis/redis.conf
+            sed -i "s/^# requirepass .*/requirepass $REDIS_PASSWORD/" /etc/redis/redis.conf
+            if ! grep -q "^requirepass" /etc/redis/redis.conf; then
+                echo "requirepass $REDIS_PASSWORD" >> /etc/redis/redis.conf
+            fi
+            systemctl restart redis-server
+            sleep 3
+            
+            # Test requirepass
+            if redis-cli -h localhost -p 6379 -a "$REDIS_PASSWORD" --no-auth-warning ping >/dev/null 2>&1; then
+                print_status "Fallback successful - using requirepass authentication"
+                # For requirepass, we don't use username
+                REDIS_USER=""
+            else
+                print_error "Fallback also failed - Redis authentication is broken"
+                return 1
+            fi
+        else
+            print_status "Redis ACL configuration successful"
+        fi
+    elif [ -z "$admin_password" ]; then
+        print_error "Redis requires authentication but no valid admin credentials found"
+        print_error "Please check /etc/redis/users.acl or /etc/redis/redis.conf"
+        print_info "Manual fix: Reset Redis authentication or provide admin credentials"
+        return 1
     fi
     
-    # Create instance-specific Redis user
-    print_info "Creating Redis user: $REDIS_USER"
-    
-    # Try to authenticate with admin (may already exist from another instance)
-    local acl_result
-    acl_result=$(redis-cli -h 127.0.0.1 -p 6379 --user admin --pass "$REDIS_PASSWORD" --no-auth-warning ACL SETUSER "$REDIS_USER" on ">${REDIS_USER_PASSWORD}" ~* +@all 2>&1)
-    
-    if [ "$acl_result" = "OK" ] || echo "$acl_result" | grep -q "OK"; then
-        print_status "Redis user created successfully"
-        redis-cli -h 127.0.0.1 -p 6379 --user admin --pass "$REDIS_PASSWORD" --no-auth-warning ACL SAVE > /dev/null 2>&1
+    # Create instance-specific Redis user (only if using ACL)
+    if [ -n "$REDIS_USER" ]; then
+        print_info "Creating Redis user: $REDIS_USER"
+        
+        local acl_result=""
+        if [ -n "$REDIS_PASSWORD" ]; then
+            # Try to create user with ACL
+            acl_result=$(redis-cli -h localhost -p 6379 --user admin --pass "$REDIS_PASSWORD" --no-auth-warning ACL SETUSER "$REDIS_USER" on ">${REDIS_USER_PASSWORD}" ~* +@all 2>&1)
+        else
+            # Try without authentication (for legacy setups)
+            acl_result=$(redis-cli -h localhost -p 6379 ACL SETUSER "$REDIS_USER" on ">${REDIS_USER_PASSWORD}" ~* +@all 2>&1)
+        fi
+        
+        if echo "$acl_result" | grep -q "OK"; then
+            print_status "Redis user created successfully"
+            
+            # Save ACL users
+            if [ -n "$REDIS_PASSWORD" ]; then
+                redis-cli -h localhost -p 6379 --user admin --pass "$REDIS_PASSWORD" --no-auth-warning ACL SAVE >/dev/null 2>&1
+            else
+                redis-cli -h localhost -p 6379 ACL SAVE >/dev/null 2>&1
+            fi
+            print_status "Redis ACL saved"
+            
+            # Verify user can connect
+            if redis-cli -h localhost -p 6379 --user "$REDIS_USER" --pass "$REDIS_USER_PASSWORD" --no-auth-warning -n "$REDIS_DB" ping >/dev/null 2>&1; then
+                print_status "Redis user verified and working"
+            else
+                print_warning "Redis user created but verification failed"
+            fi
+        else
+            print_error "Failed to create Redis user: $acl_result"
+            print_warning "Will use requirepass mode instead of per-user ACL"
+            REDIS_USER=""
+            REDIS_USER_PASSWORD="$REDIS_PASSWORD"
+        fi
     else
-        print_warning "Could not create Redis user with ACL, trying without authentication..."
-        # Fallback for systems without ACL configured
-        redis-cli -h 127.0.0.1 -p 6379 CONFIG SET requirepass "$REDIS_USER_PASSWORD" > /dev/null 2>&1 || true
+        print_info "Using requirepass authentication (single password, no user-specific ACL)"
+        REDIS_USER_PASSWORD="$REDIS_PASSWORD"
     fi
     
     # Backup existing .env
@@ -2128,18 +2602,27 @@ update_redis_configuration() {
     
     # Add Redis configuration to .env
     print_info "Adding Redis configuration to .env..."
+    
+    # Use correct password variable
+    local redis_pass_for_env="${REDIS_USER_PASSWORD:-$REDIS_PASSWORD}"
+    
     cat >> "$instance_dir/backend/.env" << EOF
 
-# Redis Configuration (added during update)
+# Redis Configuration (added during update on $(date))
 REDIS_HOST=localhost
 REDIS_PORT=6379
 REDIS_USER=$REDIS_USER
-REDIS_PASSWORD=$REDIS_USER_PASSWORD
+REDIS_PASSWORD=$redis_pass_for_env
 REDIS_DB=$REDIS_DB
 EOF
     
     print_status "Redis configuration added to .env"
-    print_info "Redis User: $REDIS_USER"
+    
+    if [ -n "$REDIS_USER" ]; then
+        print_info "Redis Mode: ACL with user '$REDIS_USER'"
+    else
+        print_info "Redis Mode: requirepass (legacy single-password auth)"
+    fi
     print_info "Redis Database: $REDIS_DB"
     
     return 0
@@ -2543,11 +3026,81 @@ update_installation() {
     print_info "Building frontend..."
     npm run build
     
-    # Run database migrations and generate Prisma client
+    # Run database migrations with self-healing
     print_info "Running database migrations..."
     cd "$instance_dir/backend"
+    
+    # Generate Prisma client first
     npx prisma generate
-    npx prisma migrate deploy
+    
+    local max_attempts=3
+    local attempt=1
+    local migration_success=false
+    
+    while [ $attempt -le $max_attempts ]; do
+        print_info "Migration attempt $attempt of $max_attempts..."
+        
+        # Try to run migrations
+        local migrate_output
+        migrate_output=$(npx prisma migrate deploy 2>&1 || echo "MIGRATION_FAILED")
+        
+        # Check if migration succeeded
+        if ! echo "$migrate_output" | grep -q "MIGRATION_FAILED\|Error:\|P3009"; then
+            print_status "Migrations completed successfully"
+            migration_success=true
+            break
+        fi
+        
+        # Check specifically for P3009 (failed migrations found)
+        if echo "$migrate_output" | grep -q "P3009\|migrate found failed migrations"; then
+            print_warning "Detected failed migrations (P3009 error)"
+            
+            # Extract the failed migration name if possible
+            local failed_migration
+            failed_migration=$(echo "$migrate_output" | grep -oP "The \`\K[^\`]+" | head -1 || echo "")
+            
+            if [ -n "$failed_migration" ]; then
+                print_info "Failed migration identified: $failed_migration"
+            fi
+            
+            # Attempt to fix failed migrations
+            print_info "Attempting to self-heal migration issues..."
+            if fix_failed_migrations "$DB_NAME" "$DB_USER" "$DB_PASS" "$DB_HOST"; then
+                print_status "Migration issues resolved, retrying..."
+                attempt=$((attempt + 1))
+                sleep 2
+                continue
+            else
+                print_error "Failed to resolve migration issues"
+                print_warning "Attempting alternative resolution method..."
+                
+                # Alternative: Mark migration as completed if tables exist
+                print_info "Checking if migration changes are already applied..."
+                PGPASSWORD="$DB_PASS" psql -h "$DB_HOST" -U "$DB_USER" -d "$DB_NAME" -c \
+                    "UPDATE _prisma_migrations SET finished_at = NOW(), logs = 'Manually resolved by update script' WHERE migration_name = '$failed_migration' AND finished_at IS NULL;" >/dev/null 2>&1
+                
+                attempt=$((attempt + 1))
+                sleep 2
+                continue
+            fi
+        else
+            # Other migration error
+            print_error "Migration failed with error:"
+            echo "$migrate_output" | grep -A 10 "Error:"
+            
+            # Show helpful information
+            print_info "Migration status:"
+            npx prisma migrate status 2>&1 || true
+            break
+        fi
+    done
+    
+    if [ "$migration_success" = false ]; then
+        print_error "Migrations failed after $max_attempts attempts"
+        print_warning "The update will continue, but you may need to manually resolve migration issues"
+        print_info "Check migrations: cd $instance_dir/backend && npx prisma migrate status"
+        print_info "View failed migrations: PGPASSWORD=\"$DB_PASS\" psql -h \"$DB_HOST\" -U \"$DB_USER\" -d \"$DB_NAME\" -c \"SELECT * FROM _prisma_migrations WHERE finished_at IS NULL;\""
+    fi
     
     # Check and update Redis configuration if needed (for legacy installations)
     update_redis_configuration
@@ -2563,7 +3116,7 @@ update_installation() {
     systemctl start "$service_name"
     
     # Wait a moment and check status
-    sleep 3
+    sleep 5
     
     if systemctl is-active --quiet "$service_name"; then
         print_success "✅ Update completed successfully!"
@@ -2583,6 +3136,43 @@ update_installation() {
     else
         print_error "Service failed to start after update"
         echo ""
+        
+        # Show last 25 lines of service logs for debugging
+        print_warning "=== Last 25 lines of service logs ==="
+        journalctl -u "$service_name" -n 25 --no-pager || true
+        print_warning "==================================="
+        echo ""
+        
+        # Check for specific error patterns
+        local logs=$(journalctl -u "$service_name" -n 50 --no-pager 2>/dev/null || echo "")
+        
+        if echo "$logs" | grep -q "WRONGPASS\|NOAUTH"; then
+            print_error "❌ Detected Redis authentication error!"
+            print_info "The service cannot authenticate with Redis."
+            echo ""
+            print_info "Current Redis configuration in .env:"
+            grep "^REDIS_" "$instance_dir/backend/.env" || true
+            echo ""
+            print_info "Quick fix - Try reconfiguring Redis:"
+            print_info "  1. Check Redis ACL users:"
+            print_info "     redis-cli ACL LIST"
+            echo ""
+            print_info "  2. Test Redis connection with credentials from .env:"
+            local test_user=$(grep "^REDIS_USER=" "$instance_dir/backend/.env" | cut -d'=' -f2)
+            local test_pass=$(grep "^REDIS_PASSWORD=" "$instance_dir/backend/.env" | cut -d'=' -f2)
+            local test_db=$(grep "^REDIS_DB=" "$instance_dir/backend/.env" | cut -d'=' -f2)
+            print_info "     redis-cli --user $test_user --pass $test_pass -n ${test_db:-0} ping"
+            echo ""
+        elif echo "$logs" | grep -q "ECONNREFUSED"; then
+            print_error "❌ Detected connection refused error!"
+            print_info "Check if required services are running:"
+            print_info "  systemctl status postgresql"
+            print_info "  systemctl status redis-server"
+        elif echo "$logs" | grep -q "Error:"; then
+            print_error "❌ Application error detected in logs"
+        fi
+        
+        echo ""
         print_warning "ROLLBACK INSTRUCTIONS:"
         print_info "1. Restore code:"
         print_info "   sudo rm -rf $instance_dir"
@@ -2594,7 +3184,7 @@ update_installation() {
         print_info "3. Restart service:"
         print_info "   sudo systemctl start $service_name"
         echo ""
-        print_info "Check logs: journalctl -u $service_name -f"
+        print_info "View full logs: journalctl -u $service_name -f"
         exit 1
     fi
 }

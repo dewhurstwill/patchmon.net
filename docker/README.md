@@ -136,6 +136,24 @@ When you do this, updating to a new version requires manually updating the image
 | `PM_DB_CONN_MAX_ATTEMPTS`  | Maximum database connection attempts                 | `30`                                             |
 | `PM_DB_CONN_WAIT_INTERVAL` | Wait interval between connection attempts in seconds | `2`                                              |
 
+##### Database Connection Pool Configuration (Prisma)
+
+| Variable              | Description                                                | Default |
+| --------------------- | ---------------------------------------------------------- | ------- |
+| `DB_CONNECTION_LIMIT` | Maximum number of database connections per instance        | `30`    |
+| `DB_POOL_TIMEOUT`     | Seconds to wait for an available connection before timeout | `20`    |
+| `DB_CONNECT_TIMEOUT`  | Seconds to wait for initial database connection            | `10`    |
+| `DB_IDLE_TIMEOUT`     | Seconds before closing idle connections                    | `300`   |
+| `DB_MAX_LIFETIME`     | Maximum lifetime of a connection in seconds                | `1800`  |
+
+> [!TIP]
+> The connection pool limit should be adjusted based on your deployment size:
+> - **Small deployment (1-10 hosts)**: `DB_CONNECTION_LIMIT=15` is sufficient
+> - **Medium deployment (10-50 hosts)**: `DB_CONNECTION_LIMIT=30` (default)
+> - **Large deployment (50+ hosts)**: `DB_CONNECTION_LIMIT=50` or higher
+> 
+> Each connection pool serves one backend instance. If you have concurrent operations (multiple users, background jobs, agent checkins), increase the pool size accordingly.
+
 ##### Redis Configuration
 
 | Variable        | Description                    | Default |
