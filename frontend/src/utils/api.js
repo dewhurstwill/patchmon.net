@@ -95,6 +95,7 @@ export const adminHostsAPI = {
 		api.put("/hosts/bulk/groups", { hostIds, groupIds }),
 	toggleAutoUpdate: (hostId, autoUpdate) =>
 		api.patch(`/hosts/${hostId}/auto-update`, { auto_update: autoUpdate }),
+	forceAgentUpdate: (hostId) => api.post(`/hosts/${hostId}/force-agent-update`),
 	updateFriendlyName: (hostId, friendlyName) =>
 		api.patch(`/hosts/${hostId}/friendly-name`, {
 			friendly_name: friendlyName,

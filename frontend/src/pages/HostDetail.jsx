@@ -187,6 +187,16 @@ const HostDetail = () => {
 		},
 	});
 
+	// Force agent update mutation
+	const forceAgentUpdateMutation = useMutation({
+		mutationFn: () =>
+			adminHostsAPI.forceAgentUpdate(hostId).then((res) => res.data),
+		onSuccess: () => {
+			queryClient.invalidateQueries(["host", hostId]);
+			queryClient.invalidateQueries(["hosts"]);
+		},
+	});
+
 	const updateFriendlyNameMutation = useMutation({
 		mutationFn: (friendlyName) =>
 			adminHostsAPI
@@ -701,6 +711,29 @@ const HostDetail = () => {
 													host.auto_update ? "translate-x-5" : "translate-x-1"
 												}`}
 											/>
+										</button>
+									</div>
+
+									<div>
+										<p className="text-xs text-secondary-500 dark:text-secondary-300 mb-1.5">
+											Force Update
+										</p>
+										<button
+											type="button"
+											onClick={() => forceAgentUpdateMutation.mutate()}
+											disabled={forceAgentUpdateMutation.isPending}
+											className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-md hover:bg-primary-100 dark:hover:bg-primary-900/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+										>
+											<RefreshCw
+												className={`h-3 w-3 ${
+													forceAgentUpdateMutation.isPending
+														? "animate-spin"
+														: ""
+												}`}
+											/>
+											{forceAgentUpdateMutation.isPending
+												? "Updating..."
+												: "Update Now"}
 										</button>
 									</div>
 								</div>

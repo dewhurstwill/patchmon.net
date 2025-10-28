@@ -1797,7 +1797,12 @@ create_agent_version() {
         cp "$APP_DIR/agents/patchmon-agent.sh" "$APP_DIR/backend/"
         
         print_status "Agent version management removed - using file-based approach"
-# Ensure we close the conditional and the function properly
+    fi
+    
+    # Make agent binaries executable
+    if [ -d "$APP_DIR/agents" ]; then
+        chmod +x "$APP_DIR/agents/patchmon-agent-linux-"* 2>/dev/null || true
+        print_status "Agent binaries made executable"
     fi
 
     return 0
@@ -3094,6 +3099,12 @@ update_installation() {
     # Build frontend
     print_info "Building frontend..."
     npm run build
+    
+    # Make agent binaries executable
+    if [ -d "$instance_dir/agents" ]; then
+        chmod +x "$instance_dir/agents/patchmon-agent-linux-"* 2>/dev/null || true
+        print_status "Agent binaries made executable"
+    fi
     
     # Run database migrations with self-healing
     print_info "Running database migrations..."

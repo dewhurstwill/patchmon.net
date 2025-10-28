@@ -176,6 +176,15 @@ function pushSettingsUpdate(apiId, newInterval) {
 	);
 }
 
+function pushUpdateAgent(apiId) {
+	const ws = apiIdToSocket.get(apiId);
+	safeSend(ws, JSON.stringify({ type: "update_agent" }));
+}
+
+function getConnectionByApiId(apiId) {
+	return apiIdToSocket.get(apiId);
+}
+
 function pushUpdateNotification(apiId, updateInfo) {
 	const ws = apiIdToSocket.get(apiId);
 	if (ws && ws.readyState === WebSocket.OPEN) {
@@ -330,10 +339,12 @@ module.exports = {
 	broadcastSettingsUpdate,
 	pushReportNow,
 	pushSettingsUpdate,
+	pushUpdateAgent,
 	pushUpdateNotification,
 	pushUpdateNotificationToAll,
 	// Expose read-only view of connected agents
 	getConnectedApiIds: () => Array.from(apiIdToSocket.keys()),
+	getConnectionByApiId,
 	isConnected: (apiId) => {
 		const ws = apiIdToSocket.get(apiId);
 		return !!ws && ws.readyState === WebSocket.OPEN;
