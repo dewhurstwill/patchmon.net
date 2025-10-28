@@ -236,7 +236,7 @@ const Layout = ({ children }) => {
 		navigate("/hosts?action=add");
 	};
 
-	// Generate geometric background pattern for dark mode
+	// Generate low-poly triangular background pattern for dark mode
 	useEffect(() => {
 		const generateBackground = () => {
 			if (
@@ -265,6 +265,7 @@ const Layout = ({ children }) => {
 				"#f093fb",
 				"#4facfe",
 			];
+			const allColors = [...xColors, ...yColors];
 
 			// Use date for daily variation
 			const today = new Date();
@@ -277,31 +278,64 @@ const Layout = ({ children }) => {
 				return x - Math.floor(x);
 			};
 
-			// Draw gradient mesh
-			const cellSize = themeConfig.login.cellSize || 75;
-			const cols = Math.ceil(canvas.width / cellSize) + 1;
-			const rows = Math.ceil(canvas.height / cellSize) + 1;
+			// Create a grid of points with some variance
+			const cellSize = themeConfig.login.cellSize || 150; // Larger cells for more subtle effect
+			const variance = themeConfig.login.variance || 0.5;
+			const cols = Math.ceil(canvas.width / cellSize) + 2;
+			const rows = Math.ceil(canvas.height / cellSize) + 2;
 
-			for (let y = 0; y < rows; y++) {
-				for (let x = 0; x < cols; x++) {
+			const points = [];
+			for (let y = -1; y < rows; y++) {
+				for (let x = -1; x < cols; x++) {
 					const idx = y * cols + x;
-					const color1 =
-						xColors[Math.floor(random(seed + idx) * xColors.length)];
-					const color2 =
-						yColors[Math.floor(random(seed + idx + 1000) * yColors.length)];
+					const offsetX = (random(seed + idx * 2) - 0.5) * cellSize * variance;
+					const offsetY =
+						(random(seed + idx * 2 + 1000) - 0.5) * cellSize * variance;
+					points.push({
+						x: x * cellSize + offsetX,
+						y: y * cellSize + offsetY,
+						color: allColors[Math.floor(random(seed + idx) * allColors.length)],
+					});
+				}
+			}
 
-					// Create gradient
-					const gradient = ctx.createLinearGradient(
-						x * cellSize,
-						y * cellSize,
-						(x + 1) * cellSize,
-						(y + 1) * cellSize,
-					);
-					gradient.addColorStop(0, color1);
-					gradient.addColorStop(1, color2);
+			// Draw triangles between points
+			for (let y = 0; y < rows - 1; y++) {
+				for (let x = 0; x < cols - 1; x++) {
+					const idx = y * cols + x;
+					const p1 = points[idx];
+					const p2 = points[idx + 1];
+					const p3 = points[idx + cols];
+					const p4 = points[idx + cols + 1];
 
-					ctx.fillStyle = gradient;
-					ctx.fillRect(x * cellSize, y * cellSize, cellSize, cellSize);
+					// Draw two triangles per cell
+					// Triangle 1
+					ctx.beginPath();
+					ctx.moveTo(p1.x, p1.y);
+					ctx.lineTo(p2.x, p2.y);
+					ctx.lineTo(p3.x, p3.y);
+					ctx.closePath();
+
+					const gradient1 = ctx.createLinearGradient(p1.x, p1.y, p2.x, p2.y);
+					gradient1.addColorStop(0, p1.color);
+					gradient1.addColorStop(0.5, p2.color);
+					gradient1.addColorStop(1, p3.color);
+					ctx.fillStyle = gradient1;
+					ctx.fill();
+
+					// Triangle 2
+					ctx.beginPath();
+					ctx.moveTo(p2.x, p2.y);
+					ctx.lineTo(p4.x, p4.y);
+					ctx.lineTo(p3.x, p3.y);
+					ctx.closePath();
+
+					const gradient2 = ctx.createLinearGradient(p2.x, p2.y, p4.x, p4.y);
+					gradient2.addColorStop(0, p2.color);
+					gradient2.addColorStop(0.5, p4.color);
+					gradient2.addColorStop(1, p3.color);
+					ctx.fillStyle = gradient2;
+					ctx.fill();
 				}
 			}
 		};
