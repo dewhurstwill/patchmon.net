@@ -564,6 +564,7 @@ const Profile = () => {
 // TFA Tab Component
 const TfaTab = () => {
 	const verificationTokenId = useId();
+	const disablePasswordId = useId();
 	const [setupStep, setSetupStep] = useState("status"); // 'status', 'setup', 'verify', 'backup-codes'
 	const [verificationToken, setVerificationToken] = useState("");
 	const [password, setPassword] = useState("");

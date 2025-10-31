@@ -6,17 +6,19 @@ import {
 	ArrowUpDown,
 	Container,
 	ExternalLink,
+	HardDrive,
+	Network,
 	Package,
 	RefreshCw,
 	Search,
 	Server,
-	Shield,
 	Trash2,
 	X,
 } from "lucide-react";
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import api from "../utils/api";
+import { generateRegistryLink, getSourceDisplayName } from "../utils/docker";
 
 const Docker = () => {
 	const queryClient = useQueryClient();
@@ -26,8 +28,12 @@ const Docker = () => {
 	const [sortDirection, setSortDirection] = useState("asc");
 	const [statusFilter, setStatusFilter] = useState("all");
 	const [sourceFilter, setSourceFilter] = useState("all");
+	const [updatesFilter, setUpdatesFilter] = useState("all");
+	const [driverFilter, setDriverFilter] = useState("all");
 	const [deleteContainerModal, setDeleteContainerModal] = useState(null);
 	const [deleteImageModal, setDeleteImageModal] = useState(null);
+	const [deleteVolumeModal, setDeleteVolumeModal] = useState(null);
+	const [deleteNetworkModal, setDeleteNetworkModal] = useState(null);
 
 	// Fetch Docker dashboard data
 	const { data: dashboard, isLoading: dashboardLoading } = useQuery({
@@ -83,14 +89,38 @@ const Docker = () => {
 		enabled: activeTab === "hosts",
 	});
 
-	// Fetch updates
-	const { data: updatesData, isLoading: updatesLoading } = useQuery({
-		queryKey: ["docker", "updates"],
+	// Fetch volumes
+	const {
+		data: volumesData,
+		isLoading: volumesLoading,
+		refetch: refetchVolumes,
+	} = useQuery({
+		queryKey: ["docker", "volumes", driverFilter],
 		queryFn: async () => {
-			const response = await api.get("/docker/updates?limit=1000");
+			const params = new URLSearchParams();
+			if (driverFilter !== "all") params.set("driver", driverFilter);
+			params.set("limit", "1000");
+			const response = await api.get(`/docker/volumes?${params}`);
 			return response.data;
 		},
-		enabled: activeTab === "updates",
+		enabled: activeTab === "volumes",
+	});
+
+	// Fetch networks
+	const {
+		data: networksData,
+		isLoading: networksLoading,
+		refetch: refetchNetworks,
+	} = useQuery({
+		queryKey: ["docker", "networks", driverFilter],
+		queryFn: async () => {
+			const params = new URLSearchParams();
+			if (driverFilter !== "all") params.set("driver", driverFilter);
+			params.set("limit", "1000");
+			const response = await api.get(`/docker/networks?${params}`);
+			return response.data;
+		},
+		enabled: activeTab === "networks",
 	});
 
 	// Delete container mutation
@@ -125,6 +155,42 @@ const Docker = () => {
 		onError: (error) => {
 			alert(
 				`Failed to delete image: ${error.response?.data?.error || error.message}`,
+			);
+		},
+	});
+
+	// Delete volume mutation
+	const deleteVolumeMutation = useMutation({
+		mutationFn: async (volumeId) => {
+			const response = await api.delete(`/docker/volumes/${volumeId}`);
+			return response.data;
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries(["docker", "volumes"]);
+			queryClient.invalidateQueries(["docker", "dashboard"]);
+			setDeleteVolumeModal(null);
+		},
+		onError: (error) => {
+			alert(
+				`Failed to delete volume: ${error.response?.data?.error || error.message}`,
+			);
+		},
+	});
+
+	// Delete network mutation
+	const deleteNetworkMutation = useMutation({
+		mutationFn: async (networkId) => {
+			const response = await api.delete(`/docker/networks/${networkId}`);
+			return response.data;
+		},
+		onSuccess: () => {
+			queryClient.invalidateQueries(["docker", "networks"]);
+			queryClient.invalidateQueries(["docker", "dashboard"]);
+			setDeleteNetworkModal(null);
+		},
+		onError: (error) => {
+			alert(
+				`Failed to delete network: ${error.response?.data?.error || error.message}`,
 			);
 		},
 	});
@@ -207,6 +273,15 @@ const Docker = () => {
 			);
 		}
 
+		// Filter by updates status
+		if (updatesFilter !== "all") {
+			if (updatesFilter === "available") {
+				filtered = filtered.filter((img) => img.hasUpdates === true);
+			} else if (updatesFilter === "none") {
+				filtered = filtered.filter((img) => !img.hasUpdates);
+			}
+		}
+
 		filtered.sort((a, b) => {
 			let aValue, bValue;
 			if (sortField === "repository") {
@@ -226,7 +301,7 @@ const Docker = () => {
 		});
 
 		return filtered;
-	}, [imagesData, searchTerm, sortField, sortDirection]);
+	}, [imagesData, searchTerm, sortField, sortDirection, updatesFilter]);
 
 	// Filter and sort hosts
 	const filteredHosts = useMemo(() => {
@@ -262,6 +337,103 @@ const Docker = () => {
 
 		return filtered;
 	}, [hostsData, searchTerm, sortField, sortDirection]);
+
+	// Filter and sort volumes
+	const filteredVolumes = useMemo(() => {
+		if (!volumesData?.volumes) return [];
+		let filtered = volumesData.volumes;
+
+		if (searchTerm) {
+			const term = searchTerm.toLowerCase();
+			filtered = filtered.filter(
+				(v) =>
+					v.name.toLowerCase().includes(term) ||
+					v.hosts?.friendly_name?.toLowerCase().includes(term),
+			);
+		}
+
+		filtered.sort((a, b) => {
+			let aValue, bValue;
+			if (sortField === "name") {
+				aValue = a.name?.toLowerCase() || "";
+				bValue = b.name?.toLowerCase() || "";
+			} else if (sortField === "driver") {
+				aValue = a.driver?.toLowerCase() || "";
+				bValue = b.driver?.toLowerCase() || "";
+			} else if (sortField === "size") {
+				aValue = a.size_bytes ? BigInt(a.size_bytes) : BigInt(0);
+				bValue = b.size_bytes ? BigInt(b.size_bytes) : BigInt(0);
+			} else if (sortField === "ref_count") {
+				aValue = a.ref_count || 0;
+				bValue = b.ref_count || 0;
+			} else if (sortField === "host") {
+				aValue = a.hosts?.friendly_name?.toLowerCase() || "";
+				bValue = b.hosts?.friendly_name?.toLowerCase() || "";
+			}
+
+			if (sortField === "size") {
+				// BigInt comparison
+				if (aValue < bValue) return sortDirection === "asc" ? -1 : 1;
+				if (aValue > bValue) return sortDirection === "asc" ? 1 : -1;
+			} else if (sortField === "ref_count") {
+				// Number comparison
+				if (aValue < bValue) return sortDirection === "asc" ? -1 : 1;
+				if (aValue > bValue) return sortDirection === "asc" ? 1 : -1;
+			} else {
+				// String comparison
+				if (aValue < bValue) return sortDirection === "asc" ? -1 : 1;
+				if (aValue > bValue) return sortDirection === "asc" ? 1 : -1;
+			}
+			return 0;
+		});
+
+		return filtered;
+	}, [volumesData, searchTerm, sortField, sortDirection]);
+
+	// Filter and sort networks
+	const filteredNetworks = useMemo(() => {
+		if (!networksData?.networks) return [];
+		let filtered = networksData.networks;
+
+		if (searchTerm) {
+			const term = searchTerm.toLowerCase();
+			filtered = filtered.filter(
+				(n) =>
+					n.name.toLowerCase().includes(term) ||
+					n.hosts?.friendly_name?.toLowerCase().includes(term),
+			);
+		}
+
+		filtered.sort((a, b) => {
+			let aValue, bValue;
+			if (sortField === "name") {
+				aValue = a.name?.toLowerCase() || "";
+				bValue = b.name?.toLowerCase() || "";
+			} else if (sortField === "driver") {
+				aValue = a.driver?.toLowerCase() || "";
+				bValue = b.driver?.toLowerCase() || "";
+			} else if (sortField === "containers") {
+				aValue = a.container_count || 0;
+				bValue = b.container_count || 0;
+			} else if (sortField === "host") {
+				aValue = a.hosts?.friendly_name?.toLowerCase() || "";
+				bValue = b.hosts?.friendly_name?.toLowerCase() || "";
+			}
+
+			if (sortField === "containers") {
+				// Number comparison
+				if (aValue < bValue) return sortDirection === "asc" ? -1 : 1;
+				if (aValue > bValue) return sortDirection === "asc" ? 1 : -1;
+			} else {
+				// String comparison
+				if (aValue < bValue) return sortDirection === "asc" ? -1 : 1;
+				if (aValue > bValue) return sortDirection === "asc" ? 1 : -1;
+			}
+			return 0;
+		});
+
+		return filtered;
+	}, [networksData, searchTerm, sortField, sortDirection]);
 
 	const handleSort = (field) => {
 		if (sortField === field) {
@@ -303,35 +475,64 @@ const Docker = () => {
 		);
 	};
 
-	const getSourceBadge = (source) => {
-		const badges = {
-			"docker-hub": (
-				<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-					Docker Hub
-				</span>
-			),
-			github: (
-				<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-secondary-100 text-secondary-900 dark:bg-secondary-700 dark:text-white">
-					GitHub
-				</span>
-			),
-			gitlab: (
-				<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200">
-					GitLab
-				</span>
-			),
-			private: (
-				<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">
-					Private
-				</span>
-			),
+	const getSourceBadge = (source, repository) => {
+		// Generate registry link if possible
+		const registryLink = repository
+			? generateRegistryLink(repository, source)
+			: null;
+
+		// Get display name
+		const displayName = getSourceDisplayName(source);
+
+		// Color schemes for different sources
+		const colorSchemes = {
+			"docker-hub":
+				"bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-blue-800",
+			github:
+				"bg-secondary-100 text-secondary-900 dark:bg-secondary-700 dark:text-white hover:bg-secondary-200 dark:hover:bg-secondary-600",
+			gitlab:
+				"bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200 hover:bg-orange-200 dark:hover:bg-orange-800",
+			google:
+				"bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200 hover:bg-red-200 dark:hover:bg-red-800",
+			quay: "bg-teal-100 text-teal-800 dark:bg-teal-900 dark:text-teal-200 hover:bg-teal-200 dark:hover:bg-teal-800",
+			redhat:
+				"bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200 hover:bg-red-200 dark:hover:bg-red-800",
+			azure:
+				"bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-blue-800",
+			aws: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200 hover:bg-yellow-200 dark:hover:bg-yellow-800",
+			private:
+				"bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200 hover:bg-purple-200 dark:hover:bg-purple-800",
+			local:
+				"bg-secondary-100 text-secondary-800 dark:bg-secondary-700 dark:text-secondary-200 hover:bg-secondary-200 dark:hover:bg-secondary-600",
+			unknown:
+				"bg-secondary-100 text-secondary-800 dark:bg-secondary-700 dark:text-secondary-200 hover:bg-secondary-200 dark:hover:bg-secondary-600",
 		};
+
+		const colorScheme = colorSchemes[source] || colorSchemes.unknown;
+
+		if (registryLink) {
+			// Return as clickable link
+			return (
+				<a
+					href={registryLink}
+					target="_blank"
+					rel="noopener noreferrer"
+					className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium transition-colors ${colorScheme}`}
+					title={`View on ${displayName}`}
+				>
+					{displayName}
+					<ExternalLink className="h-3 w-3" />
+				</a>
+			);
+		}
+
+		// Return as non-clickable badge
 		return (
-			badges[source] || (
-				<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-secondary-100 text-secondary-800 dark:bg-secondary-700 dark:text-secondary-200">
-					{source}
-				</span>
-			)
+			<span
+				className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${colorScheme.split(" hover:")[0]}`}
+			>
+				{displayName}
+			</span>
 		);
 	};
 
@@ -354,6 +555,8 @@ const Docker = () => {
 							// Trigger refresh based on active tab
 							if (activeTab === "containers") refetchContainers();
 							else if (activeTab === "images") refetchImages();
+							else if (activeTab === "volumes") refetchVolumes();
+							else if (activeTab === "networks") refetchNetworks();
 							else window.location.reload();
 						}}
 						className="btn-outline flex items-center justify-center p-2"
@@ -431,7 +634,19 @@ const Docker = () => {
 					</div>
 				</div>
 
-				<div className="card p-4">
+				<button
+					type="button"
+					onClick={() => {
+						setActiveTab("images");
+						setUpdatesFilter("available");
+						setSourceFilter("all"); // Reset source filter
+						setSearchTerm(""); // Clear search
+						setSortField("repository");
+						setSortDirection("asc");
+					}}
+					className="card p-4 hover:shadow-lg transition-shadow cursor-pointer text-left w-full disabled:opacity-50 disabled:cursor-not-allowed"
+					disabled={dashboardLoading || !dashboard?.stats?.availableUpdates}
+				>
 					<div className="flex items-center">
 						<div className="flex-shrink-0">
 							<AlertTriangle className="h-5 w-5 text-warning-600 mr-2" />
@@ -449,7 +664,7 @@ const Docker = () => {
 							</p>
 						</div>
 					</div>
-				</div>
+				</button>
 			</div>
 
 			{/* Docker List */}
@@ -460,8 +675,9 @@ const Docker = () => {
 						{[
 							{ id: "containers", label: "Containers", icon: Container },
 							{ id: "images", label: "Images", icon: Package },
+							{ id: "volumes", label: "Volumes", icon: HardDrive },
+							{ id: "networks", label: "Networks", icon: Network },
 							{ id: "hosts", label: "Hosts", icon: Server },
-							{ id: "updates", label: "Updates", icon: AlertTriangle },
 						].map((tab) => {
 							const Icon = tab.icon;
 							return (
@@ -471,12 +687,17 @@ const Docker = () => {
 									onClick={() => {
 										setActiveTab(tab.id);
 										setSearchTerm("");
+										setUpdatesFilter("all"); // Reset updates filter when switching tabs
 										setSortField(
 											tab.id === "containers"
 												? "status"
 												: tab.id === "images"
 													? "repository"
-													: "name",
+													: tab.id === "volumes"
+														? "name"
+														: tab.id === "networks"
+															? "name"
+															: "name",
 										);
 										setSortDirection("asc");
 									}}
@@ -534,16 +755,47 @@ const Docker = () => {
 							</select>
 						)}
 						{activeTab === "images" && (
+							<>
+								<select
+									value={sourceFilter}
+									onChange={(e) => setSourceFilter(e.target.value)}
+									className="block w-full sm:w-48 pl-3 pr-10 py-2 text-base border-secondary-300 dark:border-secondary-600 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm rounded-md bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white"
+								>
+									<option value="all">All Sources</option>
+									<option value="docker-hub">Docker Hub</option>
+									<option value="github">GitHub</option>
+									<option value="gitlab">GitLab</option>
+									<option value="google">Google</option>
+									<option value="quay">Quay.io</option>
+									<option value="redhat">Red Hat</option>
+									<option value="azure">Azure</option>
+									<option value="aws">AWS ECR</option>
+									<option value="private">Private</option>
+									<option value="local">Local</option>
+								</select>
+								<select
+									value={updatesFilter}
+									onChange={(e) => setUpdatesFilter(e.target.value)}
+									className="block w-full sm:w-48 pl-3 pr-10 py-2 text-base border-secondary-300 dark:border-secondary-600 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm rounded-md bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white"
+								>
+									<option value="all">All Updates Status</option>
+									<option value="available">Has Updates</option>
+									<option value="none">Up to Date</option>
+								</select>
+							</>
+						)}
+						{(activeTab === "volumes" || activeTab === "networks") && (
 							<select
-								value={sourceFilter}
-								onChange={(e) => setSourceFilter(e.target.value)}
+								value={driverFilter}
+								onChange={(e) => setDriverFilter(e.target.value)}
 								className="block w-full sm:w-48 pl-3 pr-10 py-2 text-base border-secondary-300 dark:border-secondary-600 focus:outline-none focus:ring-primary-500 focus:border-primary-500 sm:text-sm rounded-md bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white"
 							>
-								<option value="all">All Sources</option>
-								<option value="docker-hub">Docker Hub</option>
-								<option value="github">GitHub</option>
-								<option value="gitlab">GitLab</option>
-								<option value="private">Private</option>
+								<option value="all">All Drivers</option>
+								<option value="local">Local</option>
+								<option value="bridge">Bridge</option>
+								<option value="host">Host</option>
+								<option value="overlay">Overlay</option>
+								<option value="macvlan">Macvlan</option>
 							</select>
 						)}
 					</div>
@@ -774,7 +1026,7 @@ const Docker = () => {
 													</span>
 												</td>
 												<td className="px-4 py-2 whitespace-nowrap text-center">
-													{getSourceBadge(image.source)}
+													{getSourceBadge(image.source, image.repository)}
 												</td>
 												<td className="px-4 py-2 whitespace-nowrap text-center text-sm text-secondary-900 dark:text-white">
 													{image._count?.docker_containers || 0}
@@ -925,24 +1177,26 @@ const Docker = () => {
 						</div>
 					)}
 
-					{/* Updates Tab */}
-					{activeTab === "updates" && (
+					{/* Volumes Tab */}
+					{activeTab === "volumes" && (
 						<div className="overflow-x-auto">
-							{updatesLoading ? (
+							{volumesLoading ? (
 								<div className="text-center py-8">
 									<RefreshCw className="h-8 w-8 animate-spin mx-auto text-secondary-400" />
 									<p className="mt-2 text-sm text-secondary-500">
-										Loading updates...
+										Loading volumes...
 									</p>
 								</div>
-							) : !updatesData?.updates || updatesData.updates.length === 0 ? (
+							) : filteredVolumes.length === 0 ? (
 								<div className="text-center py-8">
-									<Shield className="h-12 w-12 mx-auto text-green-400" />
+									<HardDrive className="h-12 w-12 mx-auto text-secondary-400" />
 									<h3 className="mt-2 text-sm font-medium text-secondary-900 dark:text-white">
-										All images up to date!
+										No volumes found
 									</h3>
 									<p className="mt-1 text-sm text-secondary-500">
-										No updates available for your Docker images
+										{searchTerm
+											? "Try adjusting your search filters"
+											: "No Docker volumes detected"}
 									</p>
 								</div>
 							) : (
@@ -950,19 +1204,54 @@ const Docker = () => {
 									<thead className="bg-secondary-50 dark:bg-secondary-700">
 										<tr>
 											<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
-												Image
-											</th>
-											<th className="px-4 py-2 text-center text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
-												Tag
-											</th>
-											<th className="px-4 py-2 text-center text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
-												Detection Method
-											</th>
-											<th className="px-4 py-2 text-center text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
-												Status
+												<button
+													type="button"
+													onClick={() => handleSort("name")}
+													className="flex items-center gap-2 hover:text-secondary-700"
+												>
+													Volume Name
+													{getSortIcon("name")}
+												</button>
 											</th>
 											<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
-												Affected
+												<button
+													type="button"
+													onClick={() => handleSort("driver")}
+													className="flex items-center gap-2 hover:text-secondary-700"
+												>
+													Driver
+													{getSortIcon("driver")}
+												</button>
+											</th>
+											<th className="px-4 py-2 text-center text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
+												<button
+													type="button"
+													onClick={() => handleSort("size")}
+													className="flex items-center gap-2 hover:text-secondary-700"
+												>
+													Size
+													{getSortIcon("size")}
+												</button>
+											</th>
+											<th className="px-4 py-2 text-center text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
+												<button
+													type="button"
+													onClick={() => handleSort("ref_count")}
+													className="flex items-center gap-2 hover:text-secondary-700"
+												>
+													In Use
+													{getSortIcon("ref_count")}
+												</button>
+											</th>
+											<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
+												<button
+													type="button"
+													onClick={() => handleSort("host")}
+													className="flex items-center gap-2 hover:text-secondary-700"
+												>
+													Host
+													{getSortIcon("host")}
+												</button>
 											</th>
 											<th className="px-4 py-2 text-center text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
 												Actions
@@ -970,58 +1259,259 @@ const Docker = () => {
 										</tr>
 									</thead>
 									<tbody className="bg-white dark:bg-secondary-800 divide-y divide-secondary-200 dark:divide-secondary-600">
-										{updatesData.updates.map((update) => (
+										{filteredVolumes.map((volume) => (
 											<tr
-												key={update.id}
+												key={volume.id}
 												className="hover:bg-secondary-50 dark:hover:bg-secondary-700 transition-colors"
 											>
 												<td className="px-4 py-2 whitespace-nowrap">
 													<div className="flex items-center gap-2">
-														<Package className="h-4 w-4 text-secondary-400 dark:text-secondary-500 flex-shrink-0" />
+														<HardDrive className="h-4 w-4 text-secondary-400 dark:text-secondary-500 flex-shrink-0" />
 														<Link
-															to={`/docker/images/${update.image_id}`}
+															to={`/docker/volumes/${volume.id}`}
 															className="text-sm font-medium text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300 truncate"
 														>
-															{update.docker_images?.repository}
+															{volume.name}
 														</Link>
 													</div>
 												</td>
+												<td className="px-4 py-2 whitespace-nowrap">
+													<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+														{volume.driver}
+													</span>
+												</td>
+												<td className="px-4 py-2 whitespace-nowrap text-center text-sm text-secondary-900 dark:text-white">
+													{volume.size_bytes
+														? `${(Number(volume.size_bytes) / 1024 / 1024 / 1024).toFixed(2)} GB`
+														: "-"}
+												</td>
+												<td className="px-4 py-2 whitespace-nowrap text-center text-sm text-secondary-900 dark:text-white">
+													{volume.ref_count > 0 ? (
+														<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+															{volume.ref_count} container
+															{volume.ref_count !== 1 ? "s" : ""}
+														</span>
+													) : (
+														<span className="text-secondary-400 dark:text-secondary-500">
+															Unused
+														</span>
+													)}
+												</td>
+												<td className="px-4 py-2 whitespace-nowrap">
+													<Link
+														to={`/hosts/${volume.host_id}`}
+														className="text-sm text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300"
+													>
+														{volume.hosts?.friendly_name ||
+															volume.hosts?.hostname ||
+															"Unknown"}
+													</Link>
+												</td>
+												<td className="px-4 py-2 whitespace-nowrap text-center">
+													<div className="flex items-center justify-center gap-2">
+														<Link
+															to={`/docker/volumes/${volume.id}`}
+															className="text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300 inline-flex items-center gap-1"
+															title="View details"
+														>
+															<ExternalLink className="h-4 w-4" />
+														</Link>
+														<button
+															type="button"
+															onClick={() => setDeleteVolumeModal(volume)}
+															className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
+															title="Delete from inventory"
+														>
+															<Trash2 className="h-4 w-4" />
+														</button>
+													</div>
+												</td>
+											</tr>
+										))}
+									</tbody>
+								</table>
+							)}
+						</div>
+					)}
+
+					{/* Networks Tab */}
+					{activeTab === "networks" && (
+						<div className="overflow-x-auto">
+							{networksLoading ? (
+								<div className="text-center py-8">
+									<RefreshCw className="h-8 w-8 animate-spin mx-auto text-secondary-400" />
+									<p className="mt-2 text-sm text-secondary-500">
+										Loading networks...
+									</p>
+								</div>
+							) : filteredNetworks.length === 0 ? (
+								<div className="text-center py-8">
+									<Network className="h-12 w-12 mx-auto text-secondary-400" />
+									<h3 className="mt-2 text-sm font-medium text-secondary-900 dark:text-white">
+										No networks found
+									</h3>
+									<p className="mt-1 text-sm text-secondary-500">
+										{searchTerm
+											? "Try adjusting your search filters"
+											: "No Docker networks detected"}
+									</p>
+								</div>
+							) : (
+								<table className="min-w-full divide-y divide-secondary-200 dark:divide-secondary-600">
+									<thead className="bg-secondary-50 dark:bg-secondary-700">
+										<tr>
+											<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
+												<button
+													type="button"
+													onClick={() => handleSort("name")}
+													className="flex items-center gap-2 hover:text-secondary-700"
+												>
+													Network Name
+													{getSortIcon("name")}
+												</button>
+											</th>
+											<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
+												<button
+													type="button"
+													onClick={() => handleSort("driver")}
+													className="flex items-center gap-2 hover:text-secondary-700"
+												>
+													Driver
+													{getSortIcon("driver")}
+												</button>
+											</th>
+											<th className="px-4 py-2 text-center text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
+												Scope
+											</th>
+											<th className="px-4 py-2 text-center text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
+												<button
+													type="button"
+													onClick={() => handleSort("containers")}
+													className="flex items-center gap-2 hover:text-secondary-700"
+												>
+													Containers
+													{getSortIcon("containers")}
+												</button>
+											</th>
+											<th className="px-4 py-2 text-center text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
+												Flags
+											</th>
+											<th className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
+												<button
+													type="button"
+													onClick={() => handleSort("host")}
+													className="flex items-center gap-2 hover:text-secondary-700"
+												>
+													Host
+													{getSortIcon("host")}
+												</button>
+											</th>
+											<th className="px-4 py-2 text-center text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
+												Actions
+											</th>
+										</tr>
+									</thead>
+									<tbody className="bg-white dark:bg-secondary-800 divide-y divide-secondary-200 dark:divide-secondary-600">
+										{filteredNetworks.map((network) => (
+											<tr
+												key={network.id}
+												className="hover:bg-secondary-50 dark:hover:bg-secondary-700 transition-colors"
+											>
+												<td className="px-4 py-2 whitespace-nowrap">
+													<div className="flex items-center gap-2">
+														<Network className="h-4 w-4 text-secondary-400 dark:text-secondary-500 flex-shrink-0" />
+														<Link
+															to={`/docker/networks/${network.id}`}
+															className="text-sm font-medium text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300 truncate"
+														>
+															{network.name}
+														</Link>
+													</div>
+												</td>
+												<td className="px-4 py-2 whitespace-nowrap">
+													<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+														{network.driver}
+													</span>
+												</td>
 												<td className="px-4 py-2 whitespace-nowrap text-center">
 													<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-secondary-100 text-secondary-800 dark:bg-secondary-700 dark:text-secondary-200">
-														{update.current_tag}
+														{network.scope}
 													</span>
 												</td>
-												<td className="px-4 py-2 whitespace-nowrap text-center">
-													<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">
-														<Package className="h-3 w-3 mr-1" />
-														Digest
-													</span>
-												</td>
-												<td className="px-4 py-2 whitespace-nowrap text-center">
-													<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200">
-														<AlertTriangle className="h-3 w-3 mr-1" />
-														Available
-													</span>
-												</td>
-												<td className="px-4 py-2 whitespace-nowrap text-sm text-secondary-900 dark:text-white">
-													{update.affectedContainersCount} container
-													{update.affectedContainersCount !== 1 ? "s" : ""}
-													{update.affectedHosts?.length > 0 && (
-														<span className="text-secondary-500 dark:text-secondary-400">
-															{" "}
-															on {update.affectedHosts.length} host
-															{update.affectedHosts.length !== 1 ? "s" : ""}
+												<td className="px-4 py-2 whitespace-nowrap text-center text-sm text-secondary-900 dark:text-white">
+													{network.container_count > 0 ? (
+														<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+															{network.container_count}
+														</span>
+													) : (
+														<span className="text-secondary-400 dark:text-secondary-500">
+															0
 														</span>
 													)}
 												</td>
 												<td className="px-4 py-2 whitespace-nowrap text-center">
+													<div className="flex items-center justify-center gap-1">
+														{network.internal && (
+															<span
+																className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200"
+																title="Internal"
+															>
+																I
+															</span>
+														)}
+														{network.ipv6_enabled && (
+															<span
+																className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200"
+																title="IPv6 Enabled"
+															>
+																6
+															</span>
+														)}
+														{network.ingress && (
+															<span
+																className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
+																title="Swarm Ingress"
+															>
+																S
+															</span>
+														)}
+														{!network.internal &&
+															!network.ipv6_enabled &&
+															!network.ingress && (
+																<span className="text-secondary-400 dark:text-secondary-500 text-xs">
+																	-
+																</span>
+															)}
+													</div>
+												</td>
+												<td className="px-4 py-2 whitespace-nowrap">
 													<Link
-														to={`/docker/images/${update.image_id}`}
-														className="text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300 inline-flex items-center gap-1"
-														title="View details"
+														to={`/hosts/${network.host_id}`}
+														className="text-sm text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300"
 													>
-														<ExternalLink className="h-4 w-4" />
+														{network.hosts?.friendly_name ||
+															network.hosts?.hostname ||
+															"Unknown"}
 													</Link>
+												</td>
+												<td className="px-4 py-2 whitespace-nowrap text-center">
+													<div className="flex items-center justify-center gap-2">
+														<Link
+															to={`/docker/networks/${network.id}`}
+															className="text-primary-600 hover:text-primary-900 dark:text-primary-400 dark:hover:text-primary-300 inline-flex items-center gap-1"
+															title="View details"
+														>
+															<ExternalLink className="h-4 w-4" />
+														</Link>
+														<button
+															type="button"
+															onClick={() => setDeleteNetworkModal(network)}
+															className="text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300"
+															title="Delete from inventory"
+														>
+															<Trash2 className="h-4 w-4" />
+														</button>
+													</div>
 												</td>
 											</tr>
 										))}
@@ -1032,6 +1522,8 @@ const Docker = () => {
 					)}
 				</div>
 			</div>
+
+			{/* Delete Container Modal */}
 
 			{/* Delete Container Modal */}
 			{deleteContainerModal && (
@@ -1159,6 +1651,149 @@ const Docker = () => {
 								type="button"
 								onClick={() => setDeleteImageModal(null)}
 								disabled={deleteImageMutation.isPending}
+								className="mt-3 w-full inline-flex justify-center rounded-md border border-secondary-300 dark:border-secondary-600 shadow-sm px-4 py-2 bg-white dark:bg-secondary-700 text-base font-medium text-secondary-700 dark:text-secondary-200 hover:bg-secondary-50 dark:hover:bg-secondary-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:mt-0 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								Cancel
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{/* Delete Volume Modal */}
+			{deleteVolumeModal && (
+				<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+					<div className="bg-white dark:bg-secondary-800 rounded-lg p-6 max-w-md w-full mx-4">
+						<div className="flex items-start mb-4">
+							<div className="flex-shrink-0">
+								<AlertTriangle className="h-6 w-6 text-red-600" />
+							</div>
+							<div className="ml-3 flex-1">
+								<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
+									Delete Volume
+								</h3>
+								<div className="mt-2 text-sm text-secondary-600 dark:text-secondary-300">
+									<p className="mb-2">
+										Are you sure you want to delete this volume from the
+										inventory?
+									</p>
+									<div className="bg-secondary-100 dark:bg-secondary-700 p-3 rounded-md">
+										<p className="font-medium text-secondary-900 dark:text-white">
+											{deleteVolumeModal.name}
+										</p>
+										<p className="text-xs text-secondary-600 dark:text-secondary-400 mt-1">
+											Driver: {deleteVolumeModal.driver}
+										</p>
+										<p className="text-xs text-secondary-600 dark:text-secondary-400">
+											Host:{" "}
+											{deleteVolumeModal.hosts?.friendly_name ||
+												deleteVolumeModal.hosts?.hostname ||
+												"Unknown"}
+										</p>
+										{deleteVolumeModal.ref_count > 0 && (
+											<p className="text-xs text-secondary-600 dark:text-secondary-400">
+												In use by: {deleteVolumeModal.ref_count} container
+												{deleteVolumeModal.ref_count !== 1 ? "s" : ""}
+											</p>
+										)}
+									</div>
+									<p className="mt-3 text-red-600 dark:text-red-400 font-medium">
+										⚠️ This only removes the volume from PatchMon's inventory. It
+										does NOT delete the actual Docker volume from the host.
+									</p>
+								</div>
+							</div>
+						</div>
+						<div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse gap-3">
+							<button
+								type="button"
+								onClick={() =>
+									deleteVolumeMutation.mutate(deleteVolumeModal.id)
+								}
+								disabled={deleteVolumeMutation.isPending}
+								className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								{deleteVolumeMutation.isPending
+									? "Deleting..."
+									: "Delete from Inventory"}
+							</button>
+							<button
+								type="button"
+								onClick={() => setDeleteVolumeModal(null)}
+								disabled={deleteVolumeMutation.isPending}
+								className="mt-3 w-full inline-flex justify-center rounded-md border border-secondary-300 dark:border-secondary-600 shadow-sm px-4 py-2 bg-white dark:bg-secondary-700 text-base font-medium text-secondary-700 dark:text-secondary-200 hover:bg-secondary-50 dark:hover:bg-secondary-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:mt-0 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								Cancel
+							</button>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{/* Delete Network Modal */}
+			{deleteNetworkModal && (
+				<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+					<div className="bg-white dark:bg-secondary-800 rounded-lg p-6 max-w-md w-full mx-4">
+						<div className="flex items-start mb-4">
+							<div className="flex-shrink-0">
+								<AlertTriangle className="h-6 w-6 text-red-600" />
+							</div>
+							<div className="ml-3 flex-1">
+								<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
+									Delete Network
+								</h3>
+								<div className="mt-2 text-sm text-secondary-600 dark:text-secondary-300">
+									<p className="mb-2">
+										Are you sure you want to delete this network from the
+										inventory?
+									</p>
+									<div className="bg-secondary-100 dark:bg-secondary-700 p-3 rounded-md">
+										<p className="font-medium text-secondary-900 dark:text-white">
+											{deleteNetworkModal.name}
+										</p>
+										<p className="text-xs text-secondary-600 dark:text-secondary-400 mt-1">
+											Driver: {deleteNetworkModal.driver}
+										</p>
+										<p className="text-xs text-secondary-600 dark:text-secondary-400">
+											Scope: {deleteNetworkModal.scope}
+										</p>
+										<p className="text-xs text-secondary-600 dark:text-secondary-400">
+											Host:{" "}
+											{deleteNetworkModal.hosts?.friendly_name ||
+												deleteNetworkModal.hosts?.hostname ||
+												"Unknown"}
+										</p>
+										{deleteNetworkModal.container_count > 0 && (
+											<p className="text-xs text-secondary-600 dark:text-secondary-400">
+												Connected containers:{" "}
+												{deleteNetworkModal.container_count}
+											</p>
+										)}
+									</div>
+									<p className="mt-3 text-red-600 dark:text-red-400 font-medium">
+										⚠️ This only removes the network from PatchMon's inventory.
+										It does NOT delete the actual Docker network from the host.
+									</p>
+								</div>
+							</div>
+						</div>
+						<div className="mt-5 sm:mt-4 sm:flex sm:flex-row-reverse gap-3">
+							<button
+								type="button"
+								onClick={() =>
+									deleteNetworkMutation.mutate(deleteNetworkModal.id)
+								}
+								disabled={deleteNetworkMutation.isPending}
+								className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
+							>
+								{deleteNetworkMutation.isPending
+									? "Deleting..."
+									: "Delete from Inventory"}
+							</button>
+							<button
+								type="button"
+								onClick={() => setDeleteNetworkModal(null)}
+								disabled={deleteNetworkMutation.isPending}
 								className="mt-3 w-full inline-flex justify-center rounded-md border border-secondary-300 dark:border-secondary-600 shadow-sm px-4 py-2 bg-white dark:bg-secondary-700 text-base font-medium text-secondary-700 dark:text-secondary-200 hover:bg-secondary-50 dark:hover:bg-secondary-600 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:mt-0 sm:w-auto sm:text-sm disabled:opacity-50 disabled:cursor-not-allowed"
 							>
 								Cancel

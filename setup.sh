@@ -34,7 +34,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Global variables
-SCRIPT_VERSION="self-hosting-install.sh v1.3.0-selfhost-2025-10-19-1"
+SCRIPT_VERSION="self-hosting-install.sh v1.3.2-selfhost-2025-10-31-1"
 DEFAULT_GITHUB_REPO="https://github.com/PatchMon/PatchMon.git"
 FQDN=""
 CUSTOM_FQDN=""
@@ -2197,34 +2197,66 @@ select_installation_to_update() {
             version=$(grep '"version"' "/opt/$install/backend/package.json" | head -1 | sed 's/.*"version": "\([^"]*\)".*/\1/')
         fi
         
-        # Get service status - try multiple naming conventions
-        # Convention 1: Just the install name (e.g., patchmon.internal)
-        local service_name="$install"
-        # Convention 2: patchmon. prefix (e.g., patchmon.patchmon.internal)
-        local alt_service_name1="patchmon.$install"
-        # Convention 3: patchmon- prefix with underscores (e.g., patchmon-patchmon_internal)
-        local alt_service_name2="patchmon-$(echo "$install" | tr '.' '_')"
+        # Get service status - search for service files that reference this installation
+        local service_name=""
         local status="unknown"
         
-        # Try convention 1 first (most common)
-        if systemctl is-active --quiet "$service_name" 2>/dev/null; then
-            status="running"
-        elif systemctl is-enabled --quiet "$service_name" 2>/dev/null; then
-            status="stopped"
-        # Try convention 2
-        elif systemctl is-active --quiet "$alt_service_name1" 2>/dev/null; then
-            status="running"
-            service_name="$alt_service_name1"
-        elif systemctl is-enabled --quiet "$alt_service_name1" 2>/dev/null; then
-            status="stopped"
-            service_name="$alt_service_name1"
-        # Try convention 3
-        elif systemctl is-active --quiet "$alt_service_name2" 2>/dev/null; then
-            status="running"
-            service_name="$alt_service_name2"
-        elif systemctl is-enabled --quiet "$alt_service_name2" 2>/dev/null; then
-            status="stopped"
-            service_name="$alt_service_name2"
+        # Search systemd directory for service files that reference this installation
+        for service_file in /etc/systemd/system/*.service; do
+            if [ -f "$service_file" ]; then
+                # Check if this service file references our installation directory
+                if grep -q "/opt/$install" "$service_file"; then
+                    service_name=$(basename "$service_file" .service)
+                    
+                    # Check service status
+                    if systemctl is-active --quiet "$service_name" 2>/dev/null; then
+                        status="running"
+                        break
+                    elif systemctl is-enabled --quiet "$service_name" 2>/dev/null; then
+                        status="stopped"
+                        break
+                    fi
+                fi
+            fi
+        done
+        
+        # If not found by searching, try common naming conventions
+        if [ -z "$service_name" ] || [ "$status" == "unknown" ]; then
+            # Convention 1: Just the install name (e.g., patchmon.internal)
+            local try_service="$install"
+            # Convention 2: patchmon. prefix (e.g., patchmon.patchmon.internal)
+            local alt_service_name1="patchmon.$install"
+            # Convention 3: patchmon- prefix with underscores (e.g., patchmon-patchmon_internal)
+            local alt_service_name2="patchmon-$(echo "$install" | tr '.' '_')"
+            
+            # Try convention 1 first (most common)
+            if systemctl is-active --quiet "$try_service" 2>/dev/null; then
+                status="running"
+                service_name="$try_service"
+            elif systemctl is-enabled --quiet "$try_service" 2>/dev/null; then
+                status="stopped"
+                service_name="$try_service"
+            # Try convention 2
+            elif systemctl is-active --quiet "$alt_service_name1" 2>/dev/null; then
+                status="running"
+                service_name="$alt_service_name1"
+            elif systemctl is-enabled --quiet "$alt_service_name1" 2>/dev/null; then
+                status="stopped"
+                service_name="$alt_service_name1"
+            # Try convention 3
+            elif systemctl is-active --quiet "$alt_service_name2" 2>/dev/null; then
+                status="running"
+                service_name="$alt_service_name2"
+            elif systemctl is-enabled --quiet "$alt_service_name2" 2>/dev/null; then
+                status="stopped"
+                service_name="$alt_service_name2"
+            fi
+        fi
+        
+        # Fallback: if still no service found, use default naming convention
+        if [ -z "$service_name" ]; then
+            service_name="$install"
+            status="not_found"
         fi
         
         printf "%2d. %-30s (v%-10s - %s)\n" "$i" "$install" "$version" "$status"
@@ -3072,11 +3104,16 @@ update_installation() {
     
     # Clean up any untracked files that might conflict with incoming changes
     print_info "Cleaning up untracked files to prevent merge conflicts..."
-    git clean -fd
+    git clean -fd 2>/dev/null || true
     
     # Reset any local changes to ensure clean state
+    # Check if HEAD exists before trying to reset
     print_info "Resetting local changes to ensure clean state..."
-    git reset --hard HEAD
+    if git rev-parse --verify HEAD >/dev/null 2>&1; then
+        git reset --hard HEAD
+    else
+        print_warning "HEAD not found, skipping reset (fresh repository or detached state)"
+    fi
     
     # Fetch latest changes
     git fetch origin

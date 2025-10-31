@@ -2,6 +2,7 @@ const { Queue, Worker } = require("bullmq");
 const { redis, redisConnection } = require("./shared/redis");
 const { prisma } = require("./shared/prisma");
 const agentWs = require("../agentWs");
+const { v4: uuidv4 } = require("uuid");
 
 // Import automation classes
 const GitHubUpdateCheck = require("./githubUpdateCheck");
@@ -9,6 +10,7 @@ const SessionCleanup = require("./sessionCleanup");
 const OrphanedRepoCleanup = require("./orphanedRepoCleanup");
 const OrphanedPackageCleanup = require("./orphanedPackageCleanup");
 const DockerInventoryCleanup = require("./dockerInventoryCleanup");
+const DockerImageUpdateCheck = require("./dockerImageUpdateCheck");
 const MetricsReporting = require("./metricsReporting");
 
 // Queue names
@@ -18,6 +20,7 @@ const QUEUE_NAMES = {
 	ORPHANED_REPO_CLEANUP: "orphaned-repo-cleanup",
 	ORPHANED_PACKAGE_CLEANUP: "orphaned-package-cleanup",
 	DOCKER_INVENTORY_CLEANUP: "docker-inventory-cleanup",
+	DOCKER_IMAGE_UPDATE_CHECK: "docker-image-update-check",
 	METRICS_REPORTING: "metrics-reporting",
 	AGENT_COMMANDS: "agent-commands",
 };
@@ -97,6 +100,8 @@ class QueueManager {
 			new OrphanedPackageCleanup(this);
 		this.automations[QUEUE_NAMES.DOCKER_INVENTORY_CLEANUP] =
 			new DockerInventoryCleanup(this);
+		this.automations[QUEUE_NAMES.DOCKER_IMAGE_UPDATE_CHECK] =
+			new DockerImageUpdateCheck(this);
 		this.automations[QUEUE_NAMES.METRICS_REPORTING] = new MetricsReporting(
 			this,
 		);
@@ -167,6 +172,15 @@ class QueueManager {
 			workerOptions,
 		);
 
+		// Docker Image Update Check Worker
+		this.workers[QUEUE_NAMES.DOCKER_IMAGE_UPDATE_CHECK] = new Worker(
+			QUEUE_NAMES.DOCKER_IMAGE_UPDATE_CHECK,
+			this.automations[QUEUE_NAMES.DOCKER_IMAGE_UPDATE_CHECK].process.bind(
+				this.automations[QUEUE_NAMES.DOCKER_IMAGE_UPDATE_CHECK],
+			),
+			workerOptions,
+		);
+
 		// Metrics Reporting Worker
 		this.workers[QUEUE_NAMES.METRICS_REPORTING] = new Worker(
 			QUEUE_NAMES.METRICS_REPORTING,
@@ -183,28 +197,87 @@ class QueueManager {
 				const { api_id, type } = job.data;
 				console.log(`Processing agent command: ${type} for ${api_id}`);
 
-				// Send command via WebSocket based on type
-				if (type === "report_now") {
-					agentWs.pushReportNow(api_id);
-				} else if (type === "settings_update") {
-					// For settings update, we need additional data
-					const { update_interval } = job.data;
-					agentWs.pushSettingsUpdate(api_id, update_interval);
-				} else if (type === "update_agent") {
-					// Force agent to update by sending WebSocket command
-					const ws = agentWs.getConnectionByApiId(api_id);
-					if (ws && ws.readyState === 1) {
-						// WebSocket.OPEN
-						agentWs.pushUpdateAgent(api_id);
-						console.log(`✅ Update command sent to agent ${api_id}`);
-					} else {
-						console.error(`❌ Agent ${api_id} is not connected`);
-						throw new Error(
-							`Agent ${api_id} is not connected. Cannot send update command.`,
-						);
+				// Log job to job_history
+				let historyRecord = null;
+				try {
+					const host = await prisma.hosts.findUnique({
+						where: { api_id },
+						select: { id: true },
+					});
+
+					if (host) {
+						historyRecord = await prisma.job_history.create({
+							data: {
+								id: uuidv4(),
+								job_id: job.id,
+								queue_name: QUEUE_NAMES.AGENT_COMMANDS,
+								job_name: type,
+								host_id: host.id,
+								api_id: api_id,
+								status: "active",
+								attempt_number: job.attemptsMade + 1,
+								created_at: new Date(),
+								updated_at: new Date(),
+							},
+						});
+						console.log(`📝 Logged job to job_history: ${job.id} (${type})`);
 					}
-				} else {
-					console.error(`Unknown agent command type: ${type}`);
+				} catch (error) {
+					console.error("Failed to log job to job_history:", error);
+				}
+
+				try {
+					// Send command via WebSocket based on type
+					if (type === "report_now") {
+						agentWs.pushReportNow(api_id);
+					} else if (type === "settings_update") {
+						// For settings update, we need additional data
+						const { update_interval } = job.data;
+						agentWs.pushSettingsUpdate(api_id, update_interval);
+					} else if (type === "update_agent") {
+						// Force agent to update by sending WebSocket command
+						const ws = agentWs.getConnectionByApiId(api_id);
+						if (ws && ws.readyState === 1) {
+							// WebSocket.OPEN
+							agentWs.pushUpdateAgent(api_id);
+							console.log(`✅ Update command sent to agent ${api_id}`);
+						} else {
+							console.error(`❌ Agent ${api_id} is not connected`);
+							throw new Error(
+								`Agent ${api_id} is not connected. Cannot send update command.`,
+							);
+						}
+					} else {
+						console.error(`Unknown agent command type: ${type}`);
+					}
+
+					// Update job history to completed
+					if (historyRecord) {
+						await prisma.job_history.updateMany({
+							where: { job_id: job.id },
+							data: {
+								status: "completed",
+								completed_at: new Date(),
+								updated_at: new Date(),
+							},
+						});
+						console.log(`✅ Marked job as completed in job_history: ${job.id}`);
+					}
+				} catch (error) {
+					// Update job history to failed
+					if (historyRecord) {
+						await prisma.job_history.updateMany({
+							where: { job_id: job.id },
+							data: {
+								status: "failed",
+								error_message: error.message,
+								completed_at: new Date(),
+								updated_at: new Date(),
+							},
+						});
+						console.log(`❌ Marked job as failed in job_history: ${job.id}`);
+					}
+					throw error;
 				}
 			},
 			workerOptions,
@@ -234,6 +307,7 @@ class QueueManager {
 				console.log(`✅ Job '${job.id}' in queue '${queueName}' completed.`);
 			});
 		}
+
 		console.log("✅ Queue events initialized");
 	}
 
@@ -246,6 +320,7 @@ class QueueManager {
 		await this.automations[QUEUE_NAMES.ORPHANED_REPO_CLEANUP].schedule();
 		await this.automations[QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP].schedule();
 		await this.automations[QUEUE_NAMES.DOCKER_INVENTORY_CLEANUP].schedule();
+		await this.automations[QUEUE_NAMES.DOCKER_IMAGE_UPDATE_CHECK].schedule();
 		await this.automations[QUEUE_NAMES.METRICS_REPORTING].schedule();
 	}
 
@@ -273,6 +348,12 @@ class QueueManager {
 	async triggerDockerInventoryCleanup() {
 		return this.automations[
 			QUEUE_NAMES.DOCKER_INVENTORY_CLEANUP
+		].triggerManual();
+	}
+
+	async triggerDockerImageUpdateCheck() {
+		return this.automations[
+			QUEUE_NAMES.DOCKER_IMAGE_UPDATE_CHECK
 		].triggerManual();
 	}
 

@@ -84,21 +84,20 @@ function parse_expiration(expiration_string) {
  * Generate device fingerprint from request data
  */
 function generate_device_fingerprint(req) {
-	const components = [
-		req.get("user-agent") || "",
-		req.get("accept-language") || "",
-		req.get("accept-encoding") || "",
-		req.ip || "",
-	];
+	// Use the X-Device-ID header from frontend (unique per browser profile/localStorage)
+	const deviceId = req.get("x-device-id");
 
-	// Create a simple hash of device characteristics
-	const fingerprint = crypto
-		.createHash("sha256")
-		.update(components.join("|"))
-		.digest("hex")
-		.substring(0, 32); // Use first 32 chars for storage efficiency
+	if (deviceId) {
+		// Hash the device ID for consistent storage format
+		return crypto
+			.createHash("sha256")
+			.update(deviceId)
+			.digest("hex")
+			.substring(0, 32);
+	}
 
-	return fingerprint;
+	// No device ID - return null (user needs to provide device ID for remember-me)
+	return null;
 }
 
 /**

@@ -19,6 +19,30 @@ api.interceptors.request.use(
 		if (token) {
 			config.headers.Authorization = `Bearer ${token}`;
 		}
+
+		// Add device ID for TFA remember-me functionality
+		// This uniquely identifies the browser profile (normal vs incognito)
+		let deviceId = localStorage.getItem("device_id");
+		if (!deviceId) {
+			// Generate a unique device ID and store it
+			// Use crypto.randomUUID() if available, otherwise generate a UUID v4 manually
+			if (typeof crypto !== "undefined" && crypto.randomUUID) {
+				deviceId = crypto.randomUUID();
+			} else {
+				// Fallback: Generate UUID v4 manually
+				deviceId = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(
+					/[xy]/g,
+					(c) => {
+						const r = (Math.random() * 16) | 0;
+						const v = c === "x" ? r : (r & 0x3) | 0x8;
+						return v.toString(16);
+					},
+				);
+			}
+			localStorage.setItem("device_id", deviceId);
+		}
+		config.headers["X-Device-ID"] = deviceId;
+
 		return config;
 	},
 	(error) => {
@@ -96,6 +120,7 @@ export const adminHostsAPI = {
 	toggleAutoUpdate: (hostId, autoUpdate) =>
 		api.patch(`/hosts/${hostId}/auto-update`, { auto_update: autoUpdate }),
 	forceAgentUpdate: (hostId) => api.post(`/hosts/${hostId}/force-agent-update`),
+	fetchReport: (hostId) => api.post(`/hosts/${hostId}/fetch-report`),
 	updateFriendlyName: (hostId, friendlyName) =>
 		api.patch(`/hosts/${hostId}/friendly-name`, {
 			friendly_name: friendlyName,

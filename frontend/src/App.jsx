@@ -28,6 +28,8 @@ const DockerContainerDetail = lazy(
 );
 const DockerImageDetail = lazy(() => import("./pages/docker/ImageDetail"));
 const DockerHostDetail = lazy(() => import("./pages/docker/HostDetail"));
+const DockerVolumeDetail = lazy(() => import("./pages/docker/VolumeDetail"));
+const DockerNetworkDetail = lazy(() => import("./pages/docker/NetworkDetail"));
 const AlertChannels = lazy(() => import("./pages/settings/AlertChannels"));
 const Integrations = lazy(() => import("./pages/settings/Integrations"));
 const Notifications = lazy(() => import("./pages/settings/Notifications"));
@@ -190,6 +192,26 @@ function AppRoutes() {
 						<ProtectedRoute requirePermission="can_view_reports">
 							<Layout>
 								<DockerHostDetail />
+							</Layout>
+						</ProtectedRoute>
+					}
+				/>
+				<Route
+					path="/docker/volumes/:id"
+					element={
+						<ProtectedRoute requirePermission="can_view_reports">
+							<Layout>
+								<DockerVolumeDetail />
+							</Layout>
+						</ProtectedRoute>
+					}
+				/>
+				<Route
+					path="/docker/networks/:id"
+					element={
+						<ProtectedRoute requirePermission="can_view_reports">
+							<Layout>
+								<DockerNetworkDetail />
 							</Layout>
 						</ProtectedRoute>
 					}

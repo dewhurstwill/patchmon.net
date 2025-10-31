@@ -539,7 +539,7 @@ const Packages = () => {
 						<Package className="h-5 w-5 text-primary-600 mr-2" />
 						<div>
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Total Packages
+								Packages
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{totalPackagesCount}
@@ -553,7 +553,7 @@ const Packages = () => {
 						<Package className="h-5 w-5 text-blue-600 mr-2" />
 						<div>
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Total Installations
+								Installations
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{totalInstallationsCount}
@@ -562,47 +562,72 @@ const Packages = () => {
 					</div>
 				</div>
 
-				<div className="card p-4 cursor-pointer hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow duration-200">
+				<button
+					type="button"
+					onClick={() => {
+						setUpdateStatusFilter("needs-updates");
+						setCategoryFilter("all");
+						setHostFilter("all");
+						setSearchTerm("");
+					}}
+					className="card p-4 cursor-pointer hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow duration-200 text-left w-full"
+					title="Click to filter packages that need updates"
+				>
 					<div className="flex items-center">
 						<Package className="h-5 w-5 text-warning-600 mr-2" />
 						<div>
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Total Outdated Packages
+								Outdated Packages
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{outdatedPackagesCount}
 							</p>
 						</div>
 					</div>
-				</div>
+				</button>
 
-				<div className="card p-4 cursor-pointer hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow duration-200">
-					<div className="flex items-center">
-						<Server className="h-5 w-5 text-warning-600 mr-2" />
-						<div>
-							<p className="text-sm text-secondary-500 dark:text-white">
-								Hosts Pending Updates
-							</p>
-							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
-								{uniquePackageHostsCount}
-							</p>
-						</div>
-					</div>
-				</div>
-
-				<div className="card p-4 cursor-pointer hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow duration-200">
+				<button
+					type="button"
+					onClick={() => {
+						setUpdateStatusFilter("security-updates");
+						setCategoryFilter("all");
+						setHostFilter("all");
+						setSearchTerm("");
+					}}
+					className="card p-4 cursor-pointer hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow duration-200 text-left w-full"
+					title="Click to filter packages with security updates"
+				>
 					<div className="flex items-center">
 						<Shield className="h-5 w-5 text-danger-600 mr-2" />
 						<div>
 							<p className="text-sm text-secondary-500 dark:text-white">
-								Security Updates Across All Hosts
+								Security Packages
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{securityUpdatesCount}
 							</p>
 						</div>
 					</div>
-				</div>
+				</button>
+
+				<button
+					type="button"
+					onClick={() => navigate("/hosts?filter=needsUpdates")}
+					className="card p-4 cursor-pointer hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow duration-200 text-left w-full"
+					title="Click to view hosts that need updates"
+				>
+					<div className="flex items-center">
+						<Server className="h-5 w-5 text-warning-600 mr-2" />
+						<div>
+							<p className="text-sm text-secondary-500 dark:text-white">
+								Outdated Hosts
+							</p>
+							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
+								{uniquePackageHostsCount}
+							</p>
+						</div>
+					</div>
+				</button>
 			</div>
 
 			{/* Packages List */}

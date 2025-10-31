@@ -24,7 +24,15 @@ router.get("/", authenticateToken, async (_req, res) => {
 			},
 		});
 
-		res.json(hostGroups);
+		// Transform the count field to match frontend expectations
+		const transformedGroups = hostGroups.map((group) => ({
+			...group,
+			_count: {
+				hosts: group._count.host_group_memberships,
+			},
+		}));
+
+		res.json(transformedGroups);
 	} catch (error) {
 		console.error("Error fetching host groups:", error);
 		res.status(500).json({ error: "Failed to fetch host groups" });
