@@ -573,6 +573,7 @@ router.post("/collect", async (req, res) => {
 							image_id: containerData.image_id || "unknown",
 							source: containerData.image_source || "docker-hub",
 							created_at: parseDate(containerData.created_at),
+							last_checked: now,
 							updated_at: now,
 						},
 					});
@@ -822,6 +823,7 @@ router.post("/../integrations/docker", async (req, res) => {
 							image_id: containerData.image_id || "unknown",
 							source: containerData.image_source || "docker-hub",
 							created_at: parseDate(containerData.created_at),
+							last_checked: now,
 							updated_at: now,
 						},
 					});
@@ -876,6 +878,12 @@ router.post("/../integrations/docker", async (req, res) => {
 		if (images && Array.isArray(images)) {
 			console.log(`[Docker Integration] Processing ${images.length} images`);
 			for (const imageData of images) {
+				// If image has no digest, it's likely locally built - override source to "local"
+				const imageSource =
+					!imageData.digest || imageData.digest.trim() === ""
+						? "local"
+						: imageData.source || "docker-hub";
+
 				await prisma.docker_images.upsert({
 					where: {
 						repository_tag_image_id: {
@@ -889,6 +897,7 @@ router.post("/../integrations/docker", async (req, res) => {
 							? BigInt(imageData.size_bytes)
 							: null,
 						digest: imageData.digest || null,
+						source: imageSource, // Update source in case it changed
 						last_checked: now,
 						updated_at: now,
 					},
@@ -901,8 +910,9 @@ router.post("/../integrations/docker", async (req, res) => {
 						size_bytes: imageData.size_bytes
 							? BigInt(imageData.size_bytes)
 							: null,
-						source: imageData.source || "docker-hub",
+						source: imageSource,
 						created_at: parseDate(imageData.created_at),
+						last_checked: now,
 						updated_at: now,
 					},
 				});
@@ -1062,6 +1072,172 @@ router.delete("/images/:id", authenticateToken, async (req, res) => {
 	}
 });
 
+// GET /api/v1/docker/volumes - Get all volumes with filters
+router.get("/volumes", authenticateToken, async (req, res) => {
+	try {
+		const { driver, search, page = 1, limit = 50 } = req.query;
+
+		const where = {};
+		if (driver) where.driver = driver;
+		if (search) {
+			where.OR = [{ name: { contains: search, mode: "insensitive" } }];
+		}
+
+		const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+		const take = parseInt(limit, 10);
+
+		const [volumes, total] = await Promise.all([
+			prisma.docker_volumes.findMany({
+				where,
+				include: {
+					hosts: {
+						select: {
+							id: true,
+							friendly_name: true,
+							hostname: true,
+							ip: true,
+						},
+					},
+				},
+				orderBy: { updated_at: "desc" },
+				skip,
+				take,
+			}),
+			prisma.docker_volumes.count({ where }),
+		]);
+
+		res.json(
+			convertBigIntToString({
+				volumes,
+				pagination: {
+					page: parseInt(page, 10),
+					limit: parseInt(limit, 10),
+					total,
+					totalPages: Math.ceil(total / parseInt(limit, 10)),
+				},
+			}),
+		);
+	} catch (error) {
+		console.error("Error fetching volumes:", error);
+		res.status(500).json({ error: "Failed to fetch volumes" });
+	}
+});
+
+// GET /api/v1/docker/volumes/:id - Get volume detail
+router.get("/volumes/:id", authenticateToken, async (req, res) => {
+	try {
+		const { id } = req.params;
+
+		const volume = await prisma.docker_volumes.findUnique({
+			where: { id },
+			include: {
+				hosts: {
+					select: {
+						id: true,
+						friendly_name: true,
+						hostname: true,
+						ip: true,
+						os_type: true,
+						os_version: true,
+					},
+				},
+			},
+		});
+
+		if (!volume) {
+			return res.status(404).json({ error: "Volume not found" });
+		}
+
+		res.json(convertBigIntToString({ volume }));
+	} catch (error) {
+		console.error("Error fetching volume detail:", error);
+		res.status(500).json({ error: "Failed to fetch volume detail" });
+	}
+});
+
+// GET /api/v1/docker/networks - Get all networks with filters
+router.get("/networks", authenticateToken, async (req, res) => {
+	try {
+		const { driver, search, page = 1, limit = 50 } = req.query;
+
+		const where = {};
+		if (driver) where.driver = driver;
+		if (search) {
+			where.OR = [{ name: { contains: search, mode: "insensitive" } }];
+		}
+
+		const skip = (parseInt(page, 10) - 1) * parseInt(limit, 10);
+		const take = parseInt(limit, 10);
+
+		const [networks, total] = await Promise.all([
+			prisma.docker_networks.findMany({
+				where,
+				include: {
+					hosts: {
+						select: {
+							id: true,
+							friendly_name: true,
+							hostname: true,
+							ip: true,
+						},
+					},
+				},
+				orderBy: { updated_at: "desc" },
+				skip,
+				take,
+			}),
+			prisma.docker_networks.count({ where }),
+		]);
+
+		res.json(
+			convertBigIntToString({
+				networks,
+				pagination: {
+					page: parseInt(page, 10),
+					limit: parseInt(limit, 10),
+					total,
+					totalPages: Math.ceil(total / parseInt(limit, 10)),
+				},
+			}),
+		);
+	} catch (error) {
+		console.error("Error fetching networks:", error);
+		res.status(500).json({ error: "Failed to fetch networks" });
+	}
+});
+
+// GET /api/v1/docker/networks/:id - Get network detail
+router.get("/networks/:id", authenticateToken, async (req, res) => {
+	try {
+		const { id } = req.params;
+
+		const network = await prisma.docker_networks.findUnique({
+			where: { id },
+			include: {
+				hosts: {
+					select: {
+						id: true,
+						friendly_name: true,
+						hostname: true,
+						ip: true,
+						os_type: true,
+						os_version: true,
+					},
+				},
+			},
+		});
+
+		if (!network) {
+			return res.status(404).json({ error: "Network not found" });
+		}
+
+		res.json(convertBigIntToString({ network }));
+	} catch (error) {
+		console.error("Error fetching network detail:", error);
+		res.status(500).json({ error: "Failed to fetch network detail" });
+	}
+});
+
 // GET /api/v1/docker/agent - Serve the Docker agent installation script
 router.get("/agent", async (_req, res) => {
 	try {
@@ -1090,6 +1266,68 @@ router.get("/agent", async (_req, res) => {
 	} catch (error) {
 		console.error("Error serving Docker agent:", error);
 		res.status(500).json({ error: "Failed to serve Docker agent script" });
+	}
+});
+
+// DELETE /api/v1/docker/volumes/:id - Delete a volume
+router.delete("/volumes/:id", authenticateToken, async (req, res) => {
+	try {
+		const { id } = req.params;
+
+		// Check if volume exists
+		const volume = await prisma.docker_volumes.findUnique({
+			where: { id },
+		});
+
+		if (!volume) {
+			return res.status(404).json({ error: "Volume not found" });
+		}
+
+		// Delete the volume
+		await prisma.docker_volumes.delete({
+			where: { id },
+		});
+
+		console.log(`🗑️  Deleted volume: ${volume.name} (${id})`);
+
+		res.json({
+			success: true,
+			message: `Volume ${volume.name} deleted successfully`,
+		});
+	} catch (error) {
+		console.error("Error deleting volume:", error);
+		res.status(500).json({ error: "Failed to delete volume" });
+	}
+});
+
+// DELETE /api/v1/docker/networks/:id - Delete a network
+router.delete("/networks/:id", authenticateToken, async (req, res) => {
+	try {
+		const { id } = req.params;
+
+		// Check if network exists
+		const network = await prisma.docker_networks.findUnique({
+			where: { id },
+		});
+
+		if (!network) {
+			return res.status(404).json({ error: "Network not found" });
+		}
+
+		// Delete the network
+		await prisma.docker_networks.delete({
+			where: { id },
+		});
+
+		console.log(`🗑️  Deleted network: ${network.name} (${id})`);
+
+		res.json({
+			success: true,
+			message: `Network ${network.name} deleted successfully`,
+		});
+	} catch (error) {
+		console.error("Error deleting network:", error);
+		res.status(500).json({ error: "Failed to delete network" });
 	}
 });
 

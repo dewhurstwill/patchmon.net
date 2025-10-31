@@ -1,17 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
 import { useEffect } from "react";
-import { isAuthReady } from "../constants/authPhases";
-import { useAuth } from "../contexts/AuthContext";
-import { settingsAPI } from "../utils/api";
+import { useSettings } from "../contexts/SettingsContext";
 
 const LogoProvider = ({ children }) => {
-	const { authPhase, isAuthenticated } = useAuth();
-
-	const { data: settings } = useQuery({
-		queryKey: ["settings"],
-		queryFn: () => settingsAPI.get().then((res) => res.data),
-		enabled: isAuthReady(authPhase, isAuthenticated()),
-	});
+	const { settings } = useSettings();
 
 	useEffect(() => {
 		// Use custom favicon or fallback to default

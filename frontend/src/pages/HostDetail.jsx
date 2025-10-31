@@ -12,6 +12,7 @@ import {
 	Copy,
 	Cpu,
 	Database,
+	Download,
 	Eye,
 	EyeOff,
 	HardDrive,
@@ -53,6 +54,8 @@ const HostDetail = () => {
 	const [historyLimit] = useState(10);
 	const [notes, setNotes] = useState("");
 	const [notesMessage, setNotesMessage] = useState({ text: "", type: "" });
+	const [updateMessage, setUpdateMessage] = useState({ text: "", jobId: "" });
+	const [reportMessage, setReportMessage] = useState({ text: "", jobId: "" });
 
 	const {
 		data: host,
@@ -191,9 +194,50 @@ const HostDetail = () => {
 	const forceAgentUpdateMutation = useMutation({
 		mutationFn: () =>
 			adminHostsAPI.forceAgentUpdate(hostId).then((res) => res.data),
-		onSuccess: () => {
+		onSuccess: (data) => {
 			queryClient.invalidateQueries(["host", hostId]);
 			queryClient.invalidateQueries(["hosts"]);
+			// Show success message with job ID
+			if (data?.jobId) {
+				setUpdateMessage({
+					text: "Update queued successfully",
+					jobId: data.jobId,
+				});
+				// Clear message after 5 seconds
+				setTimeout(() => setUpdateMessage({ text: "", jobId: "" }), 5000);
+			}
+		},
+		onError: (error) => {
+			setUpdateMessage({
+				text: error.response?.data?.error || "Failed to queue update",
+				jobId: "",
+			});
+			setTimeout(() => setUpdateMessage({ text: "", jobId: "" }), 5000);
+		},
+	});
+
+	// Fetch report mutation
+	const fetchReportMutation = useMutation({
+		mutationFn: () => adminHostsAPI.fetchReport(hostId).then((res) => res.data),
+		onSuccess: (data) => {
+			queryClient.invalidateQueries(["host", hostId]);
+			queryClient.invalidateQueries(["hosts"]);
+			// Show success message with job ID
+			if (data?.jobId) {
+				setReportMessage({
+					text: "Report fetch queued successfully",
+					jobId: data.jobId,
+				});
+				// Clear message after 5 seconds
+				setTimeout(() => setReportMessage({ text: "", jobId: "" }), 5000);
+			}
+		},
+		onError: (error) => {
+			setReportMessage({
+				text: error.response?.data?.error || "Failed to fetch report",
+				jobId: "",
+			});
+			setTimeout(() => setReportMessage({ text: "", jobId: "" }), 5000);
 		},
 	});
 
@@ -409,20 +453,53 @@ const HostDetail = () => {
 					</div>
 				</div>
 				<div className="flex items-center gap-2">
+					<div>
+						<button
+							type="button"
+							onClick={() => fetchReportMutation.mutate()}
+							disabled={fetchReportMutation.isPending || !wsStatus?.connected}
+							className="btn-outline flex items-center gap-2 text-sm"
+							title={
+								!wsStatus?.connected
+									? "Agent is not connected"
+									: "Fetch package data from agent"
+							}
+						>
+							<Download
+								className={`h-4 w-4 ${
+									fetchReportMutation.isPending ? "animate-spin" : ""
+								}`}
+							/>
+							Fetch Report
+						</button>
+						{reportMessage.text && (
+							<p className="text-xs mt-1.5 text-secondary-600 dark:text-secondary-400">
+								{reportMessage.text}
+								{reportMessage.jobId && (
+									<span className="ml-1 font-mono text-secondary-500">
+										(Job #{reportMessage.jobId})
+									</span>
+								)}
+							</p>
+						)}
+					</div>
 					<button
 						type="button"
 						onClick={() => setShowCredentialsModal(true)}
-						className="btn-outline flex items-center gap-2 text-sm"
+						className={`btn-outline flex items-center text-sm ${
+							host?.machine_id ? "justify-center p-2" : "gap-2"
+						}`}
+						title="View credentials"
 					>
 						<Key className="h-4 w-4" />
-						Deploy Agent
+						{!host?.machine_id && <span>Deploy Agent</span>}
 					</button>
 					<button
 						type="button"
 						onClick={() => refetch()}
 						disabled={isFetching}
 						className="btn-outline flex items-center justify-center p-2 text-sm"
-						title="Refresh host data"
+						title="Refresh dashboard"
 					>
 						<RefreshCw
 							className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`}
@@ -716,12 +793,20 @@ const HostDetail = () => {
 
 									<div>
 										<p className="text-xs text-secondary-500 dark:text-secondary-300 mb-1.5">
-											Force Update
+											Force Agent Version Upgrade
 										</p>
 										<button
 											type="button"
 											onClick={() => forceAgentUpdateMutation.mutate()}
-											disabled={forceAgentUpdateMutation.isPending}
+											disabled={
+												forceAgentUpdateMutation.isPending ||
+												!wsStatus?.connected
+											}
+											title={
+												!wsStatus?.connected
+													? "Agent is not connected"
+													: "Force agent to update now"
+											}
 											className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-md hover:bg-primary-100 dark:hover:bg-primary-900/40 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
 										>
 											<RefreshCw
@@ -733,8 +818,20 @@ const HostDetail = () => {
 											/>
 											{forceAgentUpdateMutation.isPending
 												? "Updating..."
-												: "Update Now"}
+												: wsStatus?.connected
+													? "Update Now"
+													: "Offline"}
 										</button>
+										{updateMessage.text && (
+											<p className="text-xs mt-1.5 text-secondary-600 dark:text-secondary-400">
+												{updateMessage.text}
+												{updateMessage.jobId && (
+													<span className="ml-1 font-mono text-secondary-500">
+														(Job #{updateMessage.jobId})
+													</span>
+												)}
+											</p>
+										)}
 									</div>
 								</div>
 							</div>

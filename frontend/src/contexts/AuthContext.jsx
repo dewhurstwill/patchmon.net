@@ -91,10 +91,29 @@ export const AuthProvider = ({ children }) => {
 
 	const login = async (username, password) => {
 		try {
+			// Get or generate device ID for TFA remember-me
+			let deviceId = localStorage.getItem("device_id");
+			if (!deviceId) {
+				if (typeof crypto !== "undefined" && crypto.randomUUID) {
+					deviceId = crypto.randomUUID();
+				} else {
+					deviceId = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx".replace(
+						/[xy]/g,
+						(c) => {
+							const r = (Math.random() * 16) | 0;
+							const v = c === "x" ? r : (r & 0x3) | 0x8;
+							return v.toString(16);
+						},
+					);
+				}
+				localStorage.setItem("device_id", deviceId);
+			}
+
 			const response = await fetch("/api/v1/auth/login", {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
+					"X-Device-ID": deviceId,
 				},
 				body: JSON.stringify({ username, password }),
 			});

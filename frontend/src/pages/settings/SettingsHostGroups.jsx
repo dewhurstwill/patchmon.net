@@ -215,8 +215,8 @@ const SettingsHostGroups = () => {
 													title={`View hosts in ${group.name}`}
 												>
 													<Server className="h-4 w-4 mr-2" />
-													{group._count.hosts} host
-													{group._count.hosts !== 1 ? "s" : ""}
+													{group._count?.hosts || 0} host
+													{group._count?.hosts !== 1 ? "s" : ""}
 												</button>
 											</td>
 											<td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
@@ -539,9 +539,18 @@ const EditHostGroupModal = ({ group, onClose, onSubmit, isLoading }) => {
 
 // Delete Confirmation Modal
 const DeleteHostGroupModal = ({ group, onClose, onConfirm, isLoading }) => {
+	// Fetch hosts for this group
+	const { data: hostsData } = useQuery({
+		queryKey: ["hostGroupHosts", group?.id],
+		queryFn: () => hostGroupsAPI.getHosts(group.id).then((res) => res.data),
+		enabled: !!group && group._count?.hosts > 0,
+	});
+
+	const hosts = hostsData || [];
+
 	return (
 		<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-			<div className="bg-white dark:bg-secondary-800 rounded-lg p-6 w-full max-w-md">
+			<div className="bg-white dark:bg-secondary-800 rounded-lg p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
 				<div className="flex items-center gap-3 mb-4">
 					<div className="w-10 h-10 bg-danger-100 rounded-full flex items-center justify-center">
 						<AlertTriangle className="h-5 w-5 text-danger-600" />
@@ -561,14 +570,32 @@ const DeleteHostGroupModal = ({ group, onClose, onConfirm, isLoading }) => {
 						Are you sure you want to delete the host group{" "}
 						<span className="font-semibold">"{group.name}"</span>?
 					</p>
-					{group._count.hosts > 0 && (
+					{group._count?.hosts > 0 && (
 						<div className="mt-3 p-3 bg-blue-50 border border-blue-200 rounded-md">
-							<p className="text-sm text-blue-800">
-								<strong>Note:</strong> This group contains {group._count.hosts}{" "}
+							<p className="text-sm text-blue-800 mb-2">
+								<strong>Note:</strong> This group contains {group._count?.hosts}{" "}
 								host
-								{group._count.hosts !== 1 ? "s" : ""}. These hosts will be moved
-								to "No group" after deletion.
+								{group._count?.hosts !== 1 ? "s" : ""}. These hosts will be
+								moved to "No group" after deletion.
 							</p>
+							{hosts.length > 0 && (
+								<div className="mt-2">
+									<p className="text-xs font-medium text-blue-900 mb-1">
+										Hosts in this group:
+									</p>
+									<div className="max-h-32 overflow-y-auto bg-blue-100 rounded p-2">
+										{hosts.map((host) => (
+											<div
+												key={host.id}
+												className="text-xs text-blue-900 flex items-center gap-1"
+											>
+												<Server className="h-3 w-3" />
+												{host.friendly_name || host.hostname}
+											</div>
+										))}
+									</div>
+								</div>
+							)}
 						</div>
 					)}
 				</div>

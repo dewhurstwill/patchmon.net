@@ -1,4 +1,6 @@
+import { useQuery } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useState } from "react";
+import { userPreferencesAPI } from "../utils/api";
 
 const ColorThemeContext = createContext();
 
@@ -121,54 +123,40 @@ export const THEME_PRESETS = {
 };
 
 export const ColorThemeProvider = ({ children }) => {
-	const [colorTheme, setColorTheme] = useState("default");
+	const [colorTheme, setColorTheme] = useState(() => {
+		// Initialize from localStorage for immediate render
+		return localStorage.getItem("colorTheme") || "cyber_blue";
+	});
 	const [isLoading, setIsLoading] = useState(true);
 
-	// Fetch theme from settings on mount
+	// Fetch user preferences from backend
+	const { data: userPreferences } = useQuery({
+		queryKey: ["userPreferences"],
+		queryFn: () => userPreferencesAPI.get().then((res) => res.data),
+		retry: 1,
+		staleTime: 5 * 60 * 1000, // 5 minutes
+	});
+
+	// Update theme when preferences are loaded
 	useEffect(() => {
-		const fetchTheme = async () => {
-			try {
-				// Check localStorage first for unauthenticated pages (login)
-				const cachedTheme = localStorage.getItem("colorTheme");
-				if (cachedTheme) {
-					setColorTheme(cachedTheme);
-				}
+		if (userPreferences?.color_theme) {
+			setColorTheme(userPreferences.color_theme);
+			localStorage.setItem("colorTheme", userPreferences.color_theme);
+		}
+		setIsLoading(false);
+	}, [userPreferences]);
 
-				// Try to fetch from API (will fail on login page, that's ok)
-				try {
-					const token = localStorage.getItem("token");
-					if (token) {
-						const response = await fetch("/api/v1/settings", {
-							headers: {
-								Authorization: `Bearer ${token}`,
-							},
-						});
-
-						if (response.ok) {
-							const data = await response.json();
-							if (data.color_theme) {
-								setColorTheme(data.color_theme);
-								localStorage.setItem("colorTheme", data.color_theme);
-							}
-						}
-					}
-				} catch (_apiError) {
-					// Silent fail - use cached or default theme
-					console.log("Could not fetch theme from API, using cached/default");
-				}
-			} catch (error) {
-				console.error("Error loading color theme:", error);
-			} finally {
-				setIsLoading(false);
-			}
-		};
-
-		fetchTheme();
-	}, []);
-
-	const updateColorTheme = (theme) => {
+	const updateColorTheme = async (theme) => {
 		setColorTheme(theme);
 		localStorage.setItem("colorTheme", theme);
+
+		// Save to backend
+		try {
+			await userPreferencesAPI.update({ color_theme: theme });
+		} catch (error) {
+			console.error("Failed to save color theme preference:", error);
+			// Theme is already set locally, so user still sees the change
+		}
 	};
 
 	const value = {

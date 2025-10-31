@@ -17,6 +17,7 @@ const {
 	refresh_access_token,
 	revoke_session,
 	revoke_all_user_sessions,
+	generate_device_fingerprint,
 } = require("../utils/session_manager");
 
 const router = express.Router();
@@ -788,11 +789,39 @@ router.post(
 
 			// Check if TFA is enabled
 			if (user.tfa_enabled) {
-				return res.status(200).json({
-					message: "TFA verification required",
-					requiresTfa: true,
-					username: user.username,
-				});
+				// Get device fingerprint from X-Device-ID header
+				const device_fingerprint = generate_device_fingerprint(req);
+
+				// Check if this device has a valid TFA bypass
+				if (device_fingerprint) {
+					const remembered_session = await prisma.user_sessions.findFirst({
+						where: {
+							user_id: user.id,
+							device_fingerprint: device_fingerprint,
+							tfa_remember_me: true,
+							tfa_bypass_until: { gt: new Date() }, // Bypass still valid
+						},
+					});
+
+					if (remembered_session) {
+						// Device is remembered and bypass is still valid - skip TFA
+						// Continue with login below
+					} else {
+						// No valid bypass for this device - require TFA
+						return res.status(200).json({
+							message: "TFA verification required",
+							requiresTfa: true,
+							username: user.username,
+						});
+					}
+				} else {
+					// No device ID provided - require TFA
+					return res.status(200).json({
+						message: "TFA verification required",
+						requiresTfa: true,
+						username: user.username,
+					});
+				}
 			}
 
 			// Update last login
@@ -807,7 +836,13 @@ router.post(
 			// Create session with access and refresh tokens
 			const ip_address = req.ip || req.connection.remoteAddress;
 			const user_agent = req.get("user-agent");
-			const session = await create_session(user.id, ip_address, user_agent);
+			const session = await create_session(
+				user.id,
+				ip_address,
+				user_agent,
+				false,
+				req,
+			);
 
 			res.json({
 				message: "Login successful",
@@ -841,8 +876,10 @@ router.post(
 		body("username").notEmpty().withMessage("Username is required"),
 		body("token")
 			.isLength({ min: 6, max: 6 })
-			.withMessage("Token must be 6 digits"),
-		body("token").isNumeric().withMessage("Token must contain only numbers"),
+			.withMessage("Token must be 6 characters"),
+		body("token")
+			.matches(/^[A-Z0-9]{6}$/)
+			.withMessage("Token must be 6 alphanumeric characters"),
 		body("remember_me")
 			.optional()
 			.isBoolean()

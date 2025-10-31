@@ -407,7 +407,12 @@ const Login = () => {
 		setTfaData({
 			...tfaData,
 			[name]:
-				type === "checkbox" ? checked : value.replace(/\D/g, "").slice(0, 6),
+				type === "checkbox"
+					? checked
+					: value
+							.toUpperCase()
+							.replace(/[^A-Z0-9]/g, "")
+							.slice(0, 6),
 		});
 		// Clear error when user starts typing
 		if (error) {
@@ -872,7 +877,8 @@ const Login = () => {
 									Two-Factor Authentication
 								</h3>
 								<p className="mt-2 text-sm text-secondary-600 dark:text-secondary-400">
-									Enter the 6-digit code from your authenticator app
+									Enter the code from your authenticator app, or use a backup
+									code
 								</p>
 							</div>
 
@@ -891,11 +897,15 @@ const Login = () => {
 										required
 										value={tfaData.token}
 										onChange={handleTfaInputChange}
-										className="appearance-none rounded-md relative block w-full px-3 py-2 border border-secondary-300 placeholder-secondary-500 text-secondary-900 focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm text-center text-lg font-mono tracking-widest"
-										placeholder="000000"
+										className="appearance-none rounded-md relative block w-full px-3 py-2 border border-secondary-300 placeholder-secondary-500 text-secondary-900 focus:outline-none focus:ring-primary-500 focus:border-primary-500 focus:z-10 sm:text-sm text-center text-lg font-mono tracking-widest uppercase"
+										placeholder="Enter code"
 										maxLength="6"
+										pattern="[A-Z0-9]{6}"
 									/>
 								</div>
+								<p className="mt-1 text-xs text-secondary-500 dark:text-secondary-400">
+									Enter a 6-digit TOTP code or a 6-character backup code
+								</p>
 							</div>
 
 							<div className="flex items-center">
@@ -954,12 +964,6 @@ const Login = () => {
 									/>
 									Back to Login
 								</button>
-							</div>
-
-							<div className="text-center">
-								<p className="text-sm text-secondary-600 dark:text-secondary-400">
-									Don't have access to your authenticator? Use a backup code.
-								</p>
 							</div>
 						</form>
 					)}

@@ -1,14 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-	AlertCircle,
-	Image,
-	Palette,
-	RotateCcw,
-	Upload,
-	X,
-} from "lucide-react";
+import { AlertCircle, Image, RotateCcw, Upload, X } from "lucide-react";
 import { useState } from "react";
-import { THEME_PRESETS, useColorTheme } from "../../contexts/ColorThemeContext";
 import { settingsAPI } from "../../utils/api";
 
 const BrandingTab = () => {
@@ -20,7 +12,6 @@ const BrandingTab = () => {
 	});
 	const [showLogoUploadModal, setShowLogoUploadModal] = useState(false);
 	const [selectedLogoType, setSelectedLogoType] = useState("dark");
-	const { colorTheme, setColorTheme } = useColorTheme();
 
 	const queryClient = useQueryClient();
 
@@ -84,22 +75,6 @@ const BrandingTab = () => {
 		},
 	});
 
-	// Theme update mutation
-	const updateThemeMutation = useMutation({
-		mutationFn: (theme) => settingsAPI.update({ colorTheme: theme }),
-		onSuccess: (_data, theme) => {
-			queryClient.invalidateQueries(["settings"]);
-			setColorTheme(theme);
-		},
-		onError: (error) => {
-			console.error("Update theme error:", error);
-		},
-	});
-
-	const handleThemeChange = (theme) => {
-		updateThemeMutation.mutate(theme);
-	};
-
 	if (isLoading) {
 		return (
 			<div className="flex items-center justify-center h-64">
@@ -137,91 +112,9 @@ const BrandingTab = () => {
 					</h2>
 				</div>
 				<p className="text-sm text-secondary-500 dark:text-secondary-300 mb-6">
-					Customize your PatchMon installation with custom logos, favicon, and
-					color themes. These will be displayed throughout the application.
+					Customize your PatchMon installation with custom logos and favicon.
+					These will be displayed throughout the application.
 				</p>
-			</div>
-
-			{/* Color Theme Selector */}
-			<div className="bg-white dark:bg-secondary-800 rounded-lg p-6 border border-secondary-200 dark:border-secondary-600">
-				<div className="flex items-center mb-4">
-					<Palette className="h-5 w-5 text-primary-600 mr-2" />
-					<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
-						Color Theme
-					</h3>
-				</div>
-				<p className="text-sm text-secondary-600 dark:text-secondary-400 mb-6">
-					Choose a color theme that will be applied to the login page and
-					background areas throughout the app.
-				</p>
-
-				<div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-					{Object.entries(THEME_PRESETS).map(([themeKey, theme]) => {
-						const isSelected = colorTheme === themeKey;
-						const gradientColors = theme.login.xColors;
-
-						return (
-							<button
-								key={themeKey}
-								type="button"
-								onClick={() => handleThemeChange(themeKey)}
-								disabled={updateThemeMutation.isPending}
-								className={`relative p-4 rounded-lg border-2 transition-all ${
-									isSelected
-										? "border-primary-500 ring-2 ring-primary-200 dark:ring-primary-800"
-										: "border-secondary-200 dark:border-secondary-600 hover:border-primary-300"
-								} ${updateThemeMutation.isPending ? "opacity-50 cursor-not-allowed" : "cursor-pointer"}`}
-							>
-								{/* Theme Preview */}
-								<div
-									className="h-20 rounded-md mb-3 overflow-hidden"
-									style={{
-										background: `linear-gradient(135deg, ${gradientColors.join(", ")})`,
-									}}
-								/>
-
-								{/* Theme Name */}
-								<div className="text-sm font-medium text-secondary-900 dark:text-white mb-1">
-									{theme.name}
-								</div>
-
-								{/* Selected Indicator */}
-								{isSelected && (
-									<div className="absolute top-2 right-2 bg-primary-500 text-white rounded-full p-1">
-										<svg
-											className="w-4 h-4"
-											fill="currentColor"
-											viewBox="0 0 20 20"
-											aria-label="Selected theme"
-										>
-											<title>Selected</title>
-											<path
-												fillRule="evenodd"
-												d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
-												clipRule="evenodd"
-											/>
-										</svg>
-									</div>
-								)}
-							</button>
-						);
-					})}
-				</div>
-
-				{updateThemeMutation.isPending && (
-					<div className="mt-4 flex items-center gap-2 text-sm text-primary-600 dark:text-primary-400">
-						<div className="animate-spin rounded-full h-4 w-4 border-b-2 border-current"></div>
-						Updating theme...
-					</div>
-				)}
-
-				{updateThemeMutation.isError && (
-					<div className="mt-4 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-md p-3">
-						<p className="text-sm text-red-800 dark:text-red-200">
-							Failed to update theme: {updateThemeMutation.error?.message}
-						</p>
-					</div>
-				)}
 			</div>
 
 			{/* Logo Section Header */}

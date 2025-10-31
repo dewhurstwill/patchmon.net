@@ -13,6 +13,8 @@ router.post("/docker", async (req, res) => {
 		const {
 			containers,
 			images,
+			volumes,
+			networks,
 			updates,
 			daemon_info: _daemon_info,
 			hostname,
@@ -49,6 +51,8 @@ router.post("/docker", async (req, res) => {
 
 		let containersProcessed = 0;
 		let imagesProcessed = 0;
+		let volumesProcessed = 0;
+		let networksProcessed = 0;
 		let updatesProcessed = 0;
 
 		// Process containers
@@ -169,6 +173,114 @@ router.post("/docker", async (req, res) => {
 			}
 		}
 
+		// Process volumes
+		if (volumes && Array.isArray(volumes)) {
+			console.log(`[Docker Integration] Processing ${volumes.length} volumes`);
+			for (const volumeData of volumes) {
+				await prisma.docker_volumes.upsert({
+					where: {
+						host_id_volume_id: {
+							host_id: host.id,
+							volume_id: volumeData.volume_id,
+						},
+					},
+					update: {
+						name: volumeData.name,
+						driver: volumeData.driver || "local",
+						mountpoint: volumeData.mountpoint || null,
+						renderer: volumeData.renderer || null,
+						scope: volumeData.scope || "local",
+						labels: volumeData.labels || null,
+						options: volumeData.options || null,
+						size_bytes: volumeData.size_bytes
+							? BigInt(volumeData.size_bytes)
+							: null,
+						ref_count: volumeData.ref_count || 0,
+						updated_at: now,
+						last_checked: now,
+					},
+					create: {
+						id: uuidv4(),
+						host_id: host.id,
+						volume_id: volumeData.volume_id,
+						name: volumeData.name,
+						driver: volumeData.driver || "local",
+						mountpoint: volumeData.mountpoint || null,
+						renderer: volumeData.renderer || null,
+						scope: volumeData.scope || "local",
+						labels: volumeData.labels || null,
+						options: volumeData.options || null,
+						size_bytes: volumeData.size_bytes
+							? BigInt(volumeData.size_bytes)
+							: null,
+						ref_count: volumeData.ref_count || 0,
+						created_at: parseDate(volumeData.created_at),
+						updated_at: now,
+					},
+				});
+				volumesProcessed++;
+			}
+		}
+
+		// Process networks
+		if (networks && Array.isArray(networks)) {
+			console.log(
+				`[Docker Integration] Processing ${networks.length} networks`,
+			);
+			for (const networkData of networks) {
+				await prisma.docker_networks.upsert({
+					where: {
+						host_id_network_id: {
+							host_id: host.id,
+							network_id: networkData.network_id,
+						},
+					},
+					update: {
+						name: networkData.name,
+						driver: networkData.driver,
+						scope: networkData.scope || "local",
+						ipv6_enabled: networkData.ipv6_enabled || false,
+						internal: networkData.internal || false,
+						attachable:
+							networkData.attachable !== undefined
+								? networkData.attachable
+								: true,
+						ingress: networkData.ingress || false,
+						config_only: networkData.config_only || false,
+						labels: networkData.labels || null,
+						ipam: networkData.ipam || null,
+						container_count: networkData.container_count || 0,
+						updated_at: now,
+						last_checked: now,
+					},
+					create: {
+						id: uuidv4(),
+						host_id: host.id,
+						network_id: networkData.network_id,
+						name: networkData.name,
+						driver: networkData.driver,
+						scope: networkData.scope || "local",
+						ipv6_enabled: networkData.ipv6_enabled || false,
+						internal: networkData.internal || false,
+						attachable:
+							networkData.attachable !== undefined
+								? networkData.attachable
+								: true,
+						ingress: networkData.ingress || false,
+						config_only: networkData.config_only || false,
+						labels: networkData.labels || null,
+						ipam: networkData.ipam || null,
+						container_count: networkData.container_count || 0,
+						created_at: networkData.created_at
+							? parseDate(networkData.created_at)
+							: null,
+						updated_at: now,
+					},
+				});
+				networksProcessed++;
+			}
+		}
+
 		// Process updates
 		if (updates && Array.isArray(updates)) {
 			console.log(`[Docker Integration] Processing ${updates.length} updates`);
@@ -219,13 +331,15 @@ router.post("/docker", async (req, res) => {
 		}
 
 		console.log(
-			`[Docker Integration] Successfully processed: ${containersProcessed} containers, ${imagesProcessed} images, ${updatesProcessed} updates`,
+			`[Docker Integration] Successfully processed: ${containersProcessed} containers, ${imagesProcessed} images, ${volumesProcessed} volumes, ${networksProcessed} networks, ${updatesProcessed} updates`,
 		);
 
 		res.json({
 			message: "Docker data collected successfully",
 			containers_received: containersProcessed,
 			images_received: imagesProcessed,
+			volumes_received: volumesProcessed,
+			networks_received: networksProcessed,
 			updates_found: updatesProcessed,
 		});
 	} catch (error) {

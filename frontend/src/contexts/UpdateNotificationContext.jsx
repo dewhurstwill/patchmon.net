@@ -1,8 +1,5 @@
-import { useQuery } from "@tanstack/react-query";
 import { createContext, useContext, useState } from "react";
-import { isAuthReady } from "../constants/authPhases";
-import { settingsAPI } from "../utils/api";
-import { useAuth } from "./AuthContext";
+import { useSettings } from "./SettingsContext";
 
 const UpdateNotificationContext = createContext();
 
@@ -18,17 +15,7 @@ export const useUpdateNotification = () => {
 
 export const UpdateNotificationProvider = ({ children }) => {
 	const [dismissed, setDismissed] = useState(false);
-	const { authPhase, isAuthenticated } = useAuth();
-
-	// Ensure settings are loaded - but only after auth is fully ready
-	// This reads cached update info from backend (updated by scheduler)
-	const { data: settings, isLoading: settingsLoading } = useQuery({
-		queryKey: ["settings"],
-		queryFn: () => settingsAPI.get().then((res) => res.data),
-		staleTime: 5 * 60 * 1000, // Settings stay fresh for 5 minutes
-		refetchOnWindowFocus: false,
-		enabled: isAuthReady(authPhase, isAuthenticated()),
-	});
+	const { settings, isLoading: settingsLoading } = useSettings();
 
 	// Read cached update information from settings (no GitHub API calls)
 	// The backend scheduler updates this data periodically

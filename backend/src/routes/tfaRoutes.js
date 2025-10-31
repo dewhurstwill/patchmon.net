@@ -261,8 +261,10 @@ router.post(
 		body("username").notEmpty().withMessage("Username is required"),
 		body("token")
 			.isLength({ min: 6, max: 6 })
-			.withMessage("Token must be 6 digits"),
-		body("token").isNumeric().withMessage("Token must contain only numbers"),
+			.withMessage("Token must be 6 characters"),
+		body("token")
+			.matches(/^[A-Z0-9]{6}$/)
+			.withMessage("Token must be 6 alphanumeric characters"),
 	],
 	async (req, res) => {
 		try {

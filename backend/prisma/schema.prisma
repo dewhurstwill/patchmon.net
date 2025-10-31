@@ -114,6 +114,8 @@ model hosts {
   host_group_memberships  host_group_memberships[]
   update_history          update_history[]
   job_history             job_history[]
+  docker_volumes          docker_volumes[]
+  docker_networks         docker_networks[]
 
   @@index([machine_id])
   @@index([friendly_name])
@@ -194,7 +196,6 @@ model settings {
   metrics_enabled        Boolean   @default(true)
   metrics_anonymous_id   String?
   metrics_last_sent      DateTime?
-  color_theme            String    @default("default")
 }
 
 model update_history {
@@ -226,6 +227,8 @@ model users {
   tfa_secret             String?
   first_name             String?
   last_name              String?
+  theme_preference       String?                  @default("dark")
+  color_theme            String?                  @default("cyber_blue")
   dashboard_preferences  dashboard_preferences[]
   user_sessions          user_sessions[]
   auto_enrollment_tokens auto_enrollment_tokens[]
@@ -340,6 +343,56 @@ model docker_image_updates {
   @@unique([image_id, available_tag])
   @@index([image_id])
   @@index([is_security_update])
+}
+
+model docker_volumes {
+  id          String   @id
+  host_id     String
+  volume_id   String
+  name        String
+  driver      String
+  mountpoint  String?
+  renderer    String?
+  scope       String   @default("local")
+  labels      Json?
+  options     Json?
+  size_bytes  BigInt?
+  ref_count   Int      @default(0)
+  created_at  DateTime
+  updated_at  DateTime
+  last_checked DateTime @default(now())
+  hosts       hosts    @relation(fields: [host_id], references: [id], onDelete: Cascade)
+
+  @@unique([host_id, volume_id])
+  @@index([host_id])
+  @@index([name])
+  @@index([driver])
+}
+
+model docker_networks {
+  id             String   @id
+  host_id        String
+  network_id     String
+  name           String
+  driver         String
+  scope          String   @default("local")
+  ipv6_enabled   Boolean  @default(false)
+  internal       Boolean  @default(false)
+  attachable     Boolean  @default(true)
+  ingress        Boolean  @default(false)
+  config_only    Boolean  @default(false)
+  labels         Json?
+  ipam           Json?    // IPAM configuration (driver, config, options)
+  container_count Int     @default(0)
+  created_at     DateTime?
+  updated_at     DateTime
+  last_checked   DateTime @default(now())
+  hosts          hosts    @relation(fields: [host_id], references: [id], onDelete: Cascade)
+
+  @@unique([host_id, network_id])
+  @@index([host_id])
+  @@index([name])
+  @@index([driver])
 }
 
 model job_history {

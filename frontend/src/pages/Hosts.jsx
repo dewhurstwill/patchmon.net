@@ -531,12 +531,11 @@ const Hosts = () => {
 							"with new data:",
 							data.host,
 						);
-						// Ensure hostGroupId is set correctly
+						// Host already has host_group_memberships from backend
 						const updatedHost = {
 							...data.host,
-							hostGroupId: data.host.host_groups?.id || null,
 						};
-						console.log("Updated host with hostGroupId:", updatedHost);
+						console.log("Updated host in cache:", updatedHost);
 						return updatedHost;
 					}
 					return host;
@@ -654,11 +653,15 @@ const Hosts = () => {
 				host.os_type?.toLowerCase().includes(searchTerm.toLowerCase()) ||
 				host.notes?.toLowerCase().includes(searchTerm.toLowerCase());
 
-			// Group filter
+			// Group filter - handle multiple groups per host
+			const memberships = host.host_group_memberships || [];
 			const matchesGroup =
 				groupFilter === "all" ||
-				(groupFilter === "ungrouped" && !host.host_groups) ||
-				(groupFilter !== "ungrouped" && host.host_groups?.id === groupFilter);
+				(groupFilter === "ungrouped" && memberships.length === 0) ||
+				(groupFilter !== "ungrouped" &&
+					memberships.some(
+						(membership) => membership.host_groups?.id === groupFilter,
+					));
 
 			// Status filter
 			const matchesStatus =
@@ -711,10 +714,30 @@ const Hosts = () => {
 					aValue = a.ip?.toLowerCase() || "zzz_no_ip";
 					bValue = b.ip?.toLowerCase() || "zzz_no_ip";
 					break;
-				case "group":
-					aValue = a.host_groups?.name || "zzz_ungrouped";
-					bValue = b.host_groups?.name || "zzz_ungrouped";
+				case "group": {
+					// Handle multiple groups per host - use first group alphabetically for sorting
+					const aGroups = a.host_group_memberships || [];
+					const bGroups = b.host_group_memberships || [];
+					if (aGroups.length === 0) {
+						aValue = "zzz_ungrouped";
+					} else {
+						const aGroupNames = aGroups
+							.map((m) => m.host_groups?.name || "")
+							.filter((name) => name)
+							.sort();
+						aValue = aGroupNames[0] || "zzz_ungrouped";
+					}
+					if (bGroups.length === 0) {
+						bValue = "zzz_ungrouped";
+					} else {
+						const bGroupNames = bGroups
+							.map((m) => m.host_groups?.name || "")
+							.filter((name) => name)
+							.sort();
+						bValue = bGroupNames[0] || "zzz_ungrouped";
+					}
 					break;
+				}
 				case "os":
 					aValue = a.os_type?.toLowerCase() || "zzz_unknown";
 					bValue = b.os_type?.toLowerCase() || "zzz_unknown";
@@ -787,27 +810,46 @@ const Hosts = () => {
 
 		const groups = {};
 		filteredAndSortedHosts.forEach((host) => {
-			let groupKey;
-			switch (groupBy) {
-				case "group":
-					groupKey = host.host_groups?.name || "Ungrouped";
-					break;
-				case "status":
-					groupKey =
-						(host.effectiveStatus || host.status).charAt(0).toUpperCase() +
-						(host.effectiveStatus || host.status).slice(1);
-					break;
-				case "os":
-					groupKey = host.os_type || "Unknown";
-					break;
-				default:
-					groupKey = "All Hosts";
-			}
+			if (groupBy === "group") {
+				// Handle multiple groups per host
+				const memberships = host.host_group_memberships || [];
+				if (memberships.length === 0) {
+					// Host has no groups, add to "Ungrouped"
+					if (!groups.Ungrouped) {
+						groups.Ungrouped = [];
+					}
+					groups.Ungrouped.push(host);
+				} else {
+					// Host has one or more groups, add to each group
+					memberships.forEach((membership) => {
+						const groupName = membership.host_groups?.name || "Unknown";
+						if (!groups[groupName]) {
+							groups[groupName] = [];
+						}
+						groups[groupName].push(host);
+					});
+				}
+			} else {
+				// Other grouping types (status, os, etc.)
+				let groupKey;
+				switch (groupBy) {
+					case "status":
+						groupKey =
+							(host.effectiveStatus || host.status).charAt(0).toUpperCase() +
+							(host.effectiveStatus || host.status).slice(1);
+						break;
+					case "os":
+						groupKey = host.os_type || "Unknown";
+						break;
+					default:
+						groupKey = "All Hosts";
+				}
 
-			if (!groups[groupKey]) {
-				groups[groupKey] = [];
+				if (!groups[groupKey]) {
+					groups[groupKey] = [];
+				}
+				groups[groupKey].push(host);
 			}
-			groups[groupKey].push(host);
 		});
 
 		return groups;
@@ -1393,14 +1435,6 @@ const Hosts = () => {
 								>
 									<AlertTriangle className="h-4 w-4" />
 									Hide Stale
-								</button>
-								<button
-									type="button"
-									onClick={() => setShowAddModal(true)}
-									className="btn-primary flex items-center gap-2"
-								>
-									<Plus className="h-4 w-4" />
-									Add Host
 								</button>
 							</div>
 						</div>
