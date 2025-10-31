@@ -1030,12 +1030,21 @@ router.put(
 			}
 
 			const { username, email, first_name, last_name } = req.body;
-			const updateData = {};
+			const updateData = {
+				updated_at: new Date(),
+			};
 
 			if (username) updateData.username = username;
 			if (email) updateData.email = email;
-			if (first_name !== undefined) updateData.first_name = first_name || null;
-			if (last_name !== undefined) updateData.last_name = last_name || null;
+			// Handle first_name and last_name - allow empty strings to clear the field
+			if (first_name !== undefined) {
+				updateData.first_name =
+					first_name === "" ? null : first_name.trim() || null;
+			}
+			if (last_name !== undefined) {
+				updateData.last_name =
+					last_name === "" ? null : last_name.trim() || null;
+			}
 
 			// Check if username/email already exists (excluding current user)
 			if (username || email) {
@@ -1060,6 +1069,7 @@ router.put(
 				}
 			}
 
+			// Update user with explicit commit
 			const updatedUser = await prisma.users.update({
 				where: { id: req.user.id },
 				data: updateData,
@@ -1076,9 +1086,39 @@ router.put(
 				},
 			});
 
+			// Explicitly refresh user data from database to ensure we return latest data
+			// This ensures consistency especially in high-concurrency scenarios
+			const freshUser = await prisma.users.findUnique({
+				where: { id: req.user.id },
+				select: {
+					id: true,
+					username: true,
+					email: true,
+					first_name: true,
+					last_name: true,
+					role: true,
+					is_active: true,
+					last_login: true,
+					updated_at: true,
+				},
+			});
+
+			// Use fresh data if available, otherwise fallback to updatedUser
+			const responseUser = freshUser || updatedUser;
+
+			// Log update for debugging (only log in non-production)
+			if (process.env.NODE_ENV !== "production") {
+				console.log("Profile updated:", {
+					userId: req.user.id,
+					first_name: responseUser.first_name,
+					last_name: responseUser.last_name,
+					updated_at: responseUser.updated_at,
+				});
+			}
+
 			res.json({
 				message: "Profile updated successfully",
-				user: updatedUser,
+				user: responseUser,
 			});
 		} catch (error) {
 			console.error("Update profile error:", error);
