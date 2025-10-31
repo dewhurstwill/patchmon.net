@@ -1,4 +1,6 @@
+import { useQuery } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useState } from "react";
+import { userPreferencesAPI } from "../utils/api";
 
 const ThemeContext = createContext();
 
@@ -12,7 +14,7 @@ export const useTheme = () => {
 
 export const ThemeProvider = ({ children }) => {
 	const [theme, setTheme] = useState(() => {
-		// Check localStorage first, then system preference
+		// Check localStorage first for immediate render
 		const savedTheme = localStorage.getItem("theme");
 		if (savedTheme) {
 			return savedTheme;
@@ -23,6 +25,22 @@ export const ThemeProvider = ({ children }) => {
 		}
 		return "light";
 	});
+
+	// Fetch user preferences from backend
+	const { data: userPreferences } = useQuery({
+		queryKey: ["userPreferences"],
+		queryFn: () => userPreferencesAPI.get().then((res) => res.data),
+		retry: 1,
+		staleTime: 5 * 60 * 1000, // 5 minutes
+	});
+
+	// Sync with user preferences from backend
+	useEffect(() => {
+		if (userPreferences?.theme_preference) {
+			setTheme(userPreferences.theme_preference);
+			localStorage.setItem("theme", userPreferences.theme_preference);
+		}
+	}, [userPreferences]);
 
 	useEffect(() => {
 		// Apply theme to document
@@ -36,8 +54,17 @@ export const ThemeProvider = ({ children }) => {
 		localStorage.setItem("theme", theme);
 	}, [theme]);
 
-	const toggleTheme = () => {
-		setTheme((prevTheme) => (prevTheme === "light" ? "dark" : "light"));
+	const toggleTheme = async () => {
+		const newTheme = theme === "light" ? "dark" : "light";
+		setTheme(newTheme);
+
+		// Save to backend
+		try {
+			await userPreferencesAPI.update({ theme_preference: newTheme });
+		} catch (error) {
+			console.error("Failed to save theme preference:", error);
+			// Theme is already set locally, so user still sees the change
+		}
 	};
 
 	const value = {

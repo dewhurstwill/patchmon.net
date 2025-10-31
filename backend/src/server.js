@@ -70,6 +70,7 @@ const integrationRoutes = require("./routes/integrationRoutes");
 const wsRoutes = require("./routes/wsRoutes");
 const agentVersionRoutes = require("./routes/agentVersionRoutes");
 const metricsRoutes = require("./routes/metricsRoutes");
+const userPreferencesRoutes = require("./routes/userPreferencesRoutes");
 const { initSettings } = require("./services/settingsService");
 const { queueManager } = require("./services/automation");
 const { authenticateToken, requireAdmin } = require("./middleware/auth");
@@ -477,6 +478,7 @@ app.use(`/api/${apiVersion}/integrations`, integrationRoutes);
 app.use(`/api/${apiVersion}/ws`, wsRoutes);
 app.use(`/api/${apiVersion}/agent`, agentVersionRoutes);
 app.use(`/api/${apiVersion}/metrics`, metricsRoutes);
+app.use(`/api/${apiVersion}/user/preferences`, userPreferencesRoutes);
 
 // Bull Board - will be populated after queue manager initializes
 let bullBoardRouter = null;

@@ -25,6 +25,7 @@ import {
 import { useEffect, useId, useState } from "react";
 
 import { useAuth } from "../contexts/AuthContext";
+import { THEME_PRESETS, useColorTheme } from "../contexts/ColorThemeContext";
 import { useTheme } from "../contexts/ThemeContext";
 import { isCorsError, tfaAPI } from "../utils/api";
 
@@ -38,6 +39,7 @@ const Profile = () => {
 	const confirmPasswordId = useId();
 	const { user, updateProfile, changePassword } = useAuth();
 	const { toggleTheme, isDark } = useTheme();
+	const { colorTheme, setColorTheme } = useColorTheme();
 	const [activeTab, setActiveTab] = useState("profile");
 	const [isLoading, setIsLoading] = useState(false);
 	const [message, setMessage] = useState({ type: "", text: "" });
@@ -409,6 +411,68 @@ const Profile = () => {
 												}`}
 											/>
 										</button>
+									</div>
+								</div>
+
+								{/* Color Theme Settings */}
+								<div className="mt-6 pt-6 border-t border-secondary-200 dark:border-secondary-600">
+									<h4 className="text-sm font-medium text-secondary-900 dark:text-white mb-2">
+										Color Theme
+									</h4>
+									<p className="text-xs text-secondary-500 dark:text-secondary-400 mb-4">
+										Choose your preferred color scheme for the application
+									</p>
+
+									<div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+										{Object.entries(THEME_PRESETS).map(([themeKey, theme]) => {
+											const isSelected = colorTheme === themeKey;
+											const gradientColors = theme.login.xColors;
+
+											return (
+												<button
+													key={themeKey}
+													type="button"
+													onClick={() => setColorTheme(themeKey)}
+													className={`relative p-4 rounded-lg border-2 transition-all ${
+														isSelected
+															? "border-primary-500 ring-2 ring-primary-200 dark:ring-primary-800"
+															: "border-secondary-200 dark:border-secondary-600 hover:border-primary-300"
+													} cursor-pointer`}
+												>
+													{/* Theme Preview */}
+													<div
+														className="h-20 rounded-md mb-3 overflow-hidden"
+														style={{
+															background: `linear-gradient(135deg, ${gradientColors.join(", ")})`,
+														}}
+													/>
+
+													{/* Theme Name */}
+													<div className="text-sm font-medium text-secondary-900 dark:text-white mb-1">
+														{theme.name}
+													</div>
+
+													{/* Selected Indicator */}
+													{isSelected && (
+														<div className="absolute top-2 right-2 bg-primary-500 text-white rounded-full p-1">
+															<svg
+																className="w-4 h-4"
+																fill="currentColor"
+																viewBox="0 0 20 20"
+																aria-label="Selected theme"
+															>
+																<title>Selected</title>
+																<path
+																	fillRule="evenodd"
+																	d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z"
+																	clipRule="evenodd"
+																/>
+															</svg>
+														</div>
+													)}
+												</button>
+											);
+										})}
 									</div>
 								</div>
 							</div>

@@ -8,6 +8,7 @@ import SettingsLayout from "./components/SettingsLayout";
 import { isAuthPhase } from "./constants/authPhases";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 import { ColorThemeProvider } from "./contexts/ColorThemeContext";
+import { SettingsProvider } from "./contexts/SettingsContext";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import { UpdateNotificationProvider } from "./contexts/UpdateNotificationContext";
 
@@ -450,15 +451,17 @@ function AppRoutes() {
 function App() {
 	return (
 		<ThemeProvider>
-			<ColorThemeProvider>
-				<AuthProvider>
-					<UpdateNotificationProvider>
-						<LogoProvider>
-							<AppRoutes />
-						</LogoProvider>
-					</UpdateNotificationProvider>
-				</AuthProvider>
-			</ColorThemeProvider>
+			<AuthProvider>
+				<SettingsProvider>
+					<ColorThemeProvider>
+						<UpdateNotificationProvider>
+							<LogoProvider>
+								<AppRoutes />
+							</LogoProvider>
+						</UpdateNotificationProvider>
+					</ColorThemeProvider>
+				</SettingsProvider>
+			</AuthProvider>
 		</ThemeProvider>
 	);
 }

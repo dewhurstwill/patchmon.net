@@ -169,6 +169,12 @@ export const settingsAPI = {
 	getServerUrl: () => api.get("/settings/server-url"),
 };
 
+// User Preferences API
+export const userPreferencesAPI = {
+	get: () => api.get("/user/preferences"),
+	update: (preferences) => api.patch("/user/preferences", preferences),
+};
+
 // Agent File Management API
 export const agentFileAPI = {
 	getInfo: () => api.get("/hosts/agent/info"),

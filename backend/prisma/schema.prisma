@@ -196,7 +196,6 @@ model settings {
   metrics_enabled        Boolean   @default(true)
   metrics_anonymous_id   String?
   metrics_last_sent      DateTime?
-  color_theme            String    @default("default")
 }
 
 model update_history {
@@ -228,6 +227,8 @@ model users {
   tfa_secret             String?
   first_name             String?
   last_name              String?
+  theme_preference       String?                  @default("dark")
+  color_theme            String?                  @default("cyber_blue")
   dashboard_preferences  dashboard_preferences[]
   user_sessions          user_sessions[]
   auto_enrollment_tokens auto_enrollment_tokens[]
