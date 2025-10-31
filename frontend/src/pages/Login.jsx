@@ -248,7 +248,8 @@ const Login = () => {
 			} catch (error) {
 				console.error("Failed to fetch GitHub data:", error);
 				// Set fallback data if nothing cached
-				if (!latestRelease) {
+				const cachedRelease = localStorage.getItem("githubLatestRelease");
+				if (!cachedRelease) {
 					setLatestRelease({
 						version: "v1.3.0",
 						name: "Latest Release",
@@ -260,7 +261,7 @@ const Login = () => {
 		};
 
 		fetchGitHubData();
-	}, [latestRelease]);
+	}, []); // Run once on mount
 
 	const handleSubmit = async (e) => {
 		e.preventDefault();

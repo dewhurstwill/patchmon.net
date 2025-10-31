@@ -450,8 +450,8 @@ function AppRoutes() {
 
 function App() {
 	return (
-		<ThemeProvider>
-			<AuthProvider>
+		<AuthProvider>
+			<ThemeProvider>
 				<SettingsProvider>
 					<ColorThemeProvider>
 						<UpdateNotificationProvider>
@@ -461,8 +461,8 @@ function App() {
 						</UpdateNotificationProvider>
 					</ColorThemeProvider>
 				</SettingsProvider>
-			</AuthProvider>
-		</ThemeProvider>
+			</ThemeProvider>
+		</AuthProvider>
 	);
 }
 

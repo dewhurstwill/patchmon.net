@@ -860,6 +860,9 @@ router.post(
 					last_login: user.last_login,
 					created_at: user.created_at,
 					updated_at: user.updated_at,
+					// Include user preferences so they're available immediately after login
+					theme_preference: user.theme_preference,
+					color_theme: user.color_theme,
 				},
 			});
 		} catch (error) {
@@ -952,10 +955,24 @@ router.post(
 				return res.status(401).json({ error: "Invalid verification code" });
 			}
 
-			// Update last login
-			await prisma.users.update({
+			// Update last login and fetch complete user data
+			const updatedUser = await prisma.users.update({
 				where: { id: user.id },
 				data: { last_login: new Date() },
+				select: {
+					id: true,
+					username: true,
+					email: true,
+					first_name: true,
+					last_name: true,
+					role: true,
+					is_active: true,
+					last_login: true,
+					created_at: true,
+					updated_at: true,
+					theme_preference: true,
+					color_theme: true,
+				},
 			});
 
 			// Create session with access and refresh tokens
@@ -975,14 +992,7 @@ router.post(
 				refresh_token: session.refresh_token,
 				expires_at: session.expires_at,
 				tfa_bypass_until: session.tfa_bypass_until,
-				user: {
-					id: user.id,
-					username: user.username,
-					email: user.email,
-					first_name: user.first_name,
-					last_name: user.last_name,
-					role: user.role,
-				},
+				user: updatedUser,
 			});
 		} catch (error) {
 			console.error("TFA verification error:", error);
@@ -1014,13 +1024,27 @@ router.put(
 			.withMessage("Username must be at least 3 characters"),
 		body("email").optional().isEmail().withMessage("Valid email is required"),
 		body("first_name")
-			.optional()
-			.isLength({ min: 1 })
-			.withMessage("First name must be at least 1 character"),
+			.optional({ nullable: true, checkFalsy: true })
+			.custom((value) => {
+				// Allow null, undefined, or empty string to clear the field
+				if (value === null || value === undefined || value === "") {
+					return true;
+				}
+				// If provided, must be at least 1 character after trimming
+				return typeof value === "string" && value.trim().length >= 1;
+			})
+			.withMessage("First name must be at least 1 character if provided"),
 		body("last_name")
-			.optional()
-			.isLength({ min: 1 })
-			.withMessage("Last name must be at least 1 character"),
+			.optional({ nullable: true, checkFalsy: true })
+			.custom((value) => {
+				// Allow null, undefined, or empty string to clear the field
+				if (value === null || value === undefined || value === "") {
+					return true;
+				}
+				// If provided, must be at least 1 character after trimming
+				return typeof value === "string" && value.trim().length >= 1;
+			})
+			.withMessage("Last name must be at least 1 character if provided"),
 	],
 	async (req, res) => {
 		try {
@@ -1034,16 +1058,22 @@ router.put(
 				updated_at: new Date(),
 			};
 
-			if (username) updateData.username = username;
-			if (email) updateData.email = email;
-			// Handle first_name and last_name - allow empty strings to clear the field
+			// Handle all fields consistently - trim and update if provided
+			if (username) updateData.username = username.trim();
+			if (email) updateData.email = email.trim();
 			if (first_name !== undefined) {
+				// Allow null or empty string to clear the field, otherwise trim
 				updateData.first_name =
-					first_name === "" ? null : first_name.trim() || null;
+					first_name === "" || first_name === null
+						? null
+						: first_name.trim() || null;
 			}
 			if (last_name !== undefined) {
+				// Allow null or empty string to clear the field, otherwise trim
 				updateData.last_name =
-					last_name === "" ? null : last_name.trim() || null;
+					last_name === "" || last_name === null
+						? null
+						: last_name.trim() || null;
 			}
 
 			// Check if username/email already exists (excluding current user)
@@ -1105,16 +1135,6 @@ router.put(
 
 			// Use fresh data if available, otherwise fallback to updatedUser
 			const responseUser = freshUser || updatedUser;
-
-			// Log update for debugging (only log in non-production)
-			if (process.env.NODE_ENV !== "production") {
-				console.log("Profile updated:", {
-					userId: req.user.id,
-					first_name: responseUser.first_name,
-					last_name: responseUser.last_name,
-					updated_at: responseUser.updated_at,
-				});
-			}
 
 			res.json({
 				message: "Profile updated successfully",

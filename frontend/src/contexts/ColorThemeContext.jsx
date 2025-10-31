@@ -1,6 +1,15 @@
-import { useQuery } from "@tanstack/react-query";
-import { createContext, useContext, useEffect, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+	createContext,
+	useCallback,
+	useContext,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+} from "react";
 import { userPreferencesAPI } from "../utils/api";
+import { useAuth } from "./AuthContext";
 
 const ColorThemeContext = createContext();
 
@@ -123,48 +132,108 @@ export const THEME_PRESETS = {
 };
 
 export const ColorThemeProvider = ({ children }) => {
-	const [colorTheme, setColorTheme] = useState(() => {
-		// Initialize from localStorage for immediate render
-		return localStorage.getItem("colorTheme") || "cyber_blue";
-	});
-	const [isLoading, setIsLoading] = useState(true);
+	const queryClient = useQueryClient();
+	const lastThemeRef = useRef(null);
 
-	// Fetch user preferences from backend
-	const { data: userPreferences } = useQuery({
+	// Use reactive authentication state from AuthContext
+	// This ensures the query re-enables when user logs in
+	const { user } = useAuth();
+	const isAuthenticated = !!user;
+
+	// Source of truth: Database (via userPreferences query)
+	// localStorage is only used as a temporary cache until DB loads
+	// Only fetch if user is authenticated to avoid 401 errors on login page
+	const { data: userPreferences, isLoading: preferencesLoading } = useQuery({
 		queryKey: ["userPreferences"],
 		queryFn: () => userPreferencesAPI.get().then((res) => res.data),
-		retry: 1,
+		enabled: isAuthenticated, // Only run query if user is authenticated
+		retry: 2,
 		staleTime: 5 * 60 * 1000, // 5 minutes
+		refetchOnWindowFocus: true, // Refetch when user returns to tab
 	});
 
-	// Update theme when preferences are loaded
+	// Get theme from database (source of truth), fallback to user object from login, then localStorage cache, then default
+	// Memoize to prevent recalculation on every render
+	const colorThemeValue = useMemo(() => {
+		return (
+			userPreferences?.color_theme ||
+			user?.color_theme ||
+			localStorage.getItem("colorTheme") ||
+			"cyber_blue"
+		);
+	}, [userPreferences?.color_theme, user?.color_theme]);
+
+	// Only update state if the theme value actually changed (prevent loops)
+	const [colorTheme, setColorTheme] = useState(() => colorThemeValue);
+
+	useEffect(() => {
+		// Only update if the value actually changed from what we last saw (prevent loops)
+		if (colorThemeValue !== lastThemeRef.current) {
+			setColorTheme(colorThemeValue);
+			lastThemeRef.current = colorThemeValue;
+		}
+	}, [colorThemeValue]);
+
+	const isLoading = preferencesLoading;
+
+	// Sync localStorage cache when DB data is available (for offline/performance)
 	useEffect(() => {
 		if (userPreferences?.color_theme) {
-			setColorTheme(userPreferences.color_theme);
 			localStorage.setItem("colorTheme", userPreferences.color_theme);
 		}
-		setIsLoading(false);
-	}, [userPreferences]);
+	}, [userPreferences?.color_theme]);
 
-	const updateColorTheme = async (theme) => {
-		setColorTheme(theme);
-		localStorage.setItem("colorTheme", theme);
+	const updateColorTheme = useCallback(
+		async (theme) => {
+			// Store previous theme for potential revert
+			const previousTheme = colorTheme;
 
-		// Save to backend
-		try {
-			await userPreferencesAPI.update({ color_theme: theme });
-		} catch (error) {
-			console.error("Failed to save color theme preference:", error);
-			// Theme is already set locally, so user still sees the change
-		}
-	};
+			// Immediately update state for instant UI feedback
+			setColorTheme(theme);
+			lastThemeRef.current = theme;
 
-	const value = {
-		colorTheme,
-		setColorTheme: updateColorTheme,
-		themeConfig: THEME_PRESETS[colorTheme] || THEME_PRESETS.default,
-		isLoading,
-	};
+			// Also update localStorage cache
+			localStorage.setItem("colorTheme", theme);
+
+			// Save to backend (source of truth)
+			try {
+				await userPreferencesAPI.update({ color_theme: theme });
+
+				// Invalidate and refetch user preferences to ensure sync across tabs/browsers
+				await queryClient.invalidateQueries({ queryKey: ["userPreferences"] });
+			} catch (error) {
+				console.error("Failed to save color theme preference:", error);
+				// Revert to previous theme if save failed
+				setColorTheme(previousTheme);
+				lastThemeRef.current = previousTheme;
+				localStorage.setItem("colorTheme", previousTheme);
+
+				// Invalidate to refresh from DB
+				await queryClient.invalidateQueries({ queryKey: ["userPreferences"] });
+
+				// Show error to user if possible (could add toast notification here)
+				throw error; // Re-throw so calling code can handle it
+			}
+		},
+		[colorTheme, queryClient],
+	);
+
+	// Memoize themeConfig to prevent unnecessary re-renders
+	const themeConfig = useMemo(
+		() => THEME_PRESETS[colorTheme] || THEME_PRESETS.default,
+		[colorTheme],
+	);
+
+	// Memoize the context value to prevent unnecessary re-renders
+	const value = useMemo(
+		() => ({
+			colorTheme,
+			setColorTheme: updateColorTheme,
+			themeConfig,
+			isLoading,
+		}),
+		[colorTheme, themeConfig, isLoading, updateColorTheme],
+	);
 
 	return (
 		<ColorThemeContext.Provider value={value}>

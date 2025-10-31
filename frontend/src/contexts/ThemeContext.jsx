@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useState } from "react";
 import { userPreferencesAPI } from "../utils/api";
+import { useAuth } from "./AuthContext";
 
 const ThemeContext = createContext();
 
@@ -26,21 +27,29 @@ export const ThemeProvider = ({ children }) => {
 		return "light";
 	});
 
-	// Fetch user preferences from backend
+	// Use reactive authentication state from AuthContext
+	// This ensures the query re-enables when user logs in
+	const { user } = useAuth();
+	const isAuthenticated = !!user;
+
+	// Fetch user preferences from backend (only if authenticated)
 	const { data: userPreferences } = useQuery({
 		queryKey: ["userPreferences"],
 		queryFn: () => userPreferencesAPI.get().then((res) => res.data),
+		enabled: isAuthenticated, // Only run query if user is authenticated
 		retry: 1,
 		staleTime: 5 * 60 * 1000, // 5 minutes
 	});
 
-	// Sync with user preferences from backend
+	// Sync with user preferences from backend or user object from login
 	useEffect(() => {
-		if (userPreferences?.theme_preference) {
-			setTheme(userPreferences.theme_preference);
-			localStorage.setItem("theme", userPreferences.theme_preference);
+		const preferredTheme =
+			userPreferences?.theme_preference || user?.theme_preference;
+		if (preferredTheme) {
+			setTheme(preferredTheme);
+			localStorage.setItem("theme", preferredTheme);
 		}
-	}, [userPreferences]);
+	}, [userPreferences, user?.theme_preference]);
 
 	useEffect(() => {
 		// Apply theme to document
