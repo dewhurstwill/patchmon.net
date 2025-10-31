@@ -224,8 +224,30 @@ export const AuthProvider = ({ children }) => {
 			const data = await response.json();
 
 			if (response.ok) {
+				console.log("Profile updated - received user data:", data.user);
+
+				// Validate that we received user data with expected fields
+				if (!data.user || !data.user.id) {
+					console.error("Invalid user data in response:", data);
+					return {
+						success: false,
+						error: "Invalid response from server",
+					};
+				}
+
+				// Update both state and localStorage atomically
 				setUser(data.user);
 				localStorage.setItem("user", JSON.stringify(data.user));
+
+				// Log update for debugging (only in non-production)
+				if (process.env.NODE_ENV !== "production") {
+					console.log("User data updated in localStorage:", {
+						id: data.user.id,
+						first_name: data.user.first_name,
+						last_name: data.user.last_name,
+					});
+				}
+
 				return { success: true, user: data.user };
 			} else {
 				// Handle HTTP error responses (like 500 CORS errors)

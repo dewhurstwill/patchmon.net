@@ -80,8 +80,10 @@ const Profile = () => {
 		setIsLoading(true);
 		setMessage({ type: "", text: "" });
 
+		console.log("Submitting profile data:", profileData);
 		try {
 			const result = await updateProfile(profileData);
+			console.log("Profile update result:", result);
 			if (result.success) {
 				setMessage({ type: "success", text: "Profile updated successfully!" });
 			} else {
