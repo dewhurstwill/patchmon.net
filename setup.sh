@@ -33,15 +33,6 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Emoji characters (using octal escape sequences to avoid parsing issues)
-EMOJI_CHECK=$'\342\234\225'
-EMOJI_INFO=$'\342\204\271\357\270\217'
-EMOJI_CROSS=$'\342\234\215'
-EMOJI_WARN=$'\342\234\252'
-EMOJI_QUEST=$'\342\234\223'
-EMOJI_PARTY=$'\360\237\216\211'
-EMOJI_REFRESH=$'\342\235\224'
-
 # Global variables
 SCRIPT_VERSION="self-hosting-install.sh v1.3.2-selfhost-2025-10-31-1"
 DEFAULT_GITHUB_REPO="https://github.com/PatchMon/PatchMon.git"
@@ -75,27 +66,27 @@ SELECTED_SERVICE_NAME=""
 
 # Functions
 print_status() {
-    printf "${GREEN}%s %s${NC}\n" "$EMOJI_CHECK" "$1"
+    printf "${GREEN}%s${NC}\n" "$1"
 }
 
 print_info() {
-    printf "${BLUE}%s  %s${NC}\n" "$EMOJI_INFO" "$1"
+    printf "${BLUE}%s${NC}\n" "$1"
 }
 
 print_error() {
-    printf "${RED}%s %s${NC}\n" "$EMOJI_CROSS" "$1"
+    printf "${RED}%s${NC}\n" "$1"
 }
 
 print_warning() {
-    printf "${YELLOW}%s  %s${NC}\n" "$EMOJI_WARN" "$1"
+    printf "${YELLOW}%s${NC}\n" "$1"
 }
 
 print_question() {
-    printf "${BLUE}%s %s${NC}\n" "$EMOJI_QUEST" "$1"
+    printf "${BLUE}%s${NC}\n" "$1"
 }
 
 print_success() {
-    printf "${GREEN}%s %s${NC}\n" "$EMOJI_PARTY" "$1"
+    printf "${GREEN}%s${NC}\n" "$1"
 }
 
 # Interactive input functions
@@ -1666,7 +1657,7 @@ start_services() {
         local logs=$(journalctl -u "$SERVICE_NAME" -n 50 --no-pager 2>/dev/null || echo "")
         
         if echo "$logs" | grep -q "WRONGPASS\|NOAUTH"; then
-            print_error "❌ Detected Redis authentication error!"
+            print_error "Detected Redis authentication error!"
             print_info "The service cannot authenticate with Redis."
             echo ""
             print_info "Current Redis configuration in .env:"
@@ -1690,18 +1681,18 @@ start_services() {
             print_info "     cat /etc/redis/users.acl"
             echo ""
         elif echo "$logs" | grep -q "ECONNREFUSED.*postgresql\|Connection refused.*5432"; then
-            print_error "❌ Detected PostgreSQL connection error!"
+            print_error "Detected PostgreSQL connection error!"
             print_info "Check if PostgreSQL is running:"
             print_info "  systemctl status postgresql"
         elif echo "$logs" | grep -q "ECONNREFUSED.*redis\|Connection refused.*6379"; then
-            print_error "❌ Detected Redis connection error!"
+            print_error "Detected Redis connection error!"
             print_info "Check if Redis is running:"
             print_info "  systemctl status redis-server"
         elif echo "$logs" | grep -q "database.*does not exist"; then
-            print_error "❌ Database does not exist!"
+            print_error "Database does not exist!"
             print_info "Database: $DB_NAME"
         elif echo "$logs" | grep -q "Error:"; then
-            print_error "❌ Application error detected in logs"
+            print_error "Application error detected in logs"
         fi
         
         echo ""
@@ -1750,9 +1741,9 @@ async function updateSettings() {
       });
     }
     
-    console.log('✅ Database settings updated successfully');
+    console.log('Database settings updated successfully');
   } catch (error) {
-    console.error('❌ Error updating settings:', error.message);
+    console.error('Error updating settings:', error.message);
     process.exit(1);
   } finally {
     await prisma.\$disconnect();
@@ -1876,7 +1867,7 @@ EOF
     if [ -f "$SUMMARY_FILE" ]; then
         print_status "Deployment summary appended to: $SUMMARY_FILE"
     else
-        print_error "⚠️  Failed to append to deployment-info.txt file"
+        print_error "Failed to append to deployment-info.txt file"
         return 1
     fi
 }
@@ -1958,7 +1949,7 @@ EOF
         print_status "Deployment information saved to: $INFO_FILE"
         print_info "File details: $(ls -lh "$INFO_FILE" | awk '{print $5, $9}')"
     else
-        print_error "⚠️  Failed to create deployment-info.txt file"
+        print_error "Failed to create deployment-info.txt file"
         return 1
     fi
 }
@@ -2151,7 +2142,7 @@ deploy_instance() {
     log_message "Backend port: $BACKEND_PORT"
     log_message "SSL enabled: $USE_LETSENCRYPT"
     
-    print_status "🎉 PatchMon instance deployed successfully!"
+    print_status "PatchMon instance deployed successfully!"
     echo ""
     print_info "Next steps:"
     echo "  • Visit your URL: $SERVER_PROTOCOL_SEL://$FQDN (ensure DNS is configured)"
@@ -3245,7 +3236,7 @@ update_installation() {
     sleep 5
     
     if systemctl is-active --quiet "$service_name"; then
-        print_success "✅ Update completed successfully!"
+        print_success "Update completed successfully!"
         print_status "Service $service_name is running"
         
         # Get new version
@@ -3273,7 +3264,7 @@ update_installation() {
         local logs=$(journalctl -u "$service_name" -n 50 --no-pager 2>/dev/null || echo "")
         
         if echo "$logs" | grep -q "WRONGPASS\|NOAUTH"; then
-            print_error "❌ Detected Redis authentication error!"
+            print_error "Detected Redis authentication error!"
             print_info "The service cannot authenticate with Redis."
             echo ""
             print_info "Current Redis configuration in .env:"
@@ -3290,12 +3281,12 @@ update_installation() {
             print_info "     redis-cli --user $test_user --pass $test_pass -n ${test_db:-0} ping"
             echo ""
         elif echo "$logs" | grep -q "ECONNREFUSED"; then
-            print_error "❌ Detected connection refused error!"
+            print_error "Detected connection refused error!"
             print_info "Check if required services are running:"
             print_info "  systemctl status postgresql"
             print_info "  systemctl status redis-server"
         elif echo "$logs" | grep -q "Error:"; then
-            print_error "❌ Application error detected in logs"
+            print_error "Application error detected in logs"
         fi
         
         echo ""
@@ -3328,7 +3319,7 @@ main() {
     # Handle update mode
     if [ "$UPDATE_MODE" = "true" ]; then
         print_banner
-        print_info "🔄 PatchMon Update Mode"
+        print_info "PatchMon Update Mode"
         echo ""
         
         # Select installation to update
@@ -3344,7 +3335,7 @@ main() {
     # Check if existing installations are present
     local existing_installs=($(detect_installations))
     if [ ${#existing_installs[@]} -gt 0 ]; then
-        print_warning "⚠️  Found ${#existing_installs[@]} existing PatchMon installation(s):"
+        print_warning "Found ${#existing_installs[@]} existing PatchMon installation(s):"
         for install in "${existing_installs[@]}"; do
             print_info "   - $install"
         done
