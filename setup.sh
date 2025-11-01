@@ -33,6 +33,15 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
+# Emoji characters (using octal escape sequences to avoid parsing issues)
+EMOJI_CHECK=$'\342\234\225'
+EMOJI_INFO=$'\342\204\271\357\270\217'
+EMOJI_CROSS=$'\342\234\215'
+EMOJI_WARN=$'\342\234\252'
+EMOJI_QUEST=$'\342\234\223'
+EMOJI_PARTY=$'\360\237\216\211'
+EMOJI_REFRESH=$'\342\235\224'
+
 # Global variables
 SCRIPT_VERSION="self-hosting-install.sh v1.3.2-selfhost-2025-10-31-1"
 DEFAULT_GITHUB_REPO="https://github.com/PatchMon/PatchMon.git"
@@ -66,27 +75,27 @@ SELECTED_SERVICE_NAME=""
 
 # Functions
 print_status() {
-    echo -e "${GREEN}✅ $1${NC}"
+    printf "${GREEN}%s %s${NC}\n" "$EMOJI_CHECK" "$1"
 }
 
 print_info() {
-    echo -e "${BLUE}ℹ️  $1${NC}"
+    printf "${BLUE}%s  %s${NC}\n" "$EMOJI_INFO" "$1"
 }
 
 print_error() {
-    echo -e "${RED}❌ $1${NC}"
+    printf "${RED}%s %s${NC}\n" "$EMOJI_CROSS" "$1"
 }
 
 print_warning() {
-    echo -e "${YELLOW}⚠️  $1${NC}"
+    printf "${YELLOW}%s  %s${NC}\n" "$EMOJI_WARN" "$1"
 }
 
 print_question() {
-    echo -e "${BLUE}❓ $1${NC}"
+    printf "${BLUE}%s %s${NC}\n" "$EMOJI_QUEST" "$1"
 }
 
 print_success() {
-    echo -e "${GREEN}🎉 $1${NC}"
+    printf "${GREEN}%s %s${NC}\n" "$EMOJI_PARTY" "$1"
 }
 
 # Interactive input functions
