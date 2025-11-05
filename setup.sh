@@ -1470,6 +1470,7 @@ EOF
         cat > "$config_file" << EOF
 server {
     listen 80;
+    listen [::]:80;
     server_name $fqdn;
     
     # Security headers
