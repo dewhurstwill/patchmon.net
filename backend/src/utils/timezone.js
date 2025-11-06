@@ -1,6 +1,6 @@
 /**
  * Timezone utility functions for consistent timestamp handling
- * 
+ *
  * This module provides timezone-aware timestamp functions that use
  * the TZ environment variable for consistent timezone handling across
  * the application. If TZ is not set, defaults to UTC.
@@ -22,32 +22,16 @@ function get_timezone() {
  */
 function get_current_time() {
 	const tz = get_timezone();
-	
+
 	// If UTC, use Date.now() which is always UTC
 	if (tz === "UTC" || tz === "Etc/UTC") {
 		return new Date();
 	}
-	
+
 	// For other timezones, we need to create a date string with timezone info
 	// and parse it. This ensures the date represents the correct time in that timezone.
-	const now = new Date();
-	const formatter = new Intl.DateTimeFormat("en-US", {
-		timeZone: tz,
-		year: "numeric",
-		month: "2-digit",
-		day: "2-digit",
-		hour: "2-digit",
-		minute: "2-digit",
-		second: "2-digit",
-		hour12: false,
-	});
-	
-	const parts = formatter.formatToParts(now);
-	const date_str = `${parts.find((p) => p.type === "year").value}-${parts.find((p) => p.type === "month").value}-${parts.find((p) => p.type === "day").value}T${parts.find((p) => p.type === "hour").value}:${parts.find((p) => p.type === "minute").value}:${parts.find((p) => p.type === "second").value}`;
-	
-	// Create date in UTC, then adjust to represent the same moment in the target timezone
-	// This is a bit tricky - we'll use a simpler approach: store as UTC but display in timezone
 	// For database storage, we always store UTC timestamps
+	// The timezone is primarily used for display purposes
 	return new Date();
 }
 
@@ -88,7 +72,7 @@ function parse_date(date_string, fallback = null) {
 			return fallback || get_current_time();
 		}
 		return date;
-	} catch (error) {
+	} catch (_error) {
 		return fallback || get_current_time();
 	}
 }
@@ -121,4 +105,3 @@ module.exports = {
 	parse_date,
 	format_date_for_display,
 };
-

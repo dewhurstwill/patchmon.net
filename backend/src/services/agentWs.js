@@ -49,12 +49,12 @@ function init(server, prismaClient) {
 				// Accept the WebSocket connection for Bull Board
 				wss.handleUpgrade(request, socket, head, (ws) => {
 					ws.on("message", (message) => {
-						// Echo back for Bull Board WebSocket
-						try {
-							ws.send(message);
-						} catch (err) {
-							// Ignore send errors (connection may be closed)
-						}
+					// Echo back for Bull Board WebSocket
+					try {
+						ws.send(message);
+					} catch (_err) {
+						// Ignore send errors (connection may be closed)
+					}
 					});
 
 					ws.on("error", (err) => {
@@ -160,9 +160,7 @@ function init(server, prismaClient) {
 						err.message?.includes("read ECONNRESET")
 					) {
 						// Connection reset errors are common and expected
-						console.log(
-							`[agent-ws] connection reset for ${apiId}`,
-						);
+						console.log(`[agent-ws] connection reset for ${apiId}`);
 					} else {
 						// Log other errors for debugging
 						console.error(
@@ -181,7 +179,10 @@ function init(server, prismaClient) {
 					}
 
 					// Try to close the connection gracefully if still open
-					if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+					if (
+						ws.readyState === WebSocket.OPEN ||
+						ws.readyState === WebSocket.CONNECTING
+					) {
 						try {
 							ws.close(1000); // Normal closure
 						} catch {
