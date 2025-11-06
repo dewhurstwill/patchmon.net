@@ -3,6 +3,7 @@ const { redis, redisConnection } = require("./shared/redis");
 const { prisma } = require("./shared/prisma");
 const agentWs = require("../agentWs");
 const { v4: uuidv4 } = require("uuid");
+const { get_current_time } = require("../../utils/timezone");
 
 // Import automation classes
 const GitHubUpdateCheck = require("./githubUpdateCheck");
@@ -216,8 +217,8 @@ class QueueManager {
 								api_id: api_id,
 								status: "active",
 								attempt_number: job.attemptsMade + 1,
-								created_at: new Date(),
-								updated_at: new Date(),
+								created_at: get_current_time(),
+								updated_at: get_current_time(),
 							},
 						});
 						console.log(`📝 Logged job to job_history: ${job.id} (${type})`);
@@ -257,8 +258,8 @@ class QueueManager {
 							where: { job_id: job.id },
 							data: {
 								status: "completed",
-								completed_at: new Date(),
-								updated_at: new Date(),
+								completed_at: get_current_time(),
+								updated_at: get_current_time(),
 							},
 						});
 						console.log(`✅ Marked job as completed in job_history: ${job.id}`);
@@ -271,8 +272,8 @@ class QueueManager {
 							data: {
 								status: "failed",
 								error_message: error.message,
-								completed_at: new Date(),
-								updated_at: new Date(),
+								completed_at: get_current_time(),
+								updated_at: get_current_time(),
 							},
 						});
 						console.log(`❌ Marked job as failed in job_history: ${job.id}`);

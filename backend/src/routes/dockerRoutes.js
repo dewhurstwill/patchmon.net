@@ -2,6 +2,7 @@ const express = require("express");
 const { authenticateToken } = require("../middleware/auth");
 const { getPrismaClient } = require("../config/prisma");
 const { v4: uuidv4 } = require("uuid");
+const { get_current_time, parse_date } = require("../utils/timezone");
 
 const prisma = getPrismaClient();
 const router = express.Router();
@@ -537,14 +538,7 @@ router.post("/collect", async (req, res) => {
 			return res.status(401).json({ error: "Invalid API credentials" });
 		}
 
-		const now = new Date();
-
-		// Helper function to validate and parse dates
-		const parseDate = (dateString) => {
-			if (!dateString) return now;
-			const date = new Date(dateString);
-			return Number.isNaN(date.getTime()) ? now : date;
-		};
+		const now = get_current_time();
 
 		// Process containers
 		if (containers && Array.isArray(containers)) {
@@ -572,7 +566,7 @@ router.post("/collect", async (req, res) => {
 							tag: containerData.image_tag,
 							image_id: containerData.image_id || "unknown",
 							source: containerData.image_source || "docker-hub",
-							created_at: parseDate(containerData.created_at),
+							created_at: parse_date(containerData.created_at, now),
 							last_checked: now,
 							updated_at: now,
 						},
@@ -597,7 +591,7 @@ router.post("/collect", async (req, res) => {
 						state: containerData.state,
 						ports: containerData.ports || null,
 						started_at: containerData.started_at
-							? parseDate(containerData.started_at)
+							? parse_date(containerData.started_at, null)
 							: null,
 						updated_at: now,
 						last_checked: now,
@@ -613,9 +607,9 @@ router.post("/collect", async (req, res) => {
 						status: containerData.status,
 						state: containerData.state,
 						ports: containerData.ports || null,
-						created_at: parseDate(containerData.created_at),
+						created_at: parse_date(containerData.created_at, now),
 						started_at: containerData.started_at
-							? parseDate(containerData.started_at)
+							? parse_date(containerData.started_at, null)
 							: null,
 						updated_at: now,
 					},
@@ -651,7 +645,7 @@ router.post("/collect", async (req, res) => {
 							? BigInt(imageData.size_bytes)
 							: null,
 						source: imageData.source || "docker-hub",
-						created_at: parseDate(imageData.created_at),
+						created_at: parse_date(imageData.created_at, now),
 						updated_at: now,
 					},
 				});
@@ -780,14 +774,7 @@ router.post("/../integrations/docker", async (req, res) => {
 			`[Docker Integration] Processing for host: ${host.friendly_name}`,
 		);
 
-		const now = new Date();
-
-		// Helper function to validate and parse dates
-		const parseDate = (dateString) => {
-			if (!dateString) return now;
-			const date = new Date(dateString);
-			return Number.isNaN(date.getTime()) ? now : date;
-		};
+		const now = get_current_time();
 
 		let containersProcessed = 0;
 		let imagesProcessed = 0;
@@ -822,7 +809,7 @@ router.post("/../integrations/docker", async (req, res) => {
 							tag: containerData.image_tag,
 							image_id: containerData.image_id || "unknown",
 							source: containerData.image_source || "docker-hub",
-							created_at: parseDate(containerData.created_at),
+							created_at: parse_date(containerData.created_at, now),
 							last_checked: now,
 							updated_at: now,
 						},
@@ -847,7 +834,7 @@ router.post("/../integrations/docker", async (req, res) => {
 						state: containerData.state || containerData.status,
 						ports: containerData.ports || null,
 						started_at: containerData.started_at
-							? parseDate(containerData.started_at)
+							? parse_date(containerData.started_at, null)
 							: null,
 						updated_at: now,
 						last_checked: now,
@@ -863,9 +850,9 @@ router.post("/../integrations/docker", async (req, res) => {
 						status: containerData.status,
 						state: containerData.state || containerData.status,
 						ports: containerData.ports || null,
-						created_at: parseDate(containerData.created_at),
+						created_at: parse_date(containerData.created_at, now),
 						started_at: containerData.started_at
-							? parseDate(containerData.started_at)
+							? parse_date(containerData.started_at, null)
 							: null,
 						updated_at: now,
 					},
@@ -911,7 +898,7 @@ router.post("/../integrations/docker", async (req, res) => {
 							? BigInt(imageData.size_bytes)
 							: null,
 						source: imageSource,
-						created_at: parseDate(imageData.created_at),
+						created_at: parse_date(imageData.created_at, now),
 						last_checked: now,
 						updated_at: now,
 					},
