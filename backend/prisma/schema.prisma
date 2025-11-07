@@ -202,7 +202,7 @@ model update_history {
   id              String   @id
   host_id         String
   packages_count  Int
-  security_count  Int
+  security_count   Int
   total_packages  Int?
   payload_size_kb Float?
   execution_time  Float?
@@ -210,6 +210,18 @@ model update_history {
   status          String   @default("success")
   error_message   String?
   hosts           hosts    @relation(fields: [host_id], references: [id], onDelete: Cascade)
+}
+
+model system_statistics {
+  id                    String   @id
+  unique_packages_count Int
+  unique_security_count Int
+  total_packages        Int
+  total_hosts           Int
+  hosts_needing_updates Int
+  timestamp             DateTime @default(now())
+
+  @@index([timestamp])
 }
 
 model users {

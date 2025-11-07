@@ -13,6 +13,7 @@ const OrphanedPackageCleanup = require("./orphanedPackageCleanup");
 const DockerInventoryCleanup = require("./dockerInventoryCleanup");
 const DockerImageUpdateCheck = require("./dockerImageUpdateCheck");
 const MetricsReporting = require("./metricsReporting");
+const SystemStatistics = require("./systemStatistics");
 
 // Queue names
 const QUEUE_NAMES = {
@@ -23,6 +24,7 @@ const QUEUE_NAMES = {
 	DOCKER_INVENTORY_CLEANUP: "docker-inventory-cleanup",
 	DOCKER_IMAGE_UPDATE_CHECK: "docker-image-update-check",
 	METRICS_REPORTING: "metrics-reporting",
+	SYSTEM_STATISTICS: "system-statistics",
 	AGENT_COMMANDS: "agent-commands",
 };
 
@@ -106,6 +108,9 @@ class QueueManager {
 		this.automations[QUEUE_NAMES.METRICS_REPORTING] = new MetricsReporting(
 			this,
 		);
+		this.automations[QUEUE_NAMES.SYSTEM_STATISTICS] = new SystemStatistics(
+			this,
+		);
 
 		console.log("✅ All automation classes initialized");
 	}
@@ -187,6 +192,15 @@ class QueueManager {
 			QUEUE_NAMES.METRICS_REPORTING,
 			this.automations[QUEUE_NAMES.METRICS_REPORTING].process.bind(
 				this.automations[QUEUE_NAMES.METRICS_REPORTING],
+			),
+			workerOptions,
+		);
+
+		// System Statistics Worker
+		this.workers[QUEUE_NAMES.SYSTEM_STATISTICS] = new Worker(
+			QUEUE_NAMES.SYSTEM_STATISTICS,
+			this.automations[QUEUE_NAMES.SYSTEM_STATISTICS].process.bind(
+				this.automations[QUEUE_NAMES.SYSTEM_STATISTICS],
 			),
 			workerOptions,
 		);
@@ -323,6 +337,7 @@ class QueueManager {
 		await this.automations[QUEUE_NAMES.DOCKER_INVENTORY_CLEANUP].schedule();
 		await this.automations[QUEUE_NAMES.DOCKER_IMAGE_UPDATE_CHECK].schedule();
 		await this.automations[QUEUE_NAMES.METRICS_REPORTING].schedule();
+		await this.automations[QUEUE_NAMES.SYSTEM_STATISTICS].schedule();
 	}
 
 	/**
@@ -356,6 +371,10 @@ class QueueManager {
 		return this.automations[
 			QUEUE_NAMES.DOCKER_IMAGE_UPDATE_CHECK
 		].triggerManual();
+	}
+
+	async triggerSystemStatistics() {
+		return this.automations[QUEUE_NAMES.SYSTEM_STATISTICS].triggerManual();
 	}
 
 	async triggerMetricsReporting() {

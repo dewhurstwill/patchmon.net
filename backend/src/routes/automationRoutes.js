@@ -242,6 +242,30 @@ router.post(
 	},
 );
 
+// Trigger manual system statistics collection
+router.post(
+	"/trigger/system-statistics",
+	authenticateToken,
+	async (_req, res) => {
+		try {
+			const job = await queueManager.triggerSystemStatistics();
+			res.json({
+				success: true,
+				data: {
+					jobId: job.id,
+					message: "System statistics collection triggered successfully",
+				},
+			});
+		} catch (error) {
+			console.error("Error triggering system statistics collection:", error);
+			res.status(500).json({
+				success: false,
+				error: "Failed to trigger system statistics collection",
+			});
+		}
+	},
+);
+
 // Get queue health status
 router.get("/health", authenticateToken, async (_req, res) => {
 	try {
@@ -300,6 +324,7 @@ router.get("/overview", authenticateToken, async (_req, res) => {
 			queueManager.getRecentJobs(QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP, 1),
 			queueManager.getRecentJobs(QUEUE_NAMES.DOCKER_INVENTORY_CLEANUP, 1),
 			queueManager.getRecentJobs(QUEUE_NAMES.AGENT_COMMANDS, 1),
+			queueManager.getRecentJobs(QUEUE_NAMES.SYSTEM_STATISTICS, 1),
 		]);
 
 		// Calculate overview metrics
@@ -309,21 +334,24 @@ router.get("/overview", authenticateToken, async (_req, res) => {
 				stats[QUEUE_NAMES.SESSION_CLEANUP].delayed +
 				stats[QUEUE_NAMES.ORPHANED_REPO_CLEANUP].delayed +
 				stats[QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP].delayed +
-				stats[QUEUE_NAMES.DOCKER_INVENTORY_CLEANUP].delayed,
+				stats[QUEUE_NAMES.DOCKER_INVENTORY_CLEANUP].delayed +
+				stats[QUEUE_NAMES.SYSTEM_STATISTICS].delayed,
 
 			runningTasks:
 				stats[QUEUE_NAMES.GITHUB_UPDATE_CHECK].active +
 				stats[QUEUE_NAMES.SESSION_CLEANUP].active +
 				stats[QUEUE_NAMES.ORPHANED_REPO_CLEANUP].active +
 				stats[QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP].active +
-				stats[QUEUE_NAMES.DOCKER_INVENTORY_CLEANUP].active,
+				stats[QUEUE_NAMES.DOCKER_INVENTORY_CLEANUP].active +
+				stats[QUEUE_NAMES.SYSTEM_STATISTICS].active,
 
 			failedTasks:
 				stats[QUEUE_NAMES.GITHUB_UPDATE_CHECK].failed +
 				stats[QUEUE_NAMES.SESSION_CLEANUP].failed +
 				stats[QUEUE_NAMES.ORPHANED_REPO_CLEANUP].failed +
 				stats[QUEUE_NAMES.ORPHANED_PACKAGE_CLEANUP].failed +
-				stats[QUEUE_NAMES.DOCKER_INVENTORY_CLEANUP].failed,
+				stats[QUEUE_NAMES.DOCKER_INVENTORY_CLEANUP].failed +
+				stats[QUEUE_NAMES.SYSTEM_STATISTICS].failed,
 
 			totalAutomations: Object.values(stats).reduce((sum, queueStats) => {
 				return (
@@ -434,6 +462,22 @@ router.get("/overview", authenticateToken, async (_req, res) => {
 							? "Success"
 							: "Never run",
 					stats: stats[QUEUE_NAMES.AGENT_COMMANDS],
+				},
+				{
+					name: "System Statistics Collection",
+					queue: QUEUE_NAMES.SYSTEM_STATISTICS,
+					description: "Collects aggregated system-wide package statistics",
+					schedule: "Every 30 minutes",
+					lastRun: recentJobs[6][0]?.finishedOn
+						? new Date(recentJobs[6][0].finishedOn).toLocaleString()
+						: "Never",
+					lastRunTimestamp: recentJobs[6][0]?.finishedOn || 0,
+					status: recentJobs[6][0]?.failedReason
+						? "Failed"
+						: recentJobs[6][0]
+							? "Success"
+							: "Never run",
+					stats: stats[QUEUE_NAMES.SYSTEM_STATISTICS],
 				},
 			].sort((a, b) => {
 				// Sort by last run timestamp (most recent first)
