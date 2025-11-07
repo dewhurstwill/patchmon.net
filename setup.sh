@@ -34,7 +34,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 # Global variables
-SCRIPT_VERSION="self-hosting-install.sh v1.3.2-selfhost-2025-10-31-1"
+SCRIPT_VERSION="self-hosting-install.sh v1.3.3-selfhost-2025-11-07"
 DEFAULT_GITHUB_REPO="https://github.com/PatchMon/PatchMon.git"
 FQDN=""
 CUSTOM_FQDN=""
