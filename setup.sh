@@ -443,7 +443,7 @@ generate_redis_password() {
 
 # Find next available Redis database
 find_next_redis_db() {
-    print_info "Finding next available Redis database..."
+    print_info "Finding next available Redis database..." >&2
     
     # Start from database 0 and keep checking until we find an empty one
     local db_num=0
@@ -463,11 +463,11 @@ find_next_redis_db() {
         # Try to load admin credentials if ACL file exists
         if [ -f /etc/redis/users.acl ] && grep -q "^user admin" /etc/redis/users.acl; then
             # Redis is configured with ACL - try to extract admin password
-            print_info "Redis requires authentication, attempting with admin credentials..."
+            print_info "Redis requires authentication, attempting with admin credentials..." >&2
             
             # For multi-instance setups, we can't know the admin password yet
             # So we'll just use database 0 as default
-            print_info "Using database 0 (Redis ACL already configured)"
+            print_info "Using database 0 (Redis ACL already configured)" >&2
             echo "0"
             return 0
         fi
@@ -484,7 +484,7 @@ find_next_redis_db() {
         # Check for authentication errors
         if echo "$redis_output" | grep -q "NOAUTH\|WRONGPASS"; then
             # If we hit auth errors and haven't configured yet, use database 0
-            print_info "Redis requires authentication, defaulting to database 0"
+            print_info "Redis requires authentication, defaulting to database 0" >&2
             echo "0"
             return 0
         fi
@@ -492,10 +492,10 @@ find_next_redis_db() {
         # Check for other errors
         if echo "$redis_output" | grep -q "ERR"; then
             if echo "$redis_output" | grep -q "invalid DB index"; then
-                print_warning "Reached maximum database limit at database $db_num"
+                print_warning "Reached maximum database limit at database $db_num" >&2
                 break
             else
-                print_error "Error checking database $db_num: $redis_output"
+                print_error "Error checking database $db_num: $redis_output" >&2
                 return 1
             fi
         fi
@@ -504,17 +504,17 @@ find_next_redis_db() {
         
         # If database is empty, use it
         if [ "$key_count" = "0" ] || [ "$key_count" = "(integer) 0" ]; then
-            print_status "Found available Redis database: $db_num (empty)"
+            print_status "Found available Redis database: $db_num (empty)" >&2
             echo "$db_num"
             return 0
         fi
         
-        print_info "Database $db_num has $key_count keys, checking next..."
+        print_info "Database $db_num has $key_count keys, checking next..." >&2
         db_num=$((db_num + 1))
     done
     
-    print_warning "No available Redis databases found (checked 0-$max_attempts)"
-    print_info "Using database 0 (may have existing data)"
+    print_warning "No available Redis databases found (checked 0-$max_attempts)" >&2
+    print_info "Using database 0 (may have existing data)" >&2
     echo "0"
     return 0
 }

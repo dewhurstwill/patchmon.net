@@ -120,7 +120,6 @@ const Layout = ({ children }) => {
 				name: "Automation",
 				href: "/automation",
 				icon: RefreshCw,
-				new: true,
 			});
 
 			if (canViewReports()) {

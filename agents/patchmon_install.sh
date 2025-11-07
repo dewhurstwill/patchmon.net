@@ -136,10 +136,34 @@ if [[ -z "$PATCHMON_URL" ]] || [[ -z "$API_ID" ]] || [[ -z "$API_KEY" ]]; then
     error "Missing required parameters. This script should be called via the PatchMon web interface."
 fi
 
-# Parse architecture parameter (default to amd64)
-ARCHITECTURE="${ARCHITECTURE:-amd64}"
-if [[ "$ARCHITECTURE" != "amd64" && "$ARCHITECTURE" != "386" && "$ARCHITECTURE" != "arm64" ]]; then
-    error "Invalid architecture '$ARCHITECTURE'. Must be one of: amd64, 386, arm64"
+# Auto-detect architecture if not explicitly set
+if [[ -z "$ARCHITECTURE" ]]; then
+    arch_raw=$(uname -m 2>/dev/null || echo "unknown")
+    
+    # Map architecture to supported values
+    case "$arch_raw" in
+        "x86_64")
+            ARCHITECTURE="amd64"
+            ;;
+        "i386"|"i686")
+            ARCHITECTURE="386"
+            ;;
+        "aarch64"|"arm64")
+            ARCHITECTURE="arm64"
+            ;;
+        "armv7l"|"armv6l"|"arm")
+            ARCHITECTURE="arm"
+            ;;
+        *)
+            warning "⚠️  Unknown architecture '$arch_raw', defaulting to amd64"
+            ARCHITECTURE="amd64"
+            ;;
+    esac
+fi
+
+# Validate architecture
+if [[ "$ARCHITECTURE" != "amd64" && "$ARCHITECTURE" != "386" && "$ARCHITECTURE" != "arm64" && "$ARCHITECTURE" != "arm" ]]; then
+    error "Invalid architecture '$ARCHITECTURE'. Must be one of: amd64, 386, arm64, arm"
 fi
 
 # Check if --force flag is set (for bypassing broken packages)
@@ -234,7 +258,98 @@ install_apt_packages() {
     fi
 }
 
-# Detect package manager and install jq and curl
+# Function to check and install packages for yum/dnf
+install_yum_dnf_packages() {
+    local pkg_manager="$1"
+    shift
+    local packages=("$@")
+    local missing_packages=()
+    
+    # Check which packages are missing
+    for pkg in "${packages[@]}"; do
+        if ! command_exists "$pkg"; then
+            missing_packages+=("$pkg")
+        fi
+    done
+    
+    if [ ${#missing_packages[@]} -eq 0 ]; then
+        success "All required packages are already installed"
+        return 0
+    fi
+    
+    info "Need to install: ${missing_packages[*]}"
+    
+    if [[ "$pkg_manager" == "yum" ]]; then
+        yum install -y "${missing_packages[@]}"
+    else
+        dnf install -y "${missing_packages[@]}"
+    fi
+}
+
+# Function to check and install packages for zypper
+install_zypper_packages() {
+    local packages=("$@")
+    local missing_packages=()
+    
+    # Check which packages are missing
+    for pkg in "${packages[@]}"; do
+        if ! command_exists "$pkg"; then
+            missing_packages+=("$pkg")
+        fi
+    done
+    
+    if [ ${#missing_packages[@]} -eq 0 ]; then
+        success "All required packages are already installed"
+        return 0
+    fi
+    
+    info "Need to install: ${missing_packages[*]}"
+    zypper install -y "${missing_packages[@]}"
+}
+
+# Function to check and install packages for pacman
+install_pacman_packages() {
+    local packages=("$@")
+    local missing_packages=()
+    
+    # Check which packages are missing
+    for pkg in "${packages[@]}"; do
+        if ! command_exists "$pkg"; then
+            missing_packages+=("$pkg")
+        fi
+    done
+    
+    if [ ${#missing_packages[@]} -eq 0 ]; then
+        success "All required packages are already installed"
+        return 0
+    fi
+    
+    info "Need to install: ${missing_packages[*]}"
+    pacman -S --noconfirm "${missing_packages[@]}"
+}
+
+# Function to check and install packages for apk
+install_apk_packages() {
+    local packages=("$@")
+    local missing_packages=()
+    
+    # Check which packages are missing
+    for pkg in "${packages[@]}"; do
+        if ! command_exists "$pkg"; then
+            missing_packages+=("$pkg")
+        fi
+    done
+    
+    if [ ${#missing_packages[@]} -eq 0 ]; then
+        success "All required packages are already installed"
+        return 0
+    fi
+    
+    info "Need to install: ${missing_packages[*]}"
+    apk add --no-cache "${missing_packages[@]}"
+}
+
+# Detect package manager and install jq, curl, and bc
 if command -v apt-get >/dev/null 2>&1; then
     # Debian/Ubuntu
     info "Detected apt-get (Debian/Ubuntu)"
@@ -260,31 +375,31 @@ elif command -v yum >/dev/null 2>&1; then
     info "Detected yum (CentOS/RHEL 7)"
     echo ""
     info "Installing jq, curl, and bc..."
-    yum install -y jq curl bc
+    install_yum_dnf_packages yum jq curl bc
 elif command -v dnf >/dev/null 2>&1; then
     # CentOS/RHEL 8+/Fedora
     info "Detected dnf (CentOS/RHEL 8+/Fedora)"
     echo ""
     info "Installing jq, curl, and bc..."
-    dnf install -y jq curl bc
+    install_yum_dnf_packages dnf jq curl bc
 elif command -v zypper >/dev/null 2>&1; then
     # openSUSE
     info "Detected zypper (openSUSE)"
     echo ""
     info "Installing jq, curl, and bc..."
-    zypper install -y jq curl bc
+    install_zypper_packages jq curl bc
 elif command -v pacman >/dev/null 2>&1; then
     # Arch Linux
     info "Detected pacman (Arch Linux)"
     echo ""
     info "Installing jq, curl, and bc..."
-    pacman -S --noconfirm jq curl bc
+    install_pacman_packages jq curl bc
 elif command -v apk >/dev/null 2>&1; then
     # Alpine Linux
     info "Detected apk (Alpine Linux)"
     echo ""
     info "Installing jq, curl, and bc..."
-    apk add --no-cache jq curl bc
+    install_apk_packages jq curl bc
 else
     warning "Could not detect package manager. Please ensure 'jq', 'curl', and 'bc' are installed manually."
 fi
@@ -464,15 +579,8 @@ else
     error "❌ Failed to validate API credentials or reach server"
 fi
 
-# Step 5: Send initial data and setup systemd service
-info "📊 Sending initial package data to server..."
-if /usr/local/bin/patchmon-agent report; then
-    success "✅ UPDATE: Initial package data sent successfully"
-else
-    warning "⚠️  Failed to send initial data. You can retry later with: /usr/local/bin/patchmon-agent report"
-fi
-
-# Step 6: Setup systemd service for WebSocket connection
+# Step 5: Setup systemd service for WebSocket connection
+# Note: The service will automatically send an initial report on startup (see serve.go)
 info "🔧 Setting up systemd service..."
 
 # Stop and disable existing service if it exists

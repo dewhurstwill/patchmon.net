@@ -281,6 +281,67 @@ const HostDetail = () => {
 		},
 	});
 
+	// Fetch integration status
+	const {
+		data: integrationsData,
+		isLoading: isLoadingIntegrations,
+		refetch: refetchIntegrations,
+	} = useQuery({
+		queryKey: ["host-integrations", hostId],
+		queryFn: () =>
+			adminHostsAPI.getIntegrations(hostId).then((res) => res.data),
+		staleTime: 30 * 1000, // 30 seconds
+		refetchOnWindowFocus: false,
+		enabled: !!hostId && activeTab === "integrations",
+	});
+
+	// Refetch integrations when WebSocket status changes (e.g., after agent restart)
+	useEffect(() => {
+		if (
+			wsStatus?.connected &&
+			activeTab === "integrations" &&
+			integrationsData?.data?.connected === false
+		) {
+			// Agent just reconnected, refetch integrations to get updated connection status
+			refetchIntegrations();
+		}
+	}, [
+		wsStatus?.connected,
+		activeTab,
+		integrationsData?.data?.connected,
+		refetchIntegrations,
+	]);
+
+	// Toggle integration mutation
+	const toggleIntegrationMutation = useMutation({
+		mutationFn: ({ integrationName, enabled }) =>
+			adminHostsAPI
+				.toggleIntegration(hostId, integrationName, enabled)
+				.then((res) => res.data),
+		onSuccess: (data) => {
+			// Optimistically update the cache with the new state
+			queryClient.setQueryData(["host-integrations", hostId], (oldData) => {
+				if (!oldData) return oldData;
+				return {
+					...oldData,
+					data: {
+						...oldData.data,
+						integrations: {
+							...oldData.data.integrations,
+							[data.data.integration]: data.data.enabled,
+						},
+					},
+				};
+			});
+			// Also invalidate to ensure we get fresh data
+			queryClient.invalidateQueries(["host-integrations", hostId]);
+		},
+		onError: () => {
+			// On error, refetch to get the actual state
+			refetchIntegrations();
+		},
+	});
+
 	const handleDeleteHost = async () => {
 		if (
 			window.confirm(
@@ -665,6 +726,17 @@ const HostDetail = () => {
 							}`}
 						>
 							Notes
+						</button>
+						<button
+							type="button"
+							onClick={() => handleTabChange("integrations")}
+							className={`px-4 py-2 text-sm font-medium ${
+								activeTab === "integrations"
+									? "text-primary-600 dark:text-primary-400 border-b-2 border-primary-500"
+									: "text-secondary-500 dark:text-secondary-400 hover:text-secondary-700 dark:hover:text-secondary-300"
+							}`}
+						>
+							Integrations
 						</button>
 					</div>
 
@@ -1446,6 +1518,101 @@ const HostDetail = () => {
 
 						{/* Agent Queue */}
 						{activeTab === "queue" && <AgentQueueTab hostId={hostId} />}
+
+						{/* Integrations */}
+						{activeTab === "integrations" && (
+							<div className="max-w-2xl space-y-4">
+								{isLoadingIntegrations ? (
+									<div className="flex items-center justify-center h-32">
+										<RefreshCw className="h-6 w-6 animate-spin text-primary-600" />
+									</div>
+								) : (
+									<div className="space-y-4">
+										{/* Docker Integration */}
+										<div className="bg-secondary-50 dark:bg-secondary-700 rounded-lg p-4 border border-secondary-200 dark:border-secondary-600">
+											<div className="flex items-start justify-between gap-4">
+												<div className="flex-1">
+													<div className="flex items-center gap-3 mb-2">
+														<Database className="h-5 w-5 text-primary-600 dark:text-primary-400" />
+														<h4 className="text-sm font-medium text-secondary-900 dark:text-white">
+															Docker
+														</h4>
+														{integrationsData?.data?.integrations?.docker ? (
+															<span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+																Enabled
+															</span>
+														) : (
+															<span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold bg-gray-200 text-gray-600 dark:bg-gray-600 dark:text-gray-400">
+																Disabled
+															</span>
+														)}
+													</div>
+													<p className="text-xs text-secondary-600 dark:text-secondary-300">
+														Monitor Docker containers, images, volumes, and
+														networks. Collects real-time container status
+														events.
+													</p>
+												</div>
+												<div className="flex-shrink-0">
+													<button
+														type="button"
+														onClick={() =>
+															toggleIntegrationMutation.mutate({
+																integrationName: "docker",
+																enabled:
+																	!integrationsData?.data?.integrations?.docker,
+															})
+														}
+														disabled={
+															toggleIntegrationMutation.isPending ||
+															!wsStatus?.connected
+														}
+														title={
+															!wsStatus?.connected
+																? "Agent is not connected"
+																: integrationsData?.data?.integrations?.docker
+																	? "Disable Docker integration"
+																	: "Enable Docker integration"
+														}
+														className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ${
+															integrationsData?.data?.integrations?.docker
+																? "bg-primary-600 dark:bg-primary-500"
+																: "bg-secondary-200 dark:bg-secondary-600"
+														} ${
+															toggleIntegrationMutation.isPending ||
+															!integrationsData?.data?.connected
+																? "opacity-50 cursor-not-allowed"
+																: ""
+														}`}
+													>
+														<span
+															className={`inline-block h-3 w-3 transform rounded-full bg-white transition-transform ${
+																integrationsData?.data?.integrations?.docker
+																	? "translate-x-5"
+																	: "translate-x-1"
+															}`}
+														/>
+													</button>
+												</div>
+											</div>
+											{!wsStatus?.connected && (
+												<p className="text-xs text-warning-600 dark:text-warning-400 mt-2">
+													Agent must be connected via WebSocket to toggle
+													integrations
+												</p>
+											)}
+											{toggleIntegrationMutation.isPending && (
+												<p className="text-xs text-secondary-600 dark:text-secondary-400 mt-2">
+													Updating integration...
+												</p>
+											)}
+										</div>
+
+										{/* Future integrations can be added here with the same pattern */}
+									</div>
+								)}
+							</div>
+						)}
 					</div>
 				</div>
 			</div>
@@ -1639,7 +1806,8 @@ const CredentialsModal = ({ host, isOpen, onClose }) => {
 								>
 									<option value="amd64">AMD64 (x86_64) - Default</option>
 									<option value="386">386 (i386) - 32-bit</option>
-									<option value="arm64">ARM64 (aarch64) - ARM</option>
+									<option value="arm64">ARM64 (aarch64) - ARM 64-bit</option>
+									<option value="arm">ARM (armv7l/armv6l) - ARM 32-bit</option>
 								</select>
 								<p className="text-xs text-primary-600 dark:text-primary-400 mt-1">
 									Select the architecture of the target host
