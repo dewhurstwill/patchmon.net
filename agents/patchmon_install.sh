@@ -311,6 +311,37 @@ else
     mkdir -p /etc/patchmon
 fi
 
+# Check if agent is already configured and working (before we overwrite anything)
+info "🔍 Checking if agent is already configured..."
+
+if [[ -f /etc/patchmon/config.yml ]] && [[ -f /etc/patchmon/credentials.yml ]]; then
+    if [[ -f /usr/local/bin/patchmon-agent ]]; then
+        info "📋 Found existing agent configuration"
+        info "🧪 Testing existing configuration with ping..."
+        
+        if /usr/local/bin/patchmon-agent ping >/dev/null 2>&1; then
+            success "✅ Agent is already configured and ping successful"
+            info "📋 Existing configuration is working - skipping installation"
+            info ""
+            info "If you want to reinstall, remove the configuration files first:"
+            info "  sudo rm -f /etc/patchmon/config.yml /etc/patchmon/credentials.yml"
+            echo ""
+            exit 0
+        else
+            warning "⚠️  Agent configuration exists but ping failed"
+            warning "⚠️  Will move existing configuration and reinstall"
+            echo ""
+        fi
+    else
+        warning "⚠️  Configuration files exist but agent binary is missing"
+        warning "⚠️  Will move existing configuration and reinstall"
+        echo ""
+    fi
+else
+    success "✅ Agent not yet configured - proceeding with installation"
+    echo ""
+fi
+
 # Step 2: Create configuration files
 info "🔐 Creating configuration files..."
 
@@ -426,33 +457,6 @@ if [[ -f "/etc/patchmon/logs/patchmon-agent.log" ]]; then
 fi
 
 # Step 4: Test the configuration
-# Check if this machine is already enrolled
-info "🔍 Checking if machine is already enrolled..."
-existing_check=$(curl $CURL_FLAGS -s -X POST \
-    -H "X-API-ID: $API_ID" \
-    -H "X-API-KEY: $API_KEY" \
-    -H "Content-Type: application/json" \
-    -d "{\"machine_id\": \"$MACHINE_ID\"}" \
-    "$PATCHMON_URL/api/v1/hosts/check-machine-id" \
-    -w "\n%{http_code}" 2>&1)
-
-http_code=$(echo "$existing_check" | tail -n 1)
-response_body=$(echo "$existing_check" | sed '$d')
-
-if [[ "$http_code" == "200" ]]; then
-    already_enrolled=$(echo "$response_body" | jq -r '.exists' 2>/dev/null || echo "false")
-    if [[ "$already_enrolled" == "true" ]]; then
-        warning "⚠️  This machine is already enrolled in PatchMon"
-        info "Machine ID: $MACHINE_ID"
-        info "Existing host: $(echo "$response_body" | jq -r '.host.friendly_name' 2>/dev/null)"
-        info ""
-        info "The agent will be reinstalled/updated with existing credentials."
-        echo ""
-    else
-        success "✅ Machine not yet enrolled - proceeding with installation"
-    fi
-fi
-
 info "🧪 Testing API credentials and connectivity..."
 if /usr/local/bin/patchmon-agent ping; then
     success "✅ TEST: API credentials are valid and server is reachable"
