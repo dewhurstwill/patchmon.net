@@ -3,6 +3,7 @@
 
 const WebSocket = require("ws");
 const url = require("node:url");
+const { get_current_time } = require("../utils/timezone");
 
 // Connection registry by api_id
 const apiIdToSocket = new Map();
@@ -49,7 +50,29 @@ function init(server, prismaClient) {
 				wss.handleUpgrade(request, socket, head, (ws) => {
 					ws.on("message", (message) => {
 						// Echo back for Bull Board WebSocket
-						ws.send(message);
+						try {
+							ws.send(message);
+						} catch (_err) {
+							// Ignore send errors (connection may be closed)
+						}
+					});
+
+					ws.on("error", (err) => {
+						// Handle WebSocket errors gracefully for Bull Board
+						if (
+							err.code === "WS_ERR_INVALID_CLOSE_CODE" ||
+							err.code === "ECONNRESET" ||
+							err.code === "EPIPE"
+						) {
+							// These are expected errors, just log quietly
+							console.log("[bullboard-ws] connection error:", err.code);
+						} else {
+							console.error("[bullboard-ws] error:", err.message || err);
+						}
+					});
+
+					ws.on("close", () => {
+						// Connection closed, no action needed
 					});
 				});
 				return;
@@ -117,7 +140,58 @@ function init(server, prismaClient) {
 					}
 				});
 
-				ws.on("close", () => {
+				ws.on("error", (err) => {
+					// Handle WebSocket errors gracefully without crashing
+					// Common errors: invalid close codes (1006), connection resets, etc.
+					if (
+						err.code === "WS_ERR_INVALID_CLOSE_CODE" ||
+						err.message?.includes("invalid status code 1006") ||
+						err.message?.includes("Invalid WebSocket frame")
+					) {
+						// 1006 is a special close code indicating abnormal closure
+						// It cannot be sent in a close frame, but can occur when connection is lost
+						console.log(
+							`[agent-ws] connection error for ${apiId} (abnormal closure):`,
+							err.message || err.code,
+						);
+					} else if (
+						err.code === "ECONNRESET" ||
+						err.code === "EPIPE" ||
+						err.message?.includes("read ECONNRESET")
+					) {
+						// Connection reset errors are common and expected
+						console.log(`[agent-ws] connection reset for ${apiId}`);
+					} else {
+						// Log other errors for debugging
+						console.error(
+							`[agent-ws] error for ${apiId}:`,
+							err.message || err.code || err,
+						);
+					}
+
+					// Clean up connection on error
+					const existing = apiIdToSocket.get(apiId);
+					if (existing === ws) {
+						apiIdToSocket.delete(apiId);
+						connectionMetadata.delete(apiId);
+						// Notify subscribers of disconnection
+						notifyConnectionChange(apiId, false);
+					}
+
+					// Try to close the connection gracefully if still open
+					if (
+						ws.readyState === WebSocket.OPEN ||
+						ws.readyState === WebSocket.CONNECTING
+					) {
+						try {
+							ws.close(1000); // Normal closure
+						} catch {
+							// Ignore errors when closing
+						}
+					}
+				});
+
+				ws.on("close", (code, reason) => {
 					const existing = apiIdToSocket.get(apiId);
 					if (existing === ws) {
 						apiIdToSocket.delete(apiId);
@@ -126,7 +200,7 @@ function init(server, prismaClient) {
 						notifyConnectionChange(apiId, false);
 					}
 					console.log(
-						`[agent-ws] disconnected api_id=${apiId} total=${apiIdToSocket.size}`,
+						`[agent-ws] disconnected api_id=${apiId} code=${code} reason=${reason || "none"} total=${apiIdToSocket.size}`,
 					);
 				});
 
@@ -179,6 +253,29 @@ function pushSettingsUpdate(apiId, newInterval) {
 function pushUpdateAgent(apiId) {
 	const ws = apiIdToSocket.get(apiId);
 	safeSend(ws, JSON.stringify({ type: "update_agent" }));
+}
+
+function pushIntegrationToggle(apiId, integrationName, enabled) {
+	const ws = apiIdToSocket.get(apiId);
+	if (ws && ws.readyState === WebSocket.OPEN) {
+		safeSend(
+			ws,
+			JSON.stringify({
+				type: "integration_toggle",
+				integration: integrationName,
+				enabled: enabled,
+			}),
+		);
+		console.log(
+			`📤 Pushed integration toggle to agent ${apiId}: ${integrationName} = ${enabled}`,
+		);
+		return true;
+	} else {
+		console.log(
+			`⚠️ Agent ${apiId} not connected, cannot push integration toggle, please edit config.yml manually`,
+		);
+		return false;
+	}
 }
 
 function getConnectionByApiId(apiId) {
@@ -314,7 +411,7 @@ async function handleDockerStatusEvent(apiId, message) {
 					status: status,
 					state: status,
 					updated_at: new Date(timestamp || Date.now()),
-					last_checked: new Date(),
+					last_checked: get_current_time(),
 				},
 			});
 
@@ -340,6 +437,7 @@ module.exports = {
 	pushReportNow,
 	pushSettingsUpdate,
 	pushUpdateAgent,
+	pushIntegrationToggle,
 	pushUpdateNotification,
 	pushUpdateNotificationToAll,
 	// Expose read-only view of connected agents

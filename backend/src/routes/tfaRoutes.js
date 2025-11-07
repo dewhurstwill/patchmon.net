@@ -60,9 +60,14 @@ router.post(
 	authenticateToken,
 	[
 		body("token")
+			.notEmpty()
+			.withMessage("Token is required")
+			.isString()
+			.withMessage("Token must be a string")
 			.isLength({ min: 6, max: 6 })
-			.withMessage("Token must be 6 digits"),
-		body("token").isNumeric().withMessage("Token must contain only numbers"),
+			.withMessage("Token must be exactly 6 digits")
+			.matches(/^\d{6}$/)
+			.withMessage("Token must contain only numbers"),
 	],
 	async (req, res) => {
 		try {
@@ -71,7 +76,11 @@ router.post(
 				return res.status(400).json({ errors: errors.array() });
 			}
 
-			const { token } = req.body;
+			// Ensure token is a string (convert if needed)
+			let { token } = req.body;
+			if (typeof token !== "string") {
+				token = String(token);
+			}
 			const userId = req.user.id;
 
 			// Get user's TFA secret

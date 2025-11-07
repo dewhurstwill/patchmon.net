@@ -11,9 +11,15 @@ const {
 	requireManageSettings,
 } = require("../middleware/permissions");
 const { queueManager, QUEUE_NAMES } = require("../services/automation");
+const { pushIntegrationToggle, isConnected } = require("../services/agentWs");
+const agentVersionService = require("../services/agentVersionService");
 
 const router = express.Router();
 const prisma = getPrismaClient();
+
+// In-memory cache for integration states (api_id -> { integration_name -> enabled })
+// This stores the last known state from successful toggles
+const integrationStateCache = new Map();
 
 // Secure endpoint to download the agent script/binary (requires API authentication)
 router.get("/agent/download", async (req, res) => {
@@ -128,9 +134,6 @@ router.get("/agent/version", async (req, res) => {
 	try {
 		const fs = require("node:fs");
 		const path = require("node:path");
-		const { exec } = require("node:child_process");
-		const { promisify } = require("node:util");
-		const execAsync = promisify(exec);
 
 		// Get architecture parameter (default to amd64 for Go agents)
 		const architecture = req.query.arch || "amd64";
@@ -165,53 +168,108 @@ router.get("/agent/version", async (req, res) => {
 				minServerVersion: null,
 			});
 		} else {
-			// Go agent version check (binary)
-			const binaryName = `patchmon-agent-linux-${architecture}`;
-			const binaryPath = path.join(__dirname, "../../../agents", binaryName);
+			// Go agent version check
+			// Detect server architecture and map to Go architecture names
+			const os = require("node:os");
+			const { exec } = require("node:child_process");
+			const { promisify } = require("node:util");
+			const execAsync = promisify(exec);
 
-			if (!fs.existsSync(binaryPath)) {
-				return res.status(404).json({
-					error: `Go agent binary not found for architecture: ${architecture}`,
-				});
+			const serverArch = os.arch();
+			// Map Node.js architecture to Go architecture names
+			const archMap = {
+				x64: "amd64",
+				ia32: "386",
+				arm64: "arm64",
+				arm: "arm",
+			};
+			const serverGoArch = archMap[serverArch] || serverArch;
+
+			// If requested architecture matches server architecture, execute the binary
+			if (architecture === serverGoArch) {
+				const binaryName = `patchmon-agent-linux-${architecture}`;
+				const binaryPath = path.join(__dirname, "../../../agents", binaryName);
+
+				if (!fs.existsSync(binaryPath)) {
+					// Binary doesn't exist, fall back to GitHub
+					console.log(`Binary ${binaryName} not found, falling back to GitHub`);
+				} else {
+					// Execute the binary to get its version
+					try {
+						const { stdout } = await execAsync(`${binaryPath} --help`, {
+							timeout: 10000,
+						});
+
+						// Parse version from help output (e.g., "PatchMon Agent v1.3.1")
+						const versionMatch = stdout.match(
+							/PatchMon Agent v([0-9]+\.[0-9]+\.[0-9]+)/i,
+						);
+
+						if (versionMatch) {
+							const serverVersion = versionMatch[1];
+							const agentVersion = req.query.currentVersion || serverVersion;
+
+							// Simple version comparison (assuming semantic versioning)
+							const hasUpdate = agentVersion !== serverVersion;
+
+							return res.json({
+								currentVersion: agentVersion,
+								latestVersion: serverVersion,
+								hasUpdate: hasUpdate,
+								downloadUrl: `/api/v1/hosts/agent/download?arch=${architecture}`,
+								releaseNotes: `PatchMon Agent v${serverVersion}`,
+								minServerVersion: null,
+								architecture: architecture,
+								agentType: "go",
+							});
+						}
+					} catch (execError) {
+						// Execution failed, fall back to GitHub
+						console.log(
+							`Failed to execute binary ${binaryName}: ${execError.message}, falling back to GitHub`,
+						);
+					}
+				}
 			}
 
-			// Execute the binary to get its version
+			// Fall back to GitHub if architecture doesn't match or binary execution failed
 			try {
-				const { stdout } = await execAsync(`${binaryPath} --help`, {
-					timeout: 10000,
-				});
+				const versionInfo = await agentVersionService.getVersionInfo();
+				const latestVersion = versionInfo.latestVersion;
+				const agentVersion =
+					req.query.currentVersion || latestVersion || "unknown";
 
-				// Parse version from help output (e.g., "PatchMon Agent v1.3.1")
-				const versionMatch = stdout.match(
-					/PatchMon Agent v([0-9]+\.[0-9]+\.[0-9]+)/i,
-				);
-
-				if (!versionMatch) {
-					return res.status(500).json({
-						error: "Could not extract version from agent binary",
+				if (!latestVersion) {
+					return res.status(503).json({
+						error: "Unable to determine latest version from GitHub releases",
+						currentVersion: agentVersion,
+						latestVersion: null,
+						hasUpdate: false,
 					});
 				}
 
-				const serverVersion = versionMatch[1];
-				const agentVersion = req.query.currentVersion || serverVersion;
-
 				// Simple version comparison (assuming semantic versioning)
-				const hasUpdate = agentVersion !== serverVersion;
+				const hasUpdate =
+					agentVersion !== latestVersion && latestVersion !== null;
 
 				res.json({
 					currentVersion: agentVersion,
-					latestVersion: serverVersion,
+					latestVersion: latestVersion,
 					hasUpdate: hasUpdate,
 					downloadUrl: `/api/v1/hosts/agent/download?arch=${architecture}`,
-					releaseNotes: `PatchMon Agent v${serverVersion}`,
+					releaseNotes: `PatchMon Agent v${latestVersion}`,
 					minServerVersion: null,
 					architecture: architecture,
 					agentType: "go",
 				});
-			} catch (execError) {
-				console.error("Failed to execute agent binary:", execError.message);
+			} catch (serviceError) {
+				console.error(
+					"Failed to get version from agentVersionService:",
+					serviceError.message,
+				);
 				return res.status(500).json({
-					error: "Failed to get version from agent binary",
+					error: "Failed to get agent version from service",
+					details: serviceError.message,
 				});
 			}
 		}
@@ -1616,10 +1674,14 @@ router.get("/install", async (req, res) => {
 		// Check for --force parameter
 		const forceInstall = req.query.force === "true" || req.query.force === "1";
 
-		// Get architecture parameter (default to amd64)
-		const architecture = req.query.arch || "amd64";
+		// Get architecture parameter (only set if explicitly provided, otherwise let script auto-detect)
+		const architecture = req.query.arch;
 
 		// Inject the API credentials, server URL, curl flags, SSL verify flag, force flag, and architecture into the script
+		// Only set ARCHITECTURE if explicitly provided, otherwise let the script auto-detect
+		const archExport = architecture
+			? `export ARCHITECTURE="${architecture}"\n`
+			: "";
 		const envVars = `#!/bin/bash
 export PATCHMON_URL="${serverUrl}"
 export API_ID="${host.api_id}"
@@ -1627,8 +1689,7 @@ export API_KEY="${host.api_key}"
 export CURL_FLAGS="${curlFlags}"
 export SKIP_SSL_VERIFY="${skipSSLVerify}"
 export FORCE_INSTALL="${forceInstall ? "true" : "false"}"
-export ARCHITECTURE="${architecture}"
-
+${archExport}
 `;
 
 		// Remove the shebang from the original script and prepend our env vars
@@ -2099,6 +2160,139 @@ router.patch(
 		} catch (error) {
 			console.error("Update notes error:", error);
 			res.status(500).json({ error: "Failed to update notes" });
+		}
+	},
+);
+
+// Get integration status for a host
+router.get(
+	"/:hostId/integrations",
+	authenticateToken,
+	requireManageHosts,
+	async (req, res) => {
+		try {
+			const { hostId } = req.params;
+
+			// Get host to verify it exists
+			const host = await prisma.hosts.findUnique({
+				where: { id: hostId },
+				select: { id: true, api_id: true, friendly_name: true },
+			});
+
+			if (!host) {
+				return res.status(404).json({ error: "Host not found" });
+			}
+
+			// Check if agent is connected
+			const connected = isConnected(host.api_id);
+
+			// Get integration states from cache (or defaults if not cached)
+			// Default: all integrations are disabled
+			const cachedState = integrationStateCache.get(host.api_id) || {};
+			const integrations = {
+				docker: cachedState.docker || false, // Default: disabled
+				// Future integrations can be added here
+			};
+
+			res.json({
+				success: true,
+				data: {
+					integrations,
+					connected,
+					host: {
+						id: host.id,
+						friendlyName: host.friendly_name,
+						apiId: host.api_id,
+					},
+				},
+			});
+		} catch (error) {
+			console.error("Get integration status error:", error);
+			res.status(500).json({ error: "Failed to get integration status" });
+		}
+	},
+);
+
+// Toggle integration status for a host
+router.post(
+	"/:hostId/integrations/:integrationName/toggle",
+	authenticateToken,
+	requireManageHosts,
+	[body("enabled").isBoolean().withMessage("Enabled status must be a boolean")],
+	async (req, res) => {
+		try {
+			const errors = validationResult(req);
+			if (!errors.isEmpty()) {
+				return res.status(400).json({ errors: errors.array() });
+			}
+
+			const { hostId, integrationName } = req.params;
+			const { enabled } = req.body;
+
+			// Validate integration name
+			const validIntegrations = ["docker"]; // Add more as they're implemented
+			if (!validIntegrations.includes(integrationName)) {
+				return res.status(400).json({
+					error: "Invalid integration name",
+					validIntegrations,
+				});
+			}
+
+			// Get host to verify it exists
+			const host = await prisma.hosts.findUnique({
+				where: { id: hostId },
+				select: { id: true, api_id: true, friendly_name: true },
+			});
+
+			if (!host) {
+				return res.status(404).json({ error: "Host not found" });
+			}
+
+			// Check if agent is connected
+			if (!isConnected(host.api_id)) {
+				return res.status(503).json({
+					error: "Agent is not connected",
+					message:
+						"The agent must be connected via WebSocket to toggle integrations",
+				});
+			}
+
+			// Send WebSocket message to agent
+			const success = pushIntegrationToggle(
+				host.api_id,
+				integrationName,
+				enabled,
+			);
+
+			if (!success) {
+				return res.status(503).json({
+					error: "Failed to send integration toggle",
+					message: "Agent connection may have been lost",
+				});
+			}
+
+			// Update cache with new state
+			if (!integrationStateCache.has(host.api_id)) {
+				integrationStateCache.set(host.api_id, {});
+			}
+			integrationStateCache.get(host.api_id)[integrationName] = enabled;
+
+			res.json({
+				success: true,
+				message: `Integration ${integrationName} ${enabled ? "enabled" : "disabled"} successfully`,
+				data: {
+					integration: integrationName,
+					enabled,
+					host: {
+						id: host.id,
+						friendlyName: host.friendly_name,
+						apiId: host.api_id,
+					},
+				},
+			});
+		} catch (error) {
+			console.error("Toggle integration error:", error);
+			res.status(500).json({ error: "Failed to toggle integration" });
 		}
 	},
 );

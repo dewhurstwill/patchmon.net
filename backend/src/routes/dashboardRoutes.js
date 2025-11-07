@@ -564,174 +564,216 @@ router.get(
 			const startDate = new Date();
 			startDate.setDate(endDate.getDate() - daysInt);
 
-			// Build where clause
-			const whereClause = {
-				timestamp: {
-					gte: startDate,
-					lte: endDate,
-				},
-			};
-
-			// Add host filter if specified
-			if (hostId && hostId !== "all" && hostId !== "undefined") {
-				whereClause.host_id = hostId;
-			}
-
-			// Get all update history records in the date range
-			const trendsData = await prisma.update_history.findMany({
-				where: whereClause,
-				select: {
-					timestamp: true,
-					packages_count: true,
-					security_count: true,
-					total_packages: true,
-					host_id: true,
-					status: true,
-				},
-				orderBy: {
-					timestamp: "asc",
-				},
-			});
-
-			// Enhanced data validation and processing
-			const processedData = trendsData
-				.filter((record) => {
-					// Enhanced validation
-					return (
-						record.total_packages !== null &&
-						record.total_packages >= 0 &&
-						record.packages_count >= 0 &&
-						record.security_count >= 0 &&
-						record.security_count <= record.packages_count && // Security can't exceed outdated
-						record.status === "success"
-					); // Only include successful reports
-				})
-				.map((record) => {
-					const date = new Date(record.timestamp);
-					let timeKey;
-
-					if (daysInt <= 1) {
-						// For hourly view, group by hour only (not minutes)
-						timeKey = date.toISOString().substring(0, 13); // YYYY-MM-DDTHH
-					} else {
-						// For daily view, group by day
-						timeKey = date.toISOString().split("T")[0]; // YYYY-MM-DD
-					}
-
-					return {
-						timeKey,
-						total_packages: record.total_packages,
-						packages_count: record.packages_count || 0,
-						security_count: record.security_count || 0,
-						host_id: record.host_id,
-						timestamp: record.timestamp,
-					};
-				});
-
 			// Determine if we need aggregation based on host filter
 			const needsAggregation =
 				!hostId || hostId === "all" || hostId === "undefined";
 
+			let trendsData;
+
+			if (needsAggregation) {
+				// For "All Hosts" mode, use system_statistics table
+				trendsData = await prisma.system_statistics.findMany({
+					where: {
+						timestamp: {
+							gte: startDate,
+							lte: endDate,
+						},
+					},
+					select: {
+						timestamp: true,
+						unique_packages_count: true,
+						unique_security_count: true,
+						total_packages: true,
+						total_hosts: true,
+						hosts_needing_updates: true,
+					},
+					orderBy: {
+						timestamp: "asc",
+					},
+				});
+			} else {
+				// For individual host, use update_history table
+				trendsData = await prisma.update_history.findMany({
+					where: {
+						host_id: hostId,
+						timestamp: {
+							gte: startDate,
+							lte: endDate,
+						},
+					},
+					select: {
+						timestamp: true,
+						packages_count: true,
+						security_count: true,
+						total_packages: true,
+						host_id: true,
+						status: true,
+					},
+					orderBy: {
+						timestamp: "asc",
+					},
+				});
+			}
+
+			// Process data based on source
+			let processedData;
 			let aggregatedArray;
 
 			if (needsAggregation) {
-				// For "All Hosts" mode, we need to calculate the actual total packages differently
-				// Instead of aggregating historical data (which is per-host), we'll use the current total
-				// and show that as a flat line, since total packages don't change much over time
+				// For "All Hosts" mode, data comes from system_statistics table
+				// Already aggregated, just need to format it
+				processedData = trendsData
+					.filter((record) => {
+						// Enhanced validation
+						return (
+							record.total_packages !== null &&
+							record.total_packages >= 0 &&
+							record.unique_packages_count >= 0 &&
+							record.unique_security_count >= 0 &&
+							record.unique_security_count <= record.unique_packages_count
+						);
+					})
+					.map((record) => {
+						const date = new Date(record.timestamp);
+						let timeKey;
 
-				// Get the current total packages count (unique packages across all hosts)
-				const currentTotalPackages = await prisma.packages.count({
-					where: {
-						host_packages: {
-							some: {}, // At least one host has this package
-						},
-					},
-				});
+						if (daysInt <= 1) {
+							// For "Last 24 hours", use full timestamp for each data point
+							// This allows plotting all individual data points
+							timeKey = date.toISOString(); // Full ISO timestamp
+						} else {
+							// For daily view, group by day
+							timeKey = date.toISOString().split("T")[0]; // YYYY-MM-DD
+						}
 
-				// Aggregate data by timeKey when looking at "All Hosts" or no specific host
-				const aggregatedData = processedData.reduce((acc, item) => {
-					if (!acc[item.timeKey]) {
-						acc[item.timeKey] = {
-							timeKey: item.timeKey,
-							total_packages: currentTotalPackages, // Use current total packages
-							packages_count: 0,
-							security_count: 0,
-							record_count: 0,
-							host_ids: new Set(),
-							min_timestamp: item.timestamp,
-							max_timestamp: item.timestamp,
+						return {
+							timeKey,
+							total_packages: record.total_packages,
+							packages_count: record.unique_packages_count,
+							security_count: record.unique_security_count,
+							timestamp: record.timestamp,
 						};
-					}
+					});
 
-					// For outdated and security packages: SUM (these represent counts across hosts)
-					acc[item.timeKey].packages_count += item.packages_count;
-					acc[item.timeKey].security_count += item.security_count;
+				if (daysInt <= 1) {
+					// For "Last 24 hours", use all individual data points without grouping
+					// Sort by timestamp
+					aggregatedArray = processedData.sort(
+						(a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
+					);
+				} else {
+					// For longer periods, group by timeKey and take the latest value for each period
+					const aggregatedData = processedData.reduce((acc, item) => {
+						if (
+							!acc[item.timeKey] ||
+							item.timestamp > acc[item.timeKey].timestamp
+						) {
+							acc[item.timeKey] = item;
+						}
+						return acc;
+					}, {});
 
-					acc[item.timeKey].record_count += 1;
-					acc[item.timeKey].host_ids.add(item.host_id);
-
-					// Track timestamp range
-					if (item.timestamp < acc[item.timeKey].min_timestamp) {
-						acc[item.timeKey].min_timestamp = item.timestamp;
-					}
-					if (item.timestamp > acc[item.timeKey].max_timestamp) {
-						acc[item.timeKey].max_timestamp = item.timestamp;
-					}
-
-					return acc;
-				}, {});
-
-				// Convert to array and add metadata
-				aggregatedArray = Object.values(aggregatedData)
-					.map((item) => ({
-						...item,
-						host_count: item.host_ids.size,
-						host_ids: Array.from(item.host_ids),
-					}))
-					.sort((a, b) => a.timeKey.localeCompare(b.timeKey));
+					// Convert to array and sort
+					aggregatedArray = Object.values(aggregatedData).sort((a, b) =>
+						a.timeKey.localeCompare(b.timeKey),
+					);
+				}
 			} else {
-				// For specific host, show individual data points without aggregation
-				// But still group by timeKey to handle multiple reports from same host in same time period
-				const hostAggregatedData = processedData.reduce((acc, item) => {
-					if (!acc[item.timeKey]) {
-						acc[item.timeKey] = {
-							timeKey: item.timeKey,
-							total_packages: 0,
-							packages_count: 0,
-							security_count: 0,
-							record_count: 0,
-							host_ids: new Set([item.host_id]),
-							min_timestamp: item.timestamp,
-							max_timestamp: item.timestamp,
+				// For individual host, data comes from update_history table
+				processedData = trendsData
+					.filter((record) => {
+						// Enhanced validation
+						return (
+							record.total_packages !== null &&
+							record.total_packages >= 0 &&
+							record.packages_count >= 0 &&
+							record.security_count >= 0 &&
+							record.security_count <= record.packages_count &&
+							record.status === "success"
+						);
+					})
+					.map((record) => {
+						const date = new Date(record.timestamp);
+						let timeKey;
+
+						if (daysInt <= 1) {
+							// For "Last 24 hours", use full timestamp for each data point
+							// This allows plotting all individual data points
+							timeKey = date.toISOString(); // Full ISO timestamp
+						} else {
+							// For daily view, group by day
+							timeKey = date.toISOString().split("T")[0]; // YYYY-MM-DD
+						}
+
+						return {
+							timeKey,
+							total_packages: record.total_packages,
+							packages_count: record.packages_count || 0,
+							security_count: record.security_count || 0,
+							host_id: record.host_id,
+							timestamp: record.timestamp,
 						};
-					}
+					});
 
-					// For same host, take the latest values (not sum)
-					// This handles cases where a host reports multiple times in the same time period
-					if (item.timestamp > acc[item.timeKey].max_timestamp) {
-						acc[item.timeKey].total_packages = item.total_packages;
-						acc[item.timeKey].packages_count = item.packages_count;
-						acc[item.timeKey].security_count = item.security_count;
-						acc[item.timeKey].max_timestamp = item.timestamp;
-					}
+				if (daysInt <= 1) {
+					// For "Last 24 hours", use all individual data points without grouping
+					// Sort by timestamp
+					aggregatedArray = processedData.sort(
+						(a, b) => a.timestamp.getTime() - b.timestamp.getTime(),
+					);
+				} else {
+					// For longer periods, group by timeKey to handle multiple reports from same host in same time period
+					const hostAggregatedData = processedData.reduce((acc, item) => {
+						if (!acc[item.timeKey]) {
+							acc[item.timeKey] = {
+								timeKey: item.timeKey,
+								total_packages: 0,
+								packages_count: 0,
+								security_count: 0,
+								record_count: 0,
+								host_ids: new Set([item.host_id]),
+								min_timestamp: item.timestamp,
+								max_timestamp: item.timestamp,
+							};
+						}
 
-					acc[item.timeKey].record_count += 1;
+						// For same host, take the latest values (not sum)
+						// This handles cases where a host reports multiple times in the same time period
+						if (item.timestamp > acc[item.timeKey].max_timestamp) {
+							acc[item.timeKey].total_packages = item.total_packages;
+							acc[item.timeKey].packages_count = item.packages_count;
+							acc[item.timeKey].security_count = item.security_count;
+							acc[item.timeKey].max_timestamp = item.timestamp;
+						}
 
-					return acc;
-				}, {});
+						acc[item.timeKey].record_count += 1;
 
-				// Convert to array
-				aggregatedArray = Object.values(hostAggregatedData)
-					.map((item) => ({
-						...item,
-						host_count: item.host_ids.size,
-						host_ids: Array.from(item.host_ids),
-					}))
-					.sort((a, b) => a.timeKey.localeCompare(b.timeKey));
+						return acc;
+					}, {});
+
+					// Convert to array
+					aggregatedArray = Object.values(hostAggregatedData)
+						.map((item) => ({
+							...item,
+							host_count: item.host_ids.size,
+							host_ids: Array.from(item.host_ids),
+						}))
+						.sort((a, b) => a.timeKey.localeCompare(b.timeKey));
+				}
 			}
 
 			// Handle sparse data by filling missing time periods
 			const fillMissingPeriods = (data, daysInt) => {
+				if (data.length === 0) {
+					return [];
+				}
+
+				// For "Last 24 hours", return data as-is without filling gaps
+				// This allows plotting all individual data points
+				if (daysInt <= 1) {
+					return data;
+				}
+
 				const filledData = [];
 				const startDate = new Date();
 				startDate.setDate(startDate.getDate() - daysInt);
@@ -741,50 +783,58 @@ router.get(
 				const endDate = new Date();
 				const currentDate = new Date(startDate);
 
-				// Find the last known values for interpolation
+				// Sort data by timeKey to get chronological order
+				const sortedData = [...data].sort((a, b) =>
+					a.timeKey.localeCompare(b.timeKey),
+				);
+
+				// Find the first actual data point (don't fill before this)
+				const firstDataPoint = sortedData[0];
+				const firstDataTimeKey = firstDataPoint?.timeKey;
+
+				// Track last known values as we iterate forward
 				let lastKnownValues = null;
-				if (data.length > 0) {
-					lastKnownValues = {
-						total_packages: data[0].total_packages,
-						packages_count: data[0].packages_count,
-						security_count: data[0].security_count,
-					};
-				}
+				let hasSeenFirstDataPoint = false;
 
 				while (currentDate <= endDate) {
 					let timeKey;
-					if (daysInt <= 1) {
-						timeKey = currentDate.toISOString().substring(0, 13); // Hourly
-						currentDate.setHours(currentDate.getHours() + 1);
-					} else {
-						timeKey = currentDate.toISOString().split("T")[0]; // Daily
-						currentDate.setDate(currentDate.getDate() + 1);
+					// For daily view, group by day
+					timeKey = currentDate.toISOString().split("T")[0]; // YYYY-MM-DD
+					currentDate.setDate(currentDate.getDate() + 1);
+
+					// Skip periods before the first actual data point
+					if (firstDataTimeKey && timeKey < firstDataTimeKey) {
+						continue;
 					}
 
 					if (dataMap.has(timeKey)) {
 						const item = dataMap.get(timeKey);
 						filledData.push(item);
-						// Update last known values
+						// Update last known values with actual data
 						lastKnownValues = {
-							total_packages: item.total_packages,
-							packages_count: item.packages_count,
-							security_count: item.security_count,
+							total_packages: item.total_packages || 0,
+							packages_count: item.packages_count || 0,
+							security_count: item.security_count || 0,
 						};
+						hasSeenFirstDataPoint = true;
 					} else {
-						// For missing periods, use the last known values (interpolation)
-						// This creates a continuous line instead of gaps
-						filledData.push({
-							timeKey,
-							total_packages: lastKnownValues?.total_packages || 0,
-							packages_count: lastKnownValues?.packages_count || 0,
-							security_count: lastKnownValues?.security_count || 0,
-							record_count: 0,
-							host_count: 0,
-							host_ids: [],
-							min_timestamp: null,
-							max_timestamp: null,
-							isInterpolated: true, // Mark as interpolated for debugging
-						});
+						// For missing periods AFTER the first data point, use forward-fill
+						// Only fill if we have a last known value and we've seen the first data point
+						if (lastKnownValues !== null && hasSeenFirstDataPoint) {
+							filledData.push({
+								timeKey,
+								total_packages: lastKnownValues.total_packages,
+								packages_count: lastKnownValues.packages_count,
+								security_count: lastKnownValues.security_count,
+								record_count: 0,
+								host_count: 0,
+								host_ids: [],
+								min_timestamp: null,
+								max_timestamp: null,
+								isInterpolated: true, // Mark as interpolated for debugging
+							});
+						}
+						// If we haven't seen the first data point yet, skip this period
 					}
 				}
 
@@ -810,7 +860,7 @@ router.get(
 			// Get current package state for offline fallback
 			let currentPackageState = null;
 			if (hostId && hostId !== "all" && hostId !== "undefined") {
-				// Get current package counts for specific host
+				// For individual host, get current package counts from host_packages
 				const currentState = await prisma.host_packages.aggregate({
 					where: {
 						host_id: hostId,
@@ -841,34 +891,64 @@ router.get(
 					security_count: securityCount,
 				};
 			} else {
-				// Get current package counts for all hosts
-				// Total packages = count of unique packages installed on at least one host
-				const totalPackagesCount = await prisma.packages.count({
-					where: {
-						host_packages: {
-							some: {}, // At least one host has this package
+				// For "All Hosts" mode, use the latest system_statistics record if available
+				// Otherwise calculate from database
+				const latestStats = await prisma.system_statistics.findFirst({
+					orderBy: {
+						timestamp: "desc",
+					},
+					select: {
+						total_packages: true,
+						unique_packages_count: true,
+						unique_security_count: true,
+						timestamp: true,
+					},
+				});
+
+				if (latestStats) {
+					// Use latest system statistics (collected by scheduled job)
+					currentPackageState = {
+						total_packages: latestStats.total_packages,
+						packages_count: latestStats.unique_packages_count,
+						security_count: latestStats.unique_security_count,
+					};
+				} else {
+					// Fallback: calculate from database if no statistics collected yet
+					const totalPackagesCount = await prisma.packages.count({
+						where: {
+							host_packages: {
+								some: {}, // At least one host has this package
+							},
 						},
-					},
-				});
+					});
 
-				// Get counts for boolean fields separately
-				const outdatedCount = await prisma.host_packages.count({
-					where: {
-						needs_update: true,
-					},
-				});
+					const uniqueOutdatedCount = await prisma.packages.count({
+						where: {
+							host_packages: {
+								some: {
+									needs_update: true,
+								},
+							},
+						},
+					});
 
-				const securityCount = await prisma.host_packages.count({
-					where: {
-						is_security_update: true,
-					},
-				});
+					const uniqueSecurityCount = await prisma.packages.count({
+						where: {
+							host_packages: {
+								some: {
+									needs_update: true,
+									is_security_update: true,
+								},
+							},
+						},
+					});
 
-				currentPackageState = {
-					total_packages: totalPackagesCount,
-					packages_count: outdatedCount,
-					security_count: securityCount,
-				};
+					currentPackageState = {
+						total_packages: totalPackagesCount,
+						packages_count: uniqueOutdatedCount,
+						security_count: uniqueSecurityCount,
+					};
+				}
 			}
 
 			// Format data for chart
@@ -922,6 +1002,11 @@ router.get(
 				chartData.datasets[1].data.push(item.packages_count);
 				chartData.datasets[2].data.push(item.security_count);
 			});
+
+			// Replace the last label with "Now" to indicate current state
+			if (chartData.labels.length > 0) {
+				chartData.labels[chartData.labels.length - 1] = "Now";
+			}
 
 			// Calculate data quality metrics
 			const dataQuality = {

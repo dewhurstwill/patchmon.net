@@ -139,13 +139,11 @@ class DockerImageUpdateCheck {
 		console.log("🐳 Starting Docker image update check...");
 
 		try {
-			// Get all Docker images that have a digest and repository
+			// Get all Docker images that have a digest
+			// Note: repository is required (non-nullable) in schema, so we don't need to check it
 			const images = await prisma.docker_images.findMany({
 				where: {
 					digest: {
-						not: null,
-					},
-					repository: {
 						not: null,
 					},
 				},

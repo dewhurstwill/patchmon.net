@@ -196,6 +196,25 @@ const Automation = () => {
 				year: "numeric",
 			});
 		}
+		if (schedule === "Every 30 minutes") {
+			const now = new Date();
+			const nextRun = new Date(now);
+			// Round up to the next 30-minute mark
+			const minutes = now.getMinutes();
+			if (minutes < 30) {
+				nextRun.setMinutes(30, 0, 0);
+			} else {
+				nextRun.setHours(nextRun.getHours() + 1, 0, 0, 0);
+			}
+			return nextRun.toLocaleString([], {
+				hour12: true,
+				hour: "numeric",
+				minute: "2-digit",
+				day: "numeric",
+				month: "numeric",
+				year: "numeric",
+			});
+		}
 		return "Unknown";
 	};
 
@@ -235,6 +254,18 @@ const Automation = () => {
 			const nextHour = new Date(now);
 			nextHour.setHours(nextHour.getHours() + 1, 0, 0, 0);
 			return nextHour.getTime();
+		}
+		if (schedule === "Every 30 minutes") {
+			const now = new Date();
+			const nextRun = new Date(now);
+			// Round up to the next 30-minute mark
+			const minutes = now.getMinutes();
+			if (minutes < 30) {
+				nextRun.setMinutes(30, 0, 0);
+			} else {
+				nextRun.setHours(nextRun.getHours() + 1, 0, 0, 0);
+			}
+			return nextRun.getTime();
 		}
 		return Number.MAX_SAFE_INTEGER; // Unknown schedules go to bottom
 	};
@@ -294,6 +325,8 @@ const Automation = () => {
 				endpoint = "/automation/trigger/docker-inventory-cleanup";
 			} else if (jobType === "agent-collection") {
 				endpoint = "/automation/trigger/agent-collection";
+			} else if (jobType === "system-statistics") {
+				endpoint = "/automation/trigger/system-statistics";
 			}
 
 			const _response = await api.post(endpoint, data);
@@ -615,6 +648,10 @@ const Automation = () => {
 																automation.queue.includes("agent-commands")
 															) {
 																triggerManualJob("agent-collection");
+															} else if (
+																automation.queue.includes("system-statistics")
+															) {
+																triggerManualJob("system-statistics");
 															}
 														}}
 														className="inline-flex items-center justify-center w-6 h-6 border border-transparent rounded text-white bg-green-600 hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 transition-colors duration-200"
