@@ -99,6 +99,8 @@ export const dashboardAPI = {
 	},
 	getRecentUsers: () => api.get("/dashboard/recent-users"),
 	getRecentCollection: () => api.get("/dashboard/recent-collection"),
+	triggerSystemStatistics: () =>
+		api.post("/automation/trigger/system-statistics"),
 };
 
 // Admin Hosts API (for management interface)
@@ -128,6 +130,11 @@ export const adminHostsAPI = {
 	updateNotes: (hostId, notes) =>
 		api.patch(`/hosts/${hostId}/notes`, {
 			notes: notes,
+		}),
+	getIntegrations: (hostId) => api.get(`/hosts/${hostId}/integrations`),
+	toggleIntegration: (hostId, integrationName, enabled) =>
+		api.post(`/hosts/${hostId}/integrations/${integrationName}/toggle`, {
+			enabled,
 		}),
 };
 

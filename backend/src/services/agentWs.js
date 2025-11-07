@@ -49,12 +49,12 @@ function init(server, prismaClient) {
 				// Accept the WebSocket connection for Bull Board
 				wss.handleUpgrade(request, socket, head, (ws) => {
 					ws.on("message", (message) => {
-					// Echo back for Bull Board WebSocket
-					try {
-						ws.send(message);
-					} catch (_err) {
-						// Ignore send errors (connection may be closed)
-					}
+						// Echo back for Bull Board WebSocket
+						try {
+							ws.send(message);
+						} catch (_err) {
+							// Ignore send errors (connection may be closed)
+						}
 					});
 
 					ws.on("error", (err) => {
@@ -255,6 +255,29 @@ function pushUpdateAgent(apiId) {
 	safeSend(ws, JSON.stringify({ type: "update_agent" }));
 }
 
+function pushIntegrationToggle(apiId, integrationName, enabled) {
+	const ws = apiIdToSocket.get(apiId);
+	if (ws && ws.readyState === WebSocket.OPEN) {
+		safeSend(
+			ws,
+			JSON.stringify({
+				type: "integration_toggle",
+				integration: integrationName,
+				enabled: enabled,
+			}),
+		);
+		console.log(
+			`📤 Pushed integration toggle to agent ${apiId}: ${integrationName} = ${enabled}`,
+		);
+		return true;
+	} else {
+		console.log(
+			`⚠️ Agent ${apiId} not connected, cannot push integration toggle, please edit config.yml manually`,
+		);
+		return false;
+	}
+}
+
 function getConnectionByApiId(apiId) {
 	return apiIdToSocket.get(apiId);
 }
@@ -414,6 +437,7 @@ module.exports = {
 	pushReportNow,
 	pushSettingsUpdate,
 	pushUpdateAgent,
+	pushIntegrationToggle,
 	pushUpdateNotification,
 	pushUpdateNotificationToAll,
 	// Expose read-only view of connected agents

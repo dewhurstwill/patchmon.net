@@ -65,7 +65,7 @@ function parse_date(date_string, fallback = null) {
 	if (!date_string) {
 		return fallback || get_current_time();
 	}
-	
+
 	try {
 		const date = new Date(date_string);
 		if (Number.isNaN(date.getTime())) {

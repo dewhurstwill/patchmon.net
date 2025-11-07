@@ -55,6 +55,8 @@ const Dashboard = () => {
 	const [cardPreferences, setCardPreferences] = useState([]);
 	const [packageTrendsPeriod, setPackageTrendsPeriod] = useState("1"); // days
 	const [packageTrendsHost, setPackageTrendsHost] = useState("all"); // host filter
+	const [systemStatsJobId, setSystemStatsJobId] = useState(null); // Track job ID for system statistics
+	const [isTriggeringJob, setIsTriggeringJob] = useState(false);
 	const navigate = useNavigate();
 	const { isDark } = useTheme();
 	const { user } = useAuth();
@@ -772,56 +774,108 @@ const Dashboard = () => {
 							<h3 className="text-lg font-medium text-secondary-900 dark:text-white">
 								Package Trends Over Time
 							</h3>
-							<div className="flex items-center gap-3">
-								{/* Refresh Button */}
-								<button
-									type="button"
-									onClick={() => refetchPackageTrends()}
-									disabled={packageTrendsFetching}
-									className="px-3 py-1.5 text-sm border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-secondary-900 dark:text-white hover:bg-secondary-50 dark:hover:bg-secondary-700 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-									title="Refresh data"
-								>
-									<RefreshCw
-										className={`h-4 w-4 ${packageTrendsFetching ? "animate-spin" : ""}`}
-									/>
-									Refresh
-								</button>
+							<div className="flex flex-col gap-2">
+								<div className="flex items-center gap-3">
+									{/* Refresh Button */}
+									<button
+										type="button"
+										onClick={async () => {
+											if (packageTrendsHost === "all") {
+												// For "All Hosts", trigger system statistics collection job
+												setIsTriggeringJob(true);
+												try {
+													const response =
+														await dashboardAPI.triggerSystemStatistics();
+													if (response.data?.data?.jobId) {
+														setSystemStatsJobId(response.data.data.jobId);
+														// Wait a moment for the job to complete, then refetch
+														setTimeout(() => {
+															refetchPackageTrends();
+														}, 2000);
+														// Clear the job ID message after 2 seconds
+														setTimeout(() => {
+															setSystemStatsJobId(null);
+														}, 2000);
+													}
+												} catch (error) {
+													console.error(
+														"Failed to trigger system statistics:",
+														error,
+													);
+													// Still refetch data even if job trigger fails
+													refetchPackageTrends();
+												} finally {
+													setIsTriggeringJob(false);
+												}
+											} else {
+												// For individual host, just refetch the data
+												refetchPackageTrends();
+											}
+										}}
+										disabled={packageTrendsFetching || isTriggeringJob}
+										className="px-3 py-1.5 text-sm border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-secondary-900 dark:text-white hover:bg-secondary-50 dark:hover:bg-secondary-700 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+										title={
+											packageTrendsHost === "all"
+												? "Trigger system statistics collection"
+												: "Refresh data"
+										}
+									>
+										<RefreshCw
+											className={`h-4 w-4 ${
+												packageTrendsFetching || isTriggeringJob
+													? "animate-spin"
+													: ""
+											}`}
+										/>
+										Refresh
+									</button>
 
-								{/* Period Selector */}
-								<select
-									value={packageTrendsPeriod}
-									onChange={(e) => setPackageTrendsPeriod(e.target.value)}
-									className="px-3 py-1.5 text-sm border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-secondary-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-								>
-									<option value="1">Last 24 hours</option>
-									<option value="7">Last 7 days</option>
-									<option value="30">Last 30 days</option>
-									<option value="90">Last 90 days</option>
-									<option value="180">Last 6 months</option>
-									<option value="365">Last year</option>
-								</select>
+									{/* Period Selector */}
+									<select
+										value={packageTrendsPeriod}
+										onChange={(e) => setPackageTrendsPeriod(e.target.value)}
+										className="px-3 py-1.5 text-sm border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-secondary-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+									>
+										<option value="1">Last 24 hours</option>
+										<option value="7">Last 7 days</option>
+										<option value="30">Last 30 days</option>
+										<option value="90">Last 90 days</option>
+										<option value="180">Last 6 months</option>
+										<option value="365">Last year</option>
+									</select>
 
-								{/* Host Selector */}
-								<select
-									value={packageTrendsHost}
-									onChange={(e) => setPackageTrendsHost(e.target.value)}
-									className="px-3 py-1.5 text-sm border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-secondary-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
-								>
-									<option value="all">All Hosts</option>
-									{packageTrendsData?.hosts?.length > 0 ? (
-										packageTrendsData.hosts.map((host) => (
-											<option key={host.id} value={host.id}>
-												{host.friendly_name || host.hostname}
+									{/* Host Selector */}
+									<select
+										value={packageTrendsHost}
+										onChange={(e) => {
+											setPackageTrendsHost(e.target.value);
+											// Clear job ID message when host selection changes
+											setSystemStatsJobId(null);
+										}}
+										className="px-3 py-1.5 text-sm border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-800 text-secondary-900 dark:text-white focus:ring-2 focus:ring-primary-500 focus:border-primary-500"
+									>
+										<option value="all">All Hosts</option>
+										{packageTrendsData?.hosts?.length > 0 ? (
+											packageTrendsData.hosts.map((host) => (
+												<option key={host.id} value={host.id}>
+													{host.friendly_name || host.hostname}
+												</option>
+											))
+										) : (
+											<option disabled>
+												{packageTrendsLoading
+													? "Loading hosts..."
+													: "No hosts available"}
 											</option>
-										))
-									) : (
-										<option disabled>
-											{packageTrendsLoading
-												? "Loading hosts..."
-												: "No hosts available"}
-										</option>
-									)}
-								</select>
+										)}
+									</select>
+								</div>
+								{/* Job ID Message */}
+								{systemStatsJobId && packageTrendsHost === "all" && (
+									<p className="text-xs text-secondary-600 dark:text-secondary-400 ml-1">
+										Ran collection job #{systemStatsJobId}
+									</p>
+								)}
 							</div>
 						</div>
 
@@ -1167,13 +1221,40 @@ const Dashboard = () => {
 					title: (context) => {
 						const label = context[0].label;
 
+						// Handle "Now" label
+						if (label === "Now") {
+							return "Now";
+						}
+
 						// Handle empty or invalid labels
 						if (!label || typeof label !== "string") {
 							return "Unknown Date";
 						}
 
+						// Check if it's a full ISO timestamp (for "Last 24 hours")
+						// Format: "2025-01-15T14:30:00.000Z" or "2025-01-15T14:30:00.000"
+						if (label.includes("T") && label.includes(":")) {
+							try {
+								const date = new Date(label);
+								// Check if date is valid
+								if (Number.isNaN(date.getTime())) {
+									return label; // Return original label if date is invalid
+								}
+								// Format full ISO timestamp with date and time
+								return date.toLocaleDateString("en-US", {
+									month: "short",
+									day: "numeric",
+									hour: "numeric",
+									minute: "2-digit",
+									hour12: true,
+								});
+							} catch (_error) {
+								return label; // Return original label if parsing fails
+							}
+						}
+
 						// Format hourly labels (e.g., "2025-10-07T14" -> "Oct 7, 2:00 PM")
-						if (label.includes("T")) {
+						if (label.includes("T") && !label.includes(":")) {
 							try {
 								const date = new Date(`${label}:00:00`);
 								// Check if date is valid
@@ -1233,13 +1314,41 @@ const Dashboard = () => {
 					callback: function (value, _index, _ticks) {
 						const label = this.getLabelForValue(value);
 
+						// Handle "Now" label
+						if (label === "Now") {
+							return "Now";
+						}
+
 						// Handle empty or invalid labels
 						if (!label || typeof label !== "string") {
 							return "Unknown";
 						}
 
+						// Check if it's a full ISO timestamp (for "Last 24 hours")
+						// Format: "2025-01-15T14:30:00.000Z" or "2025-01-15T14:30:00.000"
+						if (label.includes("T") && label.includes(":")) {
+							try {
+								const date = new Date(label);
+								// Check if date is valid
+								if (Number.isNaN(date.getTime())) {
+									return label; // Return original label if date is invalid
+								}
+								// Extract hour from full ISO timestamp
+								const hourNum = date.getHours();
+								return hourNum === 0
+									? "12 AM"
+									: hourNum < 12
+										? `${hourNum} AM`
+										: hourNum === 12
+											? "12 PM"
+											: `${hourNum - 12} PM`;
+							} catch (_error) {
+								return label; // Return original label if parsing fails
+							}
+						}
+
 						// Format hourly labels (e.g., "2025-10-07T14" -> "2 PM")
-						if (label.includes("T")) {
+						if (label.includes("T") && !label.includes(":")) {
 							try {
 								const hour = label.split("T")[1];
 								const hourNum = parseInt(hour, 10);

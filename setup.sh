@@ -66,27 +66,27 @@ SELECTED_SERVICE_NAME=""
 
 # Functions
 print_status() {
-    echo -e "${GREEN}✅ $1${NC}"
+    printf "${GREEN}%s${NC}\n" "$1"
 }
 
 print_info() {
-    echo -e "${BLUE}ℹ️  $1${NC}"
+    printf "${BLUE}%s${NC}\n" "$1"
 }
 
 print_error() {
-    echo -e "${RED}❌ $1${NC}"
+    printf "${RED}%s${NC}\n" "$1"
 }
 
 print_warning() {
-    echo -e "${YELLOW}⚠️  $1${NC}"
+    printf "${YELLOW}%s${NC}\n" "$1"
 }
 
 print_question() {
-    echo -e "${BLUE}❓ $1${NC}"
+    printf "${BLUE}%s${NC}\n" "$1"
 }
 
 print_success() {
-    echo -e "${GREEN}🎉 $1${NC}"
+    printf "${GREEN}%s${NC}\n" "$1"
 }
 
 # Interactive input functions
@@ -443,7 +443,7 @@ generate_redis_password() {
 
 # Find next available Redis database
 find_next_redis_db() {
-    print_info "Finding next available Redis database..."
+    print_info "Finding next available Redis database..." >&2
     
     # Start from database 0 and keep checking until we find an empty one
     local db_num=0
@@ -463,11 +463,11 @@ find_next_redis_db() {
         # Try to load admin credentials if ACL file exists
         if [ -f /etc/redis/users.acl ] && grep -q "^user admin" /etc/redis/users.acl; then
             # Redis is configured with ACL - try to extract admin password
-            print_info "Redis requires authentication, attempting with admin credentials..."
+            print_info "Redis requires authentication, attempting with admin credentials..." >&2
             
             # For multi-instance setups, we can't know the admin password yet
             # So we'll just use database 0 as default
-            print_info "Using database 0 (Redis ACL already configured)"
+            print_info "Using database 0 (Redis ACL already configured)" >&2
             echo "0"
             return 0
         fi
@@ -484,7 +484,7 @@ find_next_redis_db() {
         # Check for authentication errors
         if echo "$redis_output" | grep -q "NOAUTH\|WRONGPASS"; then
             # If we hit auth errors and haven't configured yet, use database 0
-            print_info "Redis requires authentication, defaulting to database 0"
+            print_info "Redis requires authentication, defaulting to database 0" >&2
             echo "0"
             return 0
         fi
@@ -492,10 +492,10 @@ find_next_redis_db() {
         # Check for other errors
         if echo "$redis_output" | grep -q "ERR"; then
             if echo "$redis_output" | grep -q "invalid DB index"; then
-                print_warning "Reached maximum database limit at database $db_num"
+                print_warning "Reached maximum database limit at database $db_num" >&2
                 break
             else
-                print_error "Error checking database $db_num: $redis_output"
+                print_error "Error checking database $db_num: $redis_output" >&2
                 return 1
             fi
         fi
@@ -504,17 +504,17 @@ find_next_redis_db() {
         
         # If database is empty, use it
         if [ "$key_count" = "0" ] || [ "$key_count" = "(integer) 0" ]; then
-            print_status "Found available Redis database: $db_num (empty)"
+            print_status "Found available Redis database: $db_num (empty)" >&2
             echo "$db_num"
             return 0
         fi
         
-        print_info "Database $db_num has $key_count keys, checking next..."
+        print_info "Database $db_num has $key_count keys, checking next..." >&2
         db_num=$((db_num + 1))
     done
     
-    print_warning "No available Redis databases found (checked 0-$max_attempts)"
-    print_info "Using database 0 (may have existing data)"
+    print_warning "No available Redis databases found (checked 0-$max_attempts)" >&2
+    print_info "Using database 0 (may have existing data)" >&2
     echo "0"
     return 0
 }
@@ -1658,7 +1658,7 @@ start_services() {
         local logs=$(journalctl -u "$SERVICE_NAME" -n 50 --no-pager 2>/dev/null || echo "")
         
         if echo "$logs" | grep -q "WRONGPASS\|NOAUTH"; then
-            print_error "❌ Detected Redis authentication error!"
+            print_error "Detected Redis authentication error!"
             print_info "The service cannot authenticate with Redis."
             echo ""
             print_info "Current Redis configuration in .env:"
@@ -1682,18 +1682,18 @@ start_services() {
             print_info "     cat /etc/redis/users.acl"
             echo ""
         elif echo "$logs" | grep -q "ECONNREFUSED.*postgresql\|Connection refused.*5432"; then
-            print_error "❌ Detected PostgreSQL connection error!"
+            print_error "Detected PostgreSQL connection error!"
             print_info "Check if PostgreSQL is running:"
             print_info "  systemctl status postgresql"
         elif echo "$logs" | grep -q "ECONNREFUSED.*redis\|Connection refused.*6379"; then
-            print_error "❌ Detected Redis connection error!"
+            print_error "Detected Redis connection error!"
             print_info "Check if Redis is running:"
             print_info "  systemctl status redis-server"
         elif echo "$logs" | grep -q "database.*does not exist"; then
-            print_error "❌ Database does not exist!"
+            print_error "Database does not exist!"
             print_info "Database: $DB_NAME"
         elif echo "$logs" | grep -q "Error:"; then
-            print_error "❌ Application error detected in logs"
+            print_error "Application error detected in logs"
         fi
         
         echo ""
@@ -1742,9 +1742,9 @@ async function updateSettings() {
       });
     }
     
-    console.log('✅ Database settings updated successfully');
+    console.log('Database settings updated successfully');
   } catch (error) {
-    console.error('❌ Error updating settings:', error.message);
+    console.error('Error updating settings:', error.message);
     process.exit(1);
   } finally {
     await prisma.\$disconnect();
@@ -1868,7 +1868,7 @@ EOF
     if [ -f "$SUMMARY_FILE" ]; then
         print_status "Deployment summary appended to: $SUMMARY_FILE"
     else
-        print_error "⚠️  Failed to append to deployment-info.txt file"
+        print_error "Failed to append to deployment-info.txt file"
         return 1
     fi
 }
@@ -1950,7 +1950,7 @@ EOF
         print_status "Deployment information saved to: $INFO_FILE"
         print_info "File details: $(ls -lh "$INFO_FILE" | awk '{print $5, $9}')"
     else
-        print_error "⚠️  Failed to create deployment-info.txt file"
+        print_error "Failed to create deployment-info.txt file"
         return 1
     fi
 }
@@ -2143,7 +2143,7 @@ deploy_instance() {
     log_message "Backend port: $BACKEND_PORT"
     log_message "SSL enabled: $USE_LETSENCRYPT"
     
-    print_status "🎉 PatchMon instance deployed successfully!"
+    print_status "PatchMon instance deployed successfully!"
     echo ""
     print_info "Next steps:"
     echo "  • Visit your URL: $SERVER_PROTOCOL_SEL://$FQDN (ensure DNS is configured)"
@@ -3237,7 +3237,7 @@ update_installation() {
     sleep 5
     
     if systemctl is-active --quiet "$service_name"; then
-        print_success "✅ Update completed successfully!"
+        print_success "Update completed successfully!"
         print_status "Service $service_name is running"
         
         # Get new version
@@ -3265,7 +3265,7 @@ update_installation() {
         local logs=$(journalctl -u "$service_name" -n 50 --no-pager 2>/dev/null || echo "")
         
         if echo "$logs" | grep -q "WRONGPASS\|NOAUTH"; then
-            print_error "❌ Detected Redis authentication error!"
+            print_error "Detected Redis authentication error!"
             print_info "The service cannot authenticate with Redis."
             echo ""
             print_info "Current Redis configuration in .env:"
@@ -3282,12 +3282,12 @@ update_installation() {
             print_info "     redis-cli --user $test_user --pass $test_pass -n ${test_db:-0} ping"
             echo ""
         elif echo "$logs" | grep -q "ECONNREFUSED"; then
-            print_error "❌ Detected connection refused error!"
+            print_error "Detected connection refused error!"
             print_info "Check if required services are running:"
             print_info "  systemctl status postgresql"
             print_info "  systemctl status redis-server"
         elif echo "$logs" | grep -q "Error:"; then
-            print_error "❌ Application error detected in logs"
+            print_error "Application error detected in logs"
         fi
         
         echo ""
@@ -3320,7 +3320,7 @@ main() {
     # Handle update mode
     if [ "$UPDATE_MODE" = "true" ]; then
         print_banner
-        print_info "🔄 PatchMon Update Mode"
+        print_info "PatchMon Update Mode"
         echo ""
         
         # Select installation to update
@@ -3336,7 +3336,7 @@ main() {
     # Check if existing installations are present
     local existing_installs=($(detect_installations))
     if [ ${#existing_installs[@]} -gt 0 ]; then
-        print_warning "⚠️  Found ${#existing_installs[@]} existing PatchMon installation(s):"
+        print_warning "Found ${#existing_installs[@]} existing PatchMon installation(s):"
         for install in "${existing_installs[@]}"; do
             print_info "   - $install"
         done

@@ -237,8 +237,14 @@ const Repositories = () => {
 
 			// Handle special cases
 			if (sortField === "security") {
-				aValue = a.isSecure ? "Secure" : "Insecure";
-				bValue = b.isSecure ? "Secure" : "Insecure";
+				// Use the same logic as filtering to determine isSecure
+				const aIsSecure =
+					a.isSecure !== undefined ? a.isSecure : a.url.startsWith("https://");
+				const bIsSecure =
+					b.isSecure !== undefined ? b.isSecure : b.url.startsWith("https://");
+				// Sort by boolean: true (Secure) comes before false (Insecure) when ascending
+				aValue = aIsSecure ? 1 : 0;
+				bValue = bIsSecure ? 1 : 0;
 			} else if (sortField === "status") {
 				aValue = a.is_active ? "Active" : "Inactive";
 				bValue = b.is_active ? "Active" : "Inactive";
@@ -535,12 +541,12 @@ const Repositories = () => {
 											{visibleColumns.map((column) => (
 												<th
 													key={column.id}
-													className="px-4 py-2 text-center text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider"
+													className="px-4 py-2 text-left text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider"
 												>
 													<button
 														type="button"
 														onClick={() => handleSort(column.id)}
-														className="flex items-center gap-1 hover:text-secondary-700 dark:hover:text-secondary-200 transition-colors"
+														className="flex items-center justify-start gap-1 hover:text-secondary-700 dark:hover:text-secondary-200 transition-colors"
 													>
 														{column.label}
 														{getSortIcon(column.id)}
@@ -559,7 +565,7 @@ const Repositories = () => {
 												{visibleColumns.map((column) => (
 													<td
 														key={column.id}
-														className="px-4 py-2 whitespace-nowrap text-center"
+														className="px-4 py-2 whitespace-nowrap text-left"
 													>
 														{renderCellContent(column, repo)}
 													</td>
@@ -622,7 +628,7 @@ const Repositories = () => {
 						? repo.isSecure
 						: repo.url.startsWith("https://");
 				return (
-					<div className="flex items-center justify-center">
+					<div className="flex items-center justify-start">
 						{isSecure ? (
 							<div className="flex items-center gap-1 text-green-600">
 								<Lock className="h-4 w-4" />
@@ -651,14 +657,14 @@ const Repositories = () => {
 				);
 			case "hostCount":
 				return (
-					<div className="flex items-center justify-center gap-1 text-sm text-secondary-900 dark:text-white">
+					<div className="flex items-center justify-start gap-1 text-sm text-secondary-900 dark:text-white">
 						<Server className="h-4 w-4" />
 						<span>{repo.hostCount}</span>
 					</div>
 				);
 			case "actions":
 				return (
-					<div className="flex items-center justify-center">
+					<div className="flex items-center justify-start">
 						<button
 							type="button"
 							onClick={(e) => handleDeleteRepository(repo, e)}
