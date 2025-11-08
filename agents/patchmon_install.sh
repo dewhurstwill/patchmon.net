@@ -346,7 +346,41 @@ install_apk_packages() {
     fi
     
     info "Need to install: ${missing_packages[*]}"
-    apk add --no-cache "${missing_packages[@]}"
+    
+    # Update package index before installation
+    info "Updating package index..."
+    apk update -q || true
+    
+    # Build apk command
+    local apk_cmd="apk add --no-cache ${missing_packages[*]}"
+    
+    # Try to install packages
+    if eval "$apk_cmd" 2>&1 | tee /tmp/patchmon_apk_install.log; then
+        success "Packages installed successfully"
+        return 0
+    else
+        warning "Package installation encountered issues, checking if required tools are available..."
+        
+        # Verify critical dependencies are actually available
+        local all_ok=true
+        for pkg in "${packages[@]}"; do
+            if ! command_exists "$pkg"; then
+                if [[ "$FORCE_INSTALL" == "true" ]]; then
+                    error "Critical dependency '$pkg' is not available even with --force. Please install manually."
+                else
+                    error "Critical dependency '$pkg' is not available. Try again with --force flag or install manually: apk add $pkg"
+                fi
+                all_ok=false
+            fi
+        done
+        
+        if $all_ok; then
+            success "All required tools are available despite installation warnings"
+            return 0
+        else
+            return 1
+        fi
+    fi
 }
 
 # Detect package manager and install jq, curl, and bc

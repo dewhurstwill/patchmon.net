@@ -1,6 +1,7 @@
 const axios = require("axios");
 const fs = require("node:fs").promises;
 const path = require("node:path");
+const os = require("node:os");
 const { exec, spawn } = require("node:child_process");
 const { promisify } = require("node:util");
 const _execAsync = promisify(exec);
@@ -106,10 +107,26 @@ class AgentVersionService {
 		try {
 			console.log("🔍 Getting current agent version...");
 
-			// Try to find the agent binary in agents/ folder only (what gets distributed)
+			// Detect server architecture and map to Go architecture names
+			const serverArch = os.arch();
+			// Map Node.js architecture to Go architecture names
+			const archMap = {
+				x64: "amd64",
+				ia32: "386",
+				arm64: "arm64",
+				arm: "arm",
+			};
+			const serverGoArch = archMap[serverArch] || serverArch;
+
+			console.log(
+				`🔍 Detected server architecture: ${serverArch} -> ${serverGoArch}`,
+			);
+
+			// Try to find the agent binary in agents/ folder based on server architecture
 			const possiblePaths = [
-				path.join(this.agentsDir, "patchmon-agent-linux-amd64"),
-				path.join(this.agentsDir, "patchmon-agent"),
+				path.join(this.agentsDir, `patchmon-agent-linux-${serverGoArch}`),
+				path.join(this.agentsDir, "patchmon-agent-linux-amd64"), // Fallback
+				path.join(this.agentsDir, "patchmon-agent"), // Legacy fallback
 			];
 
 			let agentPath = null;
@@ -126,7 +143,7 @@ class AgentVersionService {
 
 			if (!agentPath) {
 				console.log(
-					"⚠️ No agent binary found in agents/ folder, current version will be unknown",
+					`⚠️ No agent binary found in agents/ folder for architecture ${serverGoArch}, current version will be unknown`,
 				);
 				console.log("💡 Use the Download Updates button to get agent binaries");
 				this.currentVersion = null;
