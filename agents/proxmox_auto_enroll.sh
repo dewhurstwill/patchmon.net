@@ -318,7 +318,8 @@ while IFS= read -r line; do
         
         # Download and execute in separate steps to avoid stdin issues with piping
         # Pass CURL_FLAGS as environment variable to container
-        install_output=$(timeout 180 pct exec "$vmid" --env CURL_FLAGS="$CURL_FLAGS" -- bash -c "
+        install_output=$(timeout 180 pct exec "$vmid" -- bash -c "
+            export CURL_FLAGS='$CURL_FLAGS'
             cd /tmp
             curl \$CURL_FLAGS \
                 -H \"X-API-ID: $api_id\" \
@@ -458,7 +459,8 @@ if [[ ${#dpkg_error_containers[@]} -gt 0 ]]; then
                 
                 install_exit_code=0
                 # Pass CURL_FLAGS as environment variable to container
-                install_output=$(timeout 180 pct exec "$vmid" --env CURL_FLAGS="$CURL_FLAGS" -- bash -c "
+                install_output=$(timeout 180 pct exec "$vmid" -- bash -c "
+                    export CURL_FLAGS='$CURL_FLAGS'
                     cd /tmp
                     curl \$CURL_FLAGS \
                         -H \"X-API-ID: $api_id\" \
