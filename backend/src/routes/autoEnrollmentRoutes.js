@@ -125,6 +125,10 @@ router.post(
 			.optional({ nullable: true, checkFalsy: true })
 			.isISO8601()
 			.withMessage("Invalid date format"),
+		body("scopes")
+			.optional()
+			.isObject()
+			.withMessage("Scopes must be an object"),
 	],
 	async (req, res) => {
 		try {
@@ -140,6 +144,7 @@ router.post(
 				default_host_group_id,
 				expires_at,
 				metadata = {},
+				scopes,
 			} = req.body;
 
 			// Validate host group if provided
@@ -150,6 +155,32 @@ router.post(
 
 				if (!host_group) {
 					return res.status(400).json({ error: "Host group not found" });
+				}
+			}
+
+			// Validate scopes for API tokens
+			if (metadata.integration_type === "api" && scopes) {
+				// Validate scopes structure
+				if (typeof scopes !== "object" || scopes === null) {
+					return res.status(400).json({ error: "Scopes must be an object" });
+				}
+
+				// Validate each resource in scopes
+				for (const [resource, actions] of Object.entries(scopes)) {
+					if (!Array.isArray(actions)) {
+						return res.status(400).json({
+							error: `Scopes for resource "${resource}" must be an array of actions`,
+						});
+					}
+
+					// Validate action names
+					for (const action of actions) {
+						if (typeof action !== "string") {
+							return res.status(400).json({
+								error: `All actions in scopes must be strings`,
+							});
+						}
+					}
 				}
 			}
 
@@ -168,6 +199,7 @@ router.post(
 					default_host_group_id: default_host_group_id || null,
 					expires_at: expires_at ? new Date(expires_at) : null,
 					metadata: { integration_type: "proxmox-lxc", ...metadata },
+					scopes: metadata.integration_type === "api" ? scopes || null : null,
 					updated_at: new Date(),
 				},
 				include: {
@@ -201,6 +233,7 @@ router.post(
 					default_host_group: token.host_groups,
 					created_by: token.users,
 					expires_at: token.expires_at,
+					scopes: token.scopes,
 				},
 				warning: "⚠️ Save the token_secret now - it cannot be retrieved later!",
 			});
@@ -232,6 +265,7 @@ router.get(
 					created_at: true,
 					default_host_group_id: true,
 					metadata: true,
+					scopes: true,
 					host_groups: {
 						select: {
 							id: true,
@@ -314,6 +348,10 @@ router.patch(
 		body("max_hosts_per_day").optional().isInt({ min: 1, max: 1000 }),
 		body("allowed_ip_ranges").optional().isArray(),
 		body("expires_at").optional().isISO8601(),
+		body("scopes")
+			.optional()
+			.isObject()
+			.withMessage("Scopes must be an object"),
 	],
 	async (req, res) => {
 		try {
@@ -323,6 +361,16 @@ router.patch(
 			}
 
 			const { tokenId } = req.params;
+
+			// First, get the existing token to check its integration type
+			const existing_token = await prisma.auto_enrollment_tokens.findUnique({
+				where: { id: tokenId },
+			});
+
+			if (!existing_token) {
+				return res.status(404).json({ error: "Token not found" });
+			}
+
 			const update_data = { updated_at: new Date() };
 
 			if (req.body.is_active !== undefined)
@@ -333,6 +381,41 @@ router.patch(
 				update_data.allowed_ip_ranges = req.body.allowed_ip_ranges;
 			if (req.body.expires_at !== undefined)
 				update_data.expires_at = new Date(req.body.expires_at);
+
+			// Handle scopes updates for API tokens only
+			if (req.body.scopes !== undefined) {
+				if (existing_token.metadata?.integration_type === "api") {
+					// Validate scopes structure
+					const scopes = req.body.scopes;
+					if (typeof scopes !== "object" || scopes === null) {
+						return res.status(400).json({ error: "Scopes must be an object" });
+					}
+
+					// Validate each resource in scopes
+					for (const [resource, actions] of Object.entries(scopes)) {
+						if (!Array.isArray(actions)) {
+							return res.status(400).json({
+								error: `Scopes for resource "${resource}" must be an array of actions`,
+							});
+						}
+
+						// Validate action names
+						for (const action of actions) {
+							if (typeof action !== "string") {
+								return res.status(400).json({
+									error: `All actions in scopes must be strings`,
+								});
+							}
+						}
+					}
+
+					update_data.scopes = scopes;
+				} else {
+					return res.status(400).json({
+						error: "Scopes can only be updated for API integration tokens",
+					});
+				}
+			}
 
 			const token = await prisma.auto_enrollment_tokens.update({
 				where: { id: tokenId },

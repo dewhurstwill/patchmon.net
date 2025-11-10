@@ -288,6 +288,7 @@ model auto_enrollment_tokens {
   last_used_at          DateTime?
   expires_at            DateTime?
   metadata              Json?
+  scopes                Json?
   users                 users?       @relation(fields: [created_by_user_id], references: [id], onDelete: SetNull)
   host_groups           host_groups? @relation(fields: [default_host_group_id], references: [id], onDelete: SetNull)
 

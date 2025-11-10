@@ -28,6 +28,8 @@ const Integrations = () => {
 	const [host_groups, setHostGroups] = useState([]);
 	const [loading, setLoading] = useState(true);
 	const [show_create_modal, setShowCreateModal] = useState(false);
+	const [show_edit_modal, setShowEditModal] = useState(false);
+	const [edit_token, setEditToken] = useState(null);
 	const [new_token, setNewToken] = useState(null);
 	const [show_secret, setShowSecret] = useState(false);
 	const [server_url, setServerUrl] = useState("");
@@ -40,6 +42,9 @@ const Integrations = () => {
 		default_host_group_id: "",
 		allowed_ip_ranges: "",
 		expires_at: "",
+		scopes: {
+			host: [],
+		},
 	});
 
 	const [copy_success, setCopySuccess] = useState({});
@@ -52,6 +57,25 @@ const Integrations = () => {
 
 	const handleTabChange = (tabName) => {
 		setActiveTab(tabName);
+	};
+
+	const toggle_scope_action = (resource, action) => {
+		setFormData((prev) => {
+			const current_scopes = prev.scopes || { [resource]: [] };
+			const resource_scopes = current_scopes[resource] || [];
+
+			const updated_scopes = resource_scopes.includes(action)
+				? resource_scopes.filter((a) => a !== action)
+				: [...resource_scopes, action];
+
+			return {
+				...prev,
+				scopes: {
+					...current_scopes,
+					[resource]: updated_scopes,
+				},
+			};
+		});
 	};
 
 	// biome-ignore lint/correctness/useExhaustiveDependencies: Only run on mount
@@ -96,6 +120,14 @@ const Integrations = () => {
 		e.preventDefault();
 
 		try {
+			// Determine integration type based on active tab
+			let integration_type = "proxmox-lxc";
+			if (activeTab === "gethomepage") {
+				integration_type = "gethomepage";
+			} else if (activeTab === "api") {
+				integration_type = "api";
+			}
+
 			const data = {
 				token_name: form_data.token_name,
 				max_hosts_per_day: Number.parseInt(form_data.max_hosts_per_day, 10),
@@ -103,8 +135,7 @@ const Integrations = () => {
 					? form_data.allowed_ip_ranges.split(",").map((ip) => ip.trim())
 					: [],
 				metadata: {
-					integration_type:
-						activeTab === "gethomepage" ? "gethomepage" : "proxmox-lxc",
+					integration_type: integration_type,
 				},
 			};
 
@@ -114,6 +145,11 @@ const Integrations = () => {
 			}
 			if (form_data.expires_at) {
 				data.expires_at = form_data.expires_at;
+			}
+
+			// Add scopes for API credentials
+			if (activeTab === "api" && form_data.scopes) {
+				data.scopes = form_data.scopes;
 			}
 
 			const response = await api.post("/auto-enrollment/tokens", data);
@@ -128,6 +164,9 @@ const Integrations = () => {
 				default_host_group_id: "",
 				allowed_ip_ranges: "",
 				expires_at: "",
+				scopes: {
+					host: [],
+				},
 			});
 		} catch (error) {
 			console.error("Failed to create token:", error);
@@ -165,6 +204,69 @@ const Integrations = () => {
 		} catch (error) {
 			console.error("Failed to toggle token:", error);
 			alert(error.response?.data?.error || "Failed to toggle token");
+		}
+	};
+
+	const open_edit_modal = (token) => {
+		setEditToken(token);
+		setFormData({
+			token_name: token.token_name,
+			max_hosts_per_day: token.max_hosts_per_day || 100,
+			default_host_group_id: token.default_host_group_id || "",
+			allowed_ip_ranges: token.allowed_ip_ranges?.join(", ") || "",
+			expires_at: token.expires_at
+				? new Date(token.expires_at).toISOString().slice(0, 16)
+				: "",
+			scopes: token.scopes || { host: [] },
+		});
+		setShowEditModal(true);
+	};
+
+	const update_token = async (e) => {
+		e.preventDefault();
+
+		try {
+			const data = {
+				allowed_ip_ranges: form_data.allowed_ip_ranges
+					? form_data.allowed_ip_ranges.split(",").map((ip) => ip.trim())
+					: [],
+			};
+
+			// Add expiration if provided
+			if (form_data.expires_at) {
+				data.expires_at = form_data.expires_at;
+			}
+
+			// Add scopes for API credentials
+			if (
+				edit_token?.metadata?.integration_type === "api" &&
+				form_data.scopes
+			) {
+				data.scopes = form_data.scopes;
+			}
+
+			await api.patch(`/auto-enrollment/tokens/${edit_token.id}`, data);
+			setShowEditModal(false);
+			setEditToken(null);
+			load_tokens();
+
+			// Reset form
+			setFormData({
+				token_name: "",
+				max_hosts_per_day: 100,
+				default_host_group_id: "",
+				allowed_ip_ranges: "",
+				expires_at: "",
+				scopes: {
+					host: [],
+				},
+			});
+		} catch (error) {
+			console.error("Failed to update token:", error);
+			const error_message = error.response?.data?.errors
+				? error.response.data.errors.map((e) => e.msg).join(", ")
+				: error.response?.data?.error || "Failed to update token";
+			alert(error_message);
 		}
 	};
 
@@ -255,6 +357,17 @@ const Integrations = () => {
 							}`}
 						>
 							GetHomepage
+						</button>
+						<button
+							type="button"
+							onClick={() => handleTabChange("api")}
+							className={`px-6 py-3 text-sm font-medium ${
+								activeTab === "api"
+									? "text-primary-600 dark:text-primary-400 border-b-2 border-primary-500 bg-primary-50 dark:bg-primary-900/20"
+									: "text-secondary-500 dark:text-secondary-400 hover:text-secondary-700 dark:hover:text-secondary-300 hover:bg-secondary-50 dark:hover:bg-secondary-700/50"
+							}`}
+						>
+							API
 						</button>
 						<button
 							type="button"
@@ -736,6 +849,214 @@ const Integrations = () => {
 							</div>
 						)}
 
+						{/* API Tab */}
+						{activeTab === "api" && (
+							<div className="space-y-6">
+								{/* Header with New Credential Button */}
+								<div className="flex items-center justify-between">
+									<div className="flex items-center gap-3">
+										<div className="w-10 h-10 bg-primary-100 dark:bg-primary-900 rounded-lg flex items-center justify-center">
+											<Server className="h-5 w-5 text-primary-600 dark:text-primary-400" />
+										</div>
+										<div>
+											<h3 className="text-lg font-semibold text-secondary-900 dark:text-white">
+												API Credentials
+											</h3>
+											<p className="text-sm text-secondary-600 dark:text-secondary-400">
+												Manage API credentials for programmatic access to
+												PatchMon data
+											</p>
+										</div>
+									</div>
+									<button
+										type="button"
+										onClick={() => setShowCreateModal(true)}
+										className="btn-primary flex items-center gap-2"
+									>
+										<Plus className="h-4 w-4" />
+										New Credential
+									</button>
+								</div>
+
+								{/* API Credentials List */}
+								{loading ? (
+									<div className="text-center py-8">
+										<div className="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600" />
+									</div>
+								) : tokens.filter(
+										(token) => token.metadata?.integration_type === "api",
+									).length === 0 ? (
+									<div className="text-center py-8 text-secondary-600 dark:text-secondary-400">
+										<p>No API credentials created yet.</p>
+										<p className="text-sm mt-2">
+											Create a credential to enable programmatic access to
+											PatchMon.
+										</p>
+									</div>
+								) : (
+									<div className="space-y-3">
+										{tokens
+											.filter(
+												(token) => token.metadata?.integration_type === "api",
+											)
+											.map((token) => (
+												<div
+													key={token.id}
+													className="border border-secondary-200 dark:border-secondary-600 rounded-lg p-4 hover:border-primary-300 dark:hover:border-primary-700 transition-colors"
+												>
+													<div className="flex justify-between items-start">
+														<div className="flex-1">
+															<div className="flex items-center gap-2 flex-wrap">
+																<h4 className="font-medium text-secondary-900 dark:text-white">
+																	{token.token_name}
+																</h4>
+																<span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+																	API
+																</span>
+																{token.is_active ? (
+																	<span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+																		Active
+																	</span>
+																) : (
+																	<span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-secondary-100 text-secondary-800 dark:bg-secondary-700 dark:text-secondary-200">
+																		Inactive
+																	</span>
+																)}
+															</div>
+															<div className="mt-2 space-y-1 text-sm text-secondary-600 dark:text-secondary-400">
+																<div className="flex items-center gap-2">
+																	<span className="font-mono text-xs bg-secondary-100 dark:bg-secondary-700 px-2 py-1 rounded">
+																		{token.token_key}
+																	</span>
+																	<button
+																		type="button"
+																		onClick={() =>
+																			copy_to_clipboard(
+																				token.token_key,
+																				`key-${token.id}`,
+																			)
+																		}
+																		className="text-primary-600 hover:text-primary-700 dark:text-primary-400"
+																	>
+																		{copy_success[`key-${token.id}`] ? (
+																			<CheckCircle className="h-4 w-4" />
+																		) : (
+																			<Copy className="h-4 w-4" />
+																		)}
+																	</button>
+																</div>
+																{token.scopes && (
+																	<p>
+																		Scopes:{" "}
+																		{Object.entries(token.scopes)
+																			.map(
+																				([resource, actions]) =>
+																					`${resource}: ${Array.isArray(actions) ? actions.join(", ") : actions}`,
+																			)
+																			.join(" | ")}
+																	</p>
+																)}
+																{token.allowed_ip_ranges?.length > 0 && (
+																	<p>
+																		Allowed IPs:{" "}
+																		{token.allowed_ip_ranges.join(", ")}
+																	</p>
+																)}
+																<p>Created: {format_date(token.created_at)}</p>
+																{token.last_used_at && (
+																	<p>
+																		Last Used: {format_date(token.last_used_at)}
+																	</p>
+																)}
+																{token.expires_at && (
+																	<p>
+																		Expires: {format_date(token.expires_at)}
+																		{new Date(token.expires_at) <
+																			new Date() && (
+																			<span className="ml-2 text-red-600 dark:text-red-400">
+																				(Expired)
+																			</span>
+																		)}
+																	</p>
+																)}
+															</div>
+														</div>
+														<div className="flex items-center gap-2">
+															<button
+																type="button"
+																onClick={() => open_edit_modal(token)}
+																className="px-3 py-1 text-sm rounded bg-blue-100 text-blue-700 hover:bg-blue-200 dark:bg-blue-900 dark:text-blue-300"
+															>
+																Edit
+															</button>
+															<button
+																type="button"
+																onClick={() =>
+																	toggle_token_active(token.id, token.is_active)
+																}
+																className={`px-3 py-1 text-sm rounded ${
+																	token.is_active
+																		? "bg-secondary-100 text-secondary-700 hover:bg-secondary-200 dark:bg-secondary-700 dark:text-secondary-300"
+																		: "bg-green-100 text-green-700 hover:bg-green-200 dark:bg-green-900 dark:text-green-300"
+																}`}
+															>
+																{token.is_active ? "Disable" : "Enable"}
+															</button>
+															<button
+																type="button"
+																onClick={() =>
+																	delete_token(token.id, token.token_name)
+																}
+																className="text-red-600 hover:text-red-800 dark:text-red-400 p-2"
+															>
+																<Trash2 className="h-4 w-4" />
+															</button>
+														</div>
+													</div>
+												</div>
+											))}
+									</div>
+								)}
+
+								{/* Documentation Section */}
+								<div className="bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-lg p-6">
+									<h3 className="text-lg font-semibold text-primary-900 dark:text-primary-200 mb-4">
+										Using API Credentials
+									</h3>
+									<div className="space-y-4 text-sm text-primary-800 dark:text-primary-300">
+										<p>
+											API credentials allow you to programmatically access
+											PatchMon data using Basic Authentication.
+										</p>
+										<div>
+											<p className="font-semibold mb-2">
+												Example cURL Request:
+											</p>
+											<div className="bg-primary-100 dark:bg-primary-900/40 p-3 rounded border border-primary-200 dark:border-primary-700 font-mono text-xs overflow-x-auto">
+												curl -u "YOUR_API_KEY:YOUR_API_SECRET" \<br />
+												&nbsp;&nbsp;{server_url}/api/v1/api/hosts
+											</div>
+										</div>
+										<div>
+											<p className="font-semibold mb-2">
+												Query Hosts by Group:
+											</p>
+											<div className="bg-primary-100 dark:bg-primary-900/40 p-3 rounded border border-primary-200 dark:border-primary-700 font-mono text-xs overflow-x-auto">
+												curl -u "YOUR_API_KEY:YOUR_API_SECRET" \<br />
+												&nbsp;&nbsp;"{server_url}
+												/api/v1/api/hosts?hostgroup=Production,Development"
+											</div>
+										</div>
+										<p className="text-xs">
+											<strong>💡 Tip:</strong> You can filter by host group
+											names or UUIDs. Multiple groups can be specified as a
+											comma-separated list.
+										</p>
+									</div>
+								</div>
+							</div>
+						)}
+
 						{/* Docker Tab */}
 						{activeTab === "docker" && (
 							<div className="space-y-6">
@@ -885,7 +1206,9 @@ const Integrations = () => {
 								<h2 className="text-xl font-bold text-secondary-900 dark:text-white">
 									{activeTab === "gethomepage"
 										? "Create GetHomepage API Key"
-										: "Create Auto-Enrollment Token"}
+										: activeTab === "api"
+											? "Create API Credential"
+											: "Create Auto-Enrollment Token"}
 								</h2>
 								<button
 									type="button"
@@ -911,7 +1234,9 @@ const Integrations = () => {
 										placeholder={
 											activeTab === "gethomepage"
 												? "e.g., GetHomepage Widget"
-												: "e.g., Proxmox Production"
+												: activeTab === "api"
+													? "e.g., Ansible Inventory"
+													: "e.g., Proxmox Production"
 										}
 										className="w-full px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white"
 									/>
@@ -968,6 +1293,56 @@ const Integrations = () => {
 											</p>
 										</label>
 									</>
+								)}
+
+								{activeTab === "api" && (
+									<div className="block">
+										<span className="block text-sm font-medium text-secondary-700 dark:text-secondary-300 mb-2">
+											Scopes *
+										</span>
+										<div className="border border-secondary-300 dark:border-secondary-600 rounded-md p-4 bg-secondary-50 dark:bg-secondary-900">
+											<div className="mb-3">
+												<p className="text-xs font-semibold text-secondary-700 dark:text-secondary-300 mb-2">
+													Host Permissions
+												</p>
+												<div className="space-y-2">
+													{["get", "put", "patch", "update", "delete"].map(
+														(action) => (
+															<label
+																key={action}
+																className="flex items-center gap-2"
+															>
+																<input
+																	type="checkbox"
+																	checked={
+																		form_data.scopes?.host?.includes(action) ||
+																		false
+																	}
+																	onChange={() =>
+																		toggle_scope_action("host", action)
+																	}
+																	className="rounded border-secondary-300 dark:border-secondary-600 text-primary-600 focus:ring-primary-500 dark:focus:ring-primary-400"
+																/>
+																<span className="text-sm text-secondary-700 dark:text-secondary-300 uppercase">
+																	{action}
+																</span>
+																<span className="text-xs text-secondary-500 dark:text-secondary-400">
+																	{action === "get" && "- Read host data"}
+																	{action === "put" && "- Replace host data"}
+																	{action === "patch" && "- Update host data"}
+																	{action === "update" && "- Modify host data"}
+																	{action === "delete" && "- Delete hosts"}
+																</span>
+															</label>
+														),
+													)}
+												</div>
+											</div>
+										</div>
+										<p className="mt-1 text-xs text-secondary-500 dark:text-secondary-400">
+											Select the permissions this API credential should have
+										</p>
+									</div>
 								)}
 
 								<label className="block">
@@ -1038,7 +1413,9 @@ const Integrations = () => {
 									<h2 className="text-lg font-bold text-secondary-900 dark:text-white">
 										{activeTab === "gethomepage"
 											? "API Key Created Successfully"
-											: "Token Created Successfully"}
+											: activeTab === "api"
+												? "API Credential Created Successfully"
+												: "Token Created Successfully"}
 									</h2>
 								</div>
 								<button
@@ -1160,6 +1537,103 @@ const Integrations = () => {
 										</div>
 									</div>
 								</div>
+
+								{activeTab === "api" && new_token.scopes && (
+									<div className="mt-4">
+										<div className="block text-xs font-medium text-secondary-700 dark:text-secondary-300 mb-2">
+											Granted Scopes
+										</div>
+										<div className="bg-secondary-50 dark:bg-secondary-900 border border-secondary-300 dark:border-secondary-600 rounded-md p-3">
+											{Object.entries(new_token.scopes).map(
+												([resource, actions]) => (
+													<div key={resource} className="text-sm">
+														<span className="font-semibold text-secondary-800 dark:text-secondary-200 capitalize">
+															{resource}:
+														</span>{" "}
+														<span className="text-secondary-600 dark:text-secondary-400">
+															{Array.isArray(actions)
+																? actions.join(", ").toUpperCase()
+																: actions}
+														</span>
+													</div>
+												),
+											)}
+										</div>
+									</div>
+								)}
+
+								{activeTab === "api" && (
+									<div className="mt-6">
+										<div className="block text-sm font-medium text-secondary-700 dark:text-secondary-300 mb-2">
+											Usage Examples
+										</div>
+										<div className="space-y-3">
+											<div>
+												<p className="text-xs text-secondary-600 dark:text-secondary-400 mb-2">
+													Basic cURL request:
+												</p>
+												<div className="flex items-center gap-2">
+													<input
+														type="text"
+														value={`curl -u "${new_token.token_key}:${new_token.token_secret}" ${server_url}/api/v1/api/hosts`}
+														readOnly
+														className="flex-1 px-3 py-2 text-xs border border-secondary-300 dark:border-secondary-600 rounded-md bg-secondary-50 dark:bg-secondary-900 text-secondary-900 dark:text-white font-mono"
+													/>
+													<button
+														type="button"
+														onClick={() =>
+															copy_to_clipboard(
+																`curl -u "${new_token.token_key}:${new_token.token_secret}" ${server_url}/api/v1/api/hosts`,
+																"api-curl-basic",
+															)
+														}
+														className="btn-primary p-2"
+														title="Copy cURL command"
+													>
+														{copy_success["api-curl-basic"] ? (
+															<CheckCircle className="h-4 w-4" />
+														) : (
+															<Copy className="h-4 w-4" />
+														)}
+													</button>
+												</div>
+											</div>
+											<div>
+												<p className="text-xs text-secondary-600 dark:text-secondary-400 mb-2">
+													Filter by host group:
+												</p>
+												<div className="flex items-center gap-2">
+													<input
+														type="text"
+														value={`curl -u "${new_token.token_key}:${new_token.token_secret}" "${server_url}/api/v1/api/hosts?hostgroup=Production"`}
+														readOnly
+														className="flex-1 px-3 py-2 text-xs border border-secondary-300 dark:border-secondary-600 rounded-md bg-secondary-50 dark:bg-secondary-900 text-secondary-900 dark:text-white font-mono"
+													/>
+													<button
+														type="button"
+														onClick={() =>
+															copy_to_clipboard(
+																`curl -u "${new_token.token_key}:${new_token.token_secret}" "${server_url}/api/v1/api/hosts?hostgroup=Production"`,
+																"api-curl-filter",
+															)
+														}
+														className="btn-primary p-2"
+														title="Copy cURL command"
+													>
+														{copy_success["api-curl-filter"] ? (
+															<CheckCircle className="h-4 w-4" />
+														) : (
+															<Copy className="h-4 w-4" />
+														)}
+													</button>
+												</div>
+											</div>
+										</div>
+										<p className="text-xs text-secondary-500 dark:text-secondary-400 mt-3">
+											💡 Replace "Production" with your host group name or UUID
+										</p>
+									</div>
+								)}
 
 								{activeTab === "proxmox" && (
 									<div className="mt-6">
@@ -1367,6 +1841,154 @@ const Integrations = () => {
 									I've Saved the Credentials
 								</button>
 							</div>
+						</div>
+					</div>
+				</div>
+			)}
+
+			{/* Edit API Credential Modal */}
+			{show_edit_modal && edit_token && (
+				<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+					<div className="bg-white dark:bg-secondary-800 rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+						<div className="p-6">
+							<div className="flex items-center justify-between mb-6">
+								<h2 className="text-xl font-bold text-secondary-900 dark:text-white">
+									Edit API Credential
+								</h2>
+								<button
+									type="button"
+									onClick={() => {
+										setShowEditModal(false);
+										setEditToken(null);
+									}}
+									className="text-secondary-400 hover:text-secondary-600 dark:hover:text-secondary-200"
+								>
+									<X className="h-6 w-6" />
+								</button>
+							</div>
+
+							<form onSubmit={update_token} className="space-y-4">
+								<div className="block">
+									<span className="block text-sm font-medium text-secondary-700 dark:text-secondary-300 mb-1">
+										Token Name
+									</span>
+									<input
+										type="text"
+										value={form_data.token_name}
+										readOnly
+										disabled
+										className="w-full px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-secondary-100 dark:bg-secondary-900 text-secondary-500 dark:text-secondary-400"
+									/>
+									<p className="mt-1 text-xs text-secondary-500 dark:text-secondary-400">
+										Token name cannot be changed
+									</p>
+								</div>
+
+								{edit_token?.metadata?.integration_type === "api" && (
+									<div className="block">
+										<span className="block text-sm font-medium text-secondary-700 dark:text-secondary-300 mb-2">
+											Scopes
+										</span>
+										<div className="border border-secondary-300 dark:border-secondary-600 rounded-md p-4 bg-secondary-50 dark:bg-secondary-900">
+											<div className="mb-3">
+												<p className="text-xs font-semibold text-secondary-700 dark:text-secondary-300 mb-2">
+													Host Permissions
+												</p>
+												<div className="space-y-2">
+													{["get", "put", "patch", "update", "delete"].map(
+														(action) => (
+															<label
+																key={action}
+																className="flex items-center gap-2"
+															>
+																<input
+																	type="checkbox"
+																	checked={
+																		form_data.scopes?.host?.includes(action) ||
+																		false
+																	}
+																	onChange={() =>
+																		toggle_scope_action("host", action)
+																	}
+																	className="rounded border-secondary-300 dark:border-secondary-600 text-primary-600 focus:ring-primary-500 dark:focus:ring-primary-400"
+																/>
+																<span className="text-sm text-secondary-700 dark:text-secondary-300 uppercase">
+																	{action}
+																</span>
+																<span className="text-xs text-secondary-500 dark:text-secondary-400">
+																	{action === "get" && "- Read host data"}
+																	{action === "put" && "- Replace host data"}
+																	{action === "patch" && "- Update host data"}
+																	{action === "update" && "- Modify host data"}
+																	{action === "delete" && "- Delete hosts"}
+																</span>
+															</label>
+														),
+													)}
+												</div>
+											</div>
+										</div>
+										<p className="mt-1 text-xs text-secondary-500 dark:text-secondary-400">
+											Update the permissions for this API credential
+										</p>
+									</div>
+								)}
+
+								<label className="block">
+									<span className="block text-sm font-medium text-secondary-700 dark:text-secondary-300 mb-1">
+										Allowed IP Addresses (Optional)
+									</span>
+									<input
+										type="text"
+										value={form_data.allowed_ip_ranges}
+										onChange={(e) =>
+											setFormData({
+												...form_data,
+												allowed_ip_ranges: e.target.value,
+											})
+										}
+										placeholder="e.g., 192.168.1.100, 10.0.0.50"
+										className="w-full px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white"
+									/>
+									<p className="mt-1 text-xs text-secondary-500 dark:text-secondary-400">
+										Comma-separated list of IP addresses allowed to use this
+										token
+									</p>
+								</label>
+
+								<label className="block">
+									<span className="block text-sm font-medium text-secondary-700 dark:text-secondary-300 mb-1">
+										Expiration Date (Optional)
+									</span>
+									<input
+										type="datetime-local"
+										value={form_data.expires_at}
+										onChange={(e) =>
+											setFormData({ ...form_data, expires_at: e.target.value })
+										}
+										className="w-full px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white"
+									/>
+								</label>
+
+								<div className="flex gap-3 pt-4">
+									<button
+										type="submit"
+										className="flex-1 btn-primary py-2 px-4 rounded-md"
+									>
+										Update Credential
+									</button>
+									<button
+										type="button"
+										onClick={() => {
+											setShowEditModal(false);
+											setEditToken(null);
+										}}
+										className="flex-1 bg-secondary-100 dark:bg-secondary-700 text-secondary-700 dark:text-secondary-300 py-2 px-4 rounded-md hover:bg-secondary-200 dark:hover:bg-secondary-600"
+									>
+										Cancel
+									</button>
+								</div>
+							</form>
 						</div>
 					</div>
 				</div>
