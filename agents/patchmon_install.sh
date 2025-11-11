@@ -1,31 +1,6 @@
 #!/bin/sh
 # PatchMon Agent Installation Script
-# This script requires bash for full functionality
-# Usage: curl -s {PATCHMON_URL}/api/v1/hosts/install -H "X-API-ID: {API_ID}" -H "X-API-KEY: {API_KEY}" | sh
-
-# Check if bash is available, if not try to install it (for Alpine Linux)
-if ! command -v bash >/dev/null 2>&1; then
-    if command -v apk >/dev/null 2>&1; then
-        echo "Installing bash for script compatibility..."
-        apk add --no-cache bash >/dev/null 2>&1 || true
-    fi
-fi
-
-# If bash is available and we're not already running in bash, switch to bash
-# When piped, we can't re-execute easily, so we'll continue with sh
-# but ensure bash is available for bash-specific features
-if command -v bash >/dev/null 2>&1 && [ -z "${BASH_VERSION:-}" ]; then
-    # Check if we're being piped (stdin is not a terminal)
-    if [ -t 0 ]; then
-        # Direct execution, re-execute with bash
-        exec bash "$0" "$@"
-        exit $?
-    fi
-    # When piped, we continue with sh but bash is now available
-    # The script will use bash-specific features which should work if bash is installed
-fi
-
-# PatchMon Agent Installation Script
+# POSIX-compliant shell script (works with dash, ash, bash, etc.)
 # Usage: curl -s {PATCHMON_URL}/api/v1/hosts/install -H "X-API-ID: {API_ID}" -H "X-API-KEY: {API_KEY}" | sh
 
 set -e
@@ -44,20 +19,20 @@ NC='\033[0m' # No Color
 
 # Functions
 error() {
-    echo -e "${RED}❌ ERROR: $1${NC}" >&2
+    printf "%b\n" "${RED}❌ ERROR: $1${NC}" >&2
     exit 1
 }
 
 info() {
-    echo -e "${BLUE}ℹ️  $1${NC}"
+    printf "%b\n" "${BLUE}ℹ️  $1${NC}"
 }
 
 success() {
-    echo -e "${GREEN}✅ $1${NC}"
+    printf "%b\n" "${GREEN}✅ $1${NC}"
 }
 
 warning() {
-    echo -e "${YELLOW}⚠️  $1${NC}"
+    printf "%b\n" "${YELLOW}⚠️  $1${NC}"
 }
 
 # Check if running as root
@@ -75,7 +50,7 @@ verify_datetime() {
     
     # Display current datetime info
     echo ""
-    echo -e "${BLUE}📅 Current System Date/Time:${NC}"
+    printf "%b\n" "${BLUE}📅 Current System Date/Time:${NC}"
     echo "   • Date/Time: $system_time"
     echo "   • Timezone: $timezone"
     echo ""
@@ -93,20 +68,20 @@ verify_datetime() {
                 ;;
             *)
             echo ""
-            echo -e "${RED}❌ Date/time verification failed${NC}"
+            printf "%b\n" "${RED}❌ Date/time verification failed${NC}"
             echo ""
-            echo -e "${YELLOW}💡 Please fix the date/time and re-run the installation script:${NC}"
+            printf "%b\n" "${YELLOW}💡 Please fix the date/time and re-run the installation script:${NC}"
             echo "   sudo timedatectl set-time 'YYYY-MM-DD HH:MM:SS'"
             echo "   sudo timedatectl set-timezone 'America/New_York'  # or your timezone"
             echo "   sudo timedatectl list-timezones  # to see available timezones"
             echo ""
-                echo -e "${BLUE}ℹ️  After fixing the date/time, re-run this installation script.${NC}"
+                printf "%b\n" "${BLUE}ℹ️  After fixing the date/time, re-run this installation script.${NC}"
                 error "Installation cancelled - please fix date/time and re-run"
                 ;;
         esac
     else
         # Non-interactive (piped from curl) - show warning and continue
-        echo -e "${YELLOW}⚠️  Non-interactive installation detected${NC}"
+        printf "%b\n" "${YELLOW}⚠️  Non-interactive installation detected${NC}"
         echo ""
         echo "Please verify the date/time shown above is correct."
         echo "If the date/time is incorrect, it may cause issues with:"
@@ -114,7 +89,7 @@ verify_datetime() {
         echo "   • Scheduled updates"
         echo "   • Data synchronization"
         echo ""
-        echo -e "${GREEN}✅ Continuing with installation...${NC}"
+        printf "%b\n" "${GREEN}✅ Continuing with installation...${NC}"
         success "✅ Date/time verification completed (assumed correct)"
         echo ""
     fi
@@ -211,17 +186,17 @@ export MACHINE_ID
 
 info "🚀 Starting PatchMon Agent Installation..."
 info "📋 Server: $PATCHMON_URL"
-info "🔑 API ID: ${API_ID:0:16}..."
-info "🆔 Machine ID: ${MACHINE_ID:0:16}..."
+info "🔑 API ID: $(echo "$API_ID" | cut -c1-16)..."
+info "🆔 Machine ID: $(echo "$MACHINE_ID" | cut -c1-16)..."
 info "🏗️  Architecture: $ARCHITECTURE"
 
 # Display diagnostic information
 echo ""
-echo -e "${BLUE}🔧 Installation Diagnostics:${NC}"
+printf "%b\n" "${BLUE}🔧 Installation Diagnostics:${NC}"
 echo "   • URL: $PATCHMON_URL"
 echo "   • CURL FLAGS: $CURL_FLAGS"
-echo "   • API ID: ${API_ID:0:16}..."
-echo "   • API Key: ${API_KEY:0:16}..."
+echo "   • API ID: $(echo "$API_ID" | cut -c1-16)..."
+echo "   • API Key: $(echo "$API_KEY" | cut -c1-16)..."
 echo "   • Architecture: $ARCHITECTURE"
 echo ""
 
@@ -236,52 +211,56 @@ command_exists() {
 
 # Function to install packages with error handling
 install_apt_packages() {
-    local packages=("$@")
-    local missing_packages=()
+    # Space-separated list of packages
+    _packages="$*"
+    _missing_packages=""
     
     # Check which packages are missing
-    for pkg in "${packages[@]}"; do
+    for pkg in $_packages; do
         if ! command_exists "$pkg"; then
-            missing_packages+=("$pkg")
+            _missing_packages="$_missing_packages $pkg"
         fi
     done
     
-    if [ ${#missing_packages[@]} -eq 0 ]; then
+    # Trim leading space
+    _missing_packages=$(echo "$_missing_packages" | sed 's/^ //')
+    
+    if [ -z "$_missing_packages" ]; then
         success "All required packages are already installed"
         return 0
     fi
     
-    info "Need to install: ${missing_packages[*]}"
+    info "Need to install: $_missing_packages"
     
     # Build apt-get command based on force mode
-    local apt_cmd="apt-get install ${missing_packages[*]} -y"
+    _apt_cmd="apt-get install $_missing_packages -y"
     
     if [ "$FORCE_INSTALL" = "true" ]; then
         info "Using force mode - bypassing broken packages..."
-        apt_cmd="$apt_cmd -o APT::Get::Fix-Broken=false -o DPkg::Options::=\"--force-confold\" -o DPkg::Options::=\"--force-confdef\""
+        _apt_cmd="$_apt_cmd -o APT::Get::Fix-Broken=false -o DPkg::Options::=\"--force-confold\" -o DPkg::Options::=\"--force-confdef\""
     fi
     
     # Try to install packages
-    if eval "$apt_cmd" 2>&1 | tee /tmp/patchmon_apt_install.log; then
+    if eval "$_apt_cmd" 2>&1 | tee /tmp/patchmon_apt_install.log; then
         success "Packages installed successfully"
         return 0
     else
         warning "Package installation encountered issues, checking if required tools are available..."
         
         # Verify critical dependencies are actually available
-        local all_ok=true
-        for pkg in "${packages[@]}"; do
+        _all_ok=true
+        for pkg in $_packages; do
             if ! command_exists "$pkg"; then
                 if [ "$FORCE_INSTALL" = "true" ]; then
                     error "Critical dependency '$pkg' is not available even with --force. Please install manually."
                 else
                     error "Critical dependency '$pkg' is not available. Try again with --force flag or install manually: apt-get install $pkg"
                 fi
-                all_ok=false
+                _all_ok=false
             fi
         done
         
-        if $all_ok; then
+        if $_all_ok; then
             success "All required tools are available despite installation warnings"
             return 0
         else
@@ -292,121 +271,133 @@ install_apt_packages() {
 
 # Function to check and install packages for yum/dnf
 install_yum_dnf_packages() {
-    local pkg_manager="$1"
+    _pkg_manager="$1"
     shift
-    local packages=("$@")
-    local missing_packages=()
+    _packages="$*"
+    _missing_packages=""
     
     # Check which packages are missing
-    for pkg in "${packages[@]}"; do
+    for pkg in $_packages; do
         if ! command_exists "$pkg"; then
-            missing_packages+=("$pkg")
+            _missing_packages="$_missing_packages $pkg"
         fi
     done
     
-    if [ ${#missing_packages[@]} -eq 0 ]; then
+    # Trim leading space
+    _missing_packages=$(echo "$_missing_packages" | sed 's/^ //')
+    
+    if [ -z "$_missing_packages" ]; then
         success "All required packages are already installed"
         return 0
     fi
     
-    info "Need to install: ${missing_packages[*]}"
+    info "Need to install: $_missing_packages"
     
-    if [ "$pkg_manager" = "yum" ]; then
-        yum install -y "${missing_packages[@]}"
+    if [ "$_pkg_manager" = "yum" ]; then
+        yum install -y $_missing_packages
     else
-        dnf install -y "${missing_packages[@]}"
+        dnf install -y $_missing_packages
     fi
 }
 
 # Function to check and install packages for zypper
 install_zypper_packages() {
-    local packages=("$@")
-    local missing_packages=()
+    _packages="$*"
+    _missing_packages=""
     
     # Check which packages are missing
-    for pkg in "${packages[@]}"; do
+    for pkg in $_packages; do
         if ! command_exists "$pkg"; then
-            missing_packages+=("$pkg")
+            _missing_packages="$_missing_packages $pkg"
         fi
     done
     
-    if [ ${#missing_packages[@]} -eq 0 ]; then
+    # Trim leading space
+    _missing_packages=$(echo "$_missing_packages" | sed 's/^ //')
+    
+    if [ -z "$_missing_packages" ]; then
         success "All required packages are already installed"
         return 0
     fi
     
-    info "Need to install: ${missing_packages[*]}"
-    zypper install -y "${missing_packages[@]}"
+    info "Need to install: $_missing_packages"
+    zypper install -y $_missing_packages
 }
 
 # Function to check and install packages for pacman
 install_pacman_packages() {
-    local packages=("$@")
-    local missing_packages=()
+    _packages="$*"
+    _missing_packages=""
     
     # Check which packages are missing
-    for pkg in "${packages[@]}"; do
+    for pkg in $_packages; do
         if ! command_exists "$pkg"; then
-            missing_packages+=("$pkg")
+            _missing_packages="$_missing_packages $pkg"
         fi
     done
     
-    if [ ${#missing_packages[@]} -eq 0 ]; then
+    # Trim leading space
+    _missing_packages=$(echo "$_missing_packages" | sed 's/^ //')
+    
+    if [ -z "$_missing_packages" ]; then
         success "All required packages are already installed"
         return 0
     fi
     
-    info "Need to install: ${missing_packages[*]}"
-    pacman -S --noconfirm "${missing_packages[@]}"
+    info "Need to install: $_missing_packages"
+    pacman -S --noconfirm $_missing_packages
 }
 
 # Function to check and install packages for apk
 install_apk_packages() {
-    local packages=("$@")
-    local missing_packages=()
+    _packages="$*"
+    _missing_packages=""
     
     # Check which packages are missing
-    for pkg in "${packages[@]}"; do
+    for pkg in $_packages; do
         if ! command_exists "$pkg"; then
-            missing_packages+=("$pkg")
+            _missing_packages="$_missing_packages $pkg"
         fi
     done
     
-    if [ ${#missing_packages[@]} -eq 0 ]; then
+    # Trim leading space
+    _missing_packages=$(echo "$_missing_packages" | sed 's/^ //')
+    
+    if [ -z "$_missing_packages" ]; then
         success "All required packages are already installed"
         return 0
     fi
     
-    info "Need to install: ${missing_packages[*]}"
+    info "Need to install: $_missing_packages"
     
     # Update package index before installation
     info "Updating package index..."
     apk update -q || true
     
     # Build apk command
-    local apk_cmd="apk add --no-cache ${missing_packages[*]}"
+    _apk_cmd="apk add --no-cache $_missing_packages"
     
     # Try to install packages
-    if eval "$apk_cmd" 2>&1 | tee /tmp/patchmon_apk_install.log; then
+    if eval "$_apk_cmd" 2>&1 | tee /tmp/patchmon_apk_install.log; then
         success "Packages installed successfully"
         return 0
     else
         warning "Package installation encountered issues, checking if required tools are available..."
         
         # Verify critical dependencies are actually available
-        local all_ok=true
-        for pkg in "${packages[@]}"; do
+        _all_ok=true
+        for pkg in $_packages; do
             if ! command_exists "$pkg"; then
                 if [ "$FORCE_INSTALL" = "true" ]; then
                     error "Critical dependency '$pkg' is not available even with --force. Please install manually."
                 else
                     error "Critical dependency '$pkg' is not available. Try again with --force flag or install manually: apk add $pkg"
                 fi
-                all_ok=false
+                _all_ok=false
             fi
         done
         
-        if $all_ok; then
+        if $_all_ok; then
             success "All required tools are available despite installation warnings"
             return 0
         else
@@ -790,7 +781,7 @@ fi
 # Installation complete
 success "🎉 PatchMon Agent installation completed successfully!"
 echo ""
-echo -e "${GREEN}📋 Installation Summary:${NC}"
+printf "%b\n" "${GREEN}📋 Installation Summary:${NC}"
 echo "   • Configuration directory: /etc/patchmon"
 echo "   • Agent binary installed: /usr/local/bin/patchmon-agent"
 echo "   • Architecture: $ARCHITECTURE"
@@ -810,16 +801,16 @@ echo "   • Logs directory: /etc/patchmon/logs"
 MOVED_FILES=$(ls /etc/patchmon/credentials.yml.backup.* /etc/patchmon/config.yml.backup.* /usr/local/bin/patchmon-agent.backup.* /etc/patchmon/logs/patchmon-agent.log.old.* /usr/local/bin/patchmon-agent.sh.backup.* /etc/patchmon/credentials.backup.* 2>/dev/null || true)
 if [ -n "$MOVED_FILES" ]; then
     echo ""
-    echo -e "${YELLOW}📋 Files Moved for Fresh Installation:${NC}"
+    printf "%b\n" "${YELLOW}📋 Files Moved for Fresh Installation:${NC}"
     echo "$MOVED_FILES" | while read -r moved_file; do
         echo "   • $moved_file"
     done
     echo ""
-    echo -e "${BLUE}💡 Note: Old files are automatically cleaned up (keeping last 3)${NC}"
+    printf "%b\n" "${BLUE}💡 Note: Old files are automatically cleaned up (keeping last 3)${NC}"
 fi
 
 echo ""
-echo -e "${BLUE}🔧 Management Commands:${NC}"
+printf "%b\n" "${BLUE}🔧 Management Commands:${NC}"
 echo "   • Test connection: /usr/local/bin/patchmon-agent ping"
 echo "   • Manual report: /usr/local/bin/patchmon-agent report"
 echo "   • Check status: /usr/local/bin/patchmon-agent diagnostics"

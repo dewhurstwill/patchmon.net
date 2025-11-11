@@ -1682,7 +1682,7 @@ router.get("/install", async (req, res) => {
 		const archExport = architecture
 			? `export ARCHITECTURE="${architecture}"\n`
 			: "";
-		const envVars = `#!/bin/bash
+		const envVars = `#!/bin/sh
 export PATCHMON_URL="${serverUrl}"
 export API_ID="${host.api_id}"
 export API_KEY="${host.api_key}"
@@ -1781,7 +1781,7 @@ router.get("/remove", async (_req, res) => {
 		} catch (_) {}
 
 		// Prepend environment for CURL_FLAGS so script can use it if needed
-		const envPrefix = `#!/bin/bash\nexport CURL_FLAGS="${curlFlags}"\n\n`;
+		const envPrefix = `#!/bin/sh\nexport CURL_FLAGS="${curlFlags}"\n\n`;
 		script = script.replace(/^#!/, "#");
 		script = envPrefix + script;
 
