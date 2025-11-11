@@ -1669,7 +1669,7 @@ const Integrations = () => {
 										<div className="flex items-center gap-2">
 											<input
 												type="text"
-												value={`curl -s "${getProxmoxUrl()}" | bash`}
+												value={`curl -s "${getProxmoxUrl()}" | sh`}
 												readOnly
 												className="flex-1 px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-secondary-50 dark:bg-secondary-900 text-secondary-900 dark:text-white font-mono text-xs"
 											/>
@@ -1677,7 +1677,7 @@ const Integrations = () => {
 												type="button"
 												onClick={() =>
 													copy_to_clipboard(
-														`curl -s "${getProxmoxUrl()}" | bash`,
+														`curl -s "${getProxmoxUrl()}" | sh`,
 														"curl-command",
 													)
 												}

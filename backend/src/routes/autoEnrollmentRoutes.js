@@ -567,7 +567,7 @@ router.get("/proxmox-lxc", async (req, res) => {
 		const force_install = req.query.force === "true" || req.query.force === "1";
 
 		// Inject the token credentials, server URL, curl flags, and force flag into the script
-		const env_vars = `#!/bin/bash
+		const env_vars = `#!/bin/sh
 # PatchMon Auto-Enrollment Configuration (Auto-generated)
 export PATCHMON_URL="${server_url}"
 export AUTO_ENROLLMENT_KEY="${token.token_key}"
