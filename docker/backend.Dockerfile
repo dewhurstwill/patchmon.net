@@ -46,7 +46,7 @@ RUN npm cache clean --force &&\
     rm -rf node_modules ~/.npm /root/.npm &&\
     npm install --workspace=backend --ignore-scripts --legacy-peer-deps --no-audit --prefer-online --fetch-retries=3 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000 &&\
     cd backend && PRISMA_CLI_BINARY_TYPE=binary npm run db:generate &&\
-    npm prune --omit=dev --workspace=backend &&\
+    cd .. && npm prune --omit=dev --workspace=backend &&\
     npm cache clean --force
 
 # Production stage
