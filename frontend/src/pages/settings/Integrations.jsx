@@ -50,9 +50,14 @@ const Integrations = () => {
 
 	const [copy_success, setCopySuccess] = useState({});
 
-	// Helper function to build Proxmox enrollment URL with optional force flag
+	// Helper functions to build enrollment URLs with optional force flag
 	const getProxmoxUrl = () => {
-		const baseUrl = `${server_url}/api/v1/auto-enrollment/proxmox-lxc?token_key=${new_token.token_key}&token_secret=${new_token.token_secret}`;
+		const baseUrl = `${server_url}/api/v1/auto-enrollment/script?type=proxmox-lxc&token_key=${new_token.token_key}&token_secret=${new_token.token_secret}`;
+		return force_proxmox_install ? `${baseUrl}&force=true` : baseUrl;
+	};
+
+	const getDirectHostUrl = () => {
+		const baseUrl = `${server_url}/api/v1/auto-enrollment/script?type=direct-host&token_key=${new_token.token_key}&token_secret=${new_token.token_secret}`;
 		return force_proxmox_install ? `${baseUrl}&force=true` : baseUrl;
 	};
 
@@ -1574,6 +1579,54 @@ const Integrations = () => {
 										<p className="text-xs text-secondary-500 dark:text-secondary-400 mt-2">
 											💡 This command will automatically discover and enroll all
 											running LXC containers.
+										</p>
+									</div>
+								)}
+
+								{(new_token.metadata?.integration_type === "proxmox-lxc" ||
+									usage_type === "proxmox-lxc") && (
+									<div className="mt-6">
+										<div className="block text-sm font-medium text-secondary-700 dark:text-secondary-300 mb-2">
+											Direct Host Auto-Enrollment Command
+										</div>
+										<p className="text-xs text-secondary-600 dark:text-secondary-400 mb-2">
+											Run this command on individual hosts to enroll them
+											directly:
+										</p>
+
+										<div className="flex items-center gap-2">
+											<input
+												type="text"
+												value={`curl -s "${getDirectHostUrl()}" | sh`}
+												readOnly
+												className="flex-1 px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-secondary-50 dark:bg-secondary-900 text-secondary-900 dark:text-white font-mono text-xs"
+											/>
+											<button
+												type="button"
+												onClick={() =>
+													copy_to_clipboard(
+														`curl -s "${getDirectHostUrl()}" | sh`,
+														"direct-host-command",
+													)
+												}
+												className="btn-primary flex items-center gap-1 px-3 py-2 whitespace-nowrap"
+											>
+												{copy_success["direct-host-command"] ? (
+													<>
+														<CheckCircle className="h-4 w-4" />
+														Copied
+													</>
+												) : (
+													<>
+														<Copy className="h-4 w-4" />
+														Copy
+													</>
+												)}
+											</button>
+										</div>
+										<p className="text-xs text-secondary-500 dark:text-secondary-400 mt-2">
+											💡 Run this on individual hosts for easy enrollment
+											without Proxmox.
 										</p>
 									</div>
 								)}

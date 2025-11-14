@@ -481,24 +481,50 @@ router.delete(
 );
 
 // ========== AUTO-ENROLLMENT ENDPOINTS (Used by Scripts) ==========
-// Future integrations can follow this pattern:
-//   - /proxmox-lxc     - Proxmox LXC containers
-//   - /vmware-esxi     - VMware ESXi VMs
-//   - /docker          - Docker containers
-//   - /kubernetes      - Kubernetes pods
-//   - /aws-ec2         - AWS EC2 instances
+// Universal script-serving endpoint with type parameter
+// Supported types:
+//   - proxmox-lxc     - Proxmox LXC containers
+//   - direct-host     - Direct host enrollment
+// Future types:
+//   - vmware-esxi     - VMware ESXi VMs
+//   - docker          - Docker containers
+//   - kubernetes      - Kubernetes pods
 
-// Serve the Proxmox LXC enrollment script with credentials injected
-router.get("/proxmox-lxc", async (req, res) => {
+// Serve auto-enrollment scripts with credentials injected
+router.get("/script", async (req, res) => {
 	try {
-		// Get token from query params
+		// Get parameters from query params
 		const token_key = req.query.token_key;
 		const token_secret = req.query.token_secret;
+		const script_type = req.query.type;
 
 		if (!token_key || !token_secret) {
 			return res
 				.status(401)
 				.json({ error: "Token key and secret required as query parameters" });
+		}
+
+		if (!script_type) {
+			return res
+				.status(400)
+				.json({
+					error:
+						"Script type required as query parameter (e.g., ?type=proxmox-lxc or ?type=direct-host)",
+				});
+		}
+
+		// Map script types to script file paths
+		const scriptMap = {
+			"proxmox-lxc": "proxmox_auto_enroll.sh",
+			"direct-host": "direct_host_auto_enroll.sh",
+		};
+
+		if (!scriptMap[script_type]) {
+			return res
+				.status(400)
+				.json({
+					error: `Invalid script type: ${script_type}. Supported types: ${Object.keys(scriptMap).join(", ")}`,
+				});
 		}
 
 		// Validate token
@@ -526,13 +552,15 @@ router.get("/proxmox-lxc", async (req, res) => {
 
 		const script_path = path.join(
 			__dirname,
-			"../../../agents/proxmox_auto_enroll.sh",
+			`../../../agents/${scriptMap[script_type]}`,
 		);
 
 		if (!fs.existsSync(script_path)) {
 			return res
 				.status(404)
-				.json({ error: "Proxmox enrollment script not found" });
+				.json({
+					error: `Enrollment script not found: ${scriptMap[script_type]}`,
+				});
 		}
 
 		let script = fs.readFileSync(script_path, "utf8");
@@ -591,11 +619,11 @@ export FORCE_INSTALL="${force_install ? "true" : "false"}"
 		res.setHeader("Content-Type", "text/plain");
 		res.setHeader(
 			"Content-Disposition",
-			'inline; filename="proxmox_auto_enroll.sh"',
+			`inline; filename="${scriptMap[script_type]}"`,
 		);
 		res.send(script);
 	} catch (error) {
-		console.error("Proxmox script serve error:", error);
+		console.error("Script serve error:", error);
 		res.status(500).json({ error: "Failed to serve enrollment script" });
 	}
 });
@@ -609,8 +637,11 @@ router.post(
 			.isLength({ min: 1, max: 255 })
 			.withMessage("Friendly name is required"),
 		body("machine_id")
+			.optional()
 			.isLength({ min: 1, max: 255 })
-			.withMessage("Machine ID is required"),
+			.withMessage(
+				"Machine ID must be between 1 and 255 characters if provided",
+			),
 		body("metadata").optional().isObject(),
 	],
 	async (req, res) => {
@@ -626,24 +657,7 @@ router.post(
 			const api_id = `patchmon_${crypto.randomBytes(8).toString("hex")}`;
 			const api_key = crypto.randomBytes(32).toString("hex");
 
-			// Check if host already exists by machine_id (not hostname)
-			const existing_host = await prisma.hosts.findUnique({
-				where: { machine_id },
-			});
-
-			if (existing_host) {
-				return res.status(409).json({
-					error: "Host already exists",
-					host_id: existing_host.id,
-					api_id: existing_host.api_id,
-					machine_id: existing_host.machine_id,
-					friendly_name: existing_host.friendly_name,
-					message:
-						"This machine is already enrolled in PatchMon (matched by machine ID)",
-				});
-			}
-
-			// Create host
+			// Create host (no duplicate check - using config.yml checking instead)
 			const host = await prisma.hosts.create({
 				data: {
 					id: uuidv4(),
@@ -760,30 +774,7 @@ router.post(
 				try {
 					const { friendly_name, machine_id } = host_data;
 
-					if (!machine_id) {
-						results.failed.push({
-							friendly_name,
-							error: "Machine ID is required",
-						});
-						continue;
-					}
-
-					// Check if host already exists by machine_id
-					const existing_host = await prisma.hosts.findUnique({
-						where: { machine_id },
-					});
-
-					if (existing_host) {
-						results.skipped.push({
-							friendly_name,
-							machine_id,
-							reason: "Machine already enrolled",
-							api_id: existing_host.api_id,
-						});
-						continue;
-					}
-
-					// Generate credentials
+					// Generate credentials (no duplicate check - using config.yml checking instead)
 					const api_id = `patchmon_${crypto.randomBytes(8).toString("hex")}`;
 					const api_key = crypto.randomBytes(32).toString("hex");
 
