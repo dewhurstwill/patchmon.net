@@ -16,6 +16,9 @@ SCRIPT_VERSION="1.0.0"
 # Usage:
 #   curl -s "https://patchmon.example.com/api/v1/auto-enrollment/script?type=direct-host&token_key=KEY&token_secret=SECRET" | sh
 #
+#   With custom friendly name:
+#   curl -s "https://patchmon.example.com/api/v1/auto-enrollment/script?type=direct-host&token_key=KEY&token_secret=SECRET" | FRIENDLY_NAME="My Server" sh
+#
 # Requirements:
 #   - Run as root or with sudo
 #   - Auto-enrollment token from PatchMon
@@ -28,6 +31,7 @@ AUTO_ENROLLMENT_KEY="${AUTO_ENROLLMENT_KEY:-}"
 AUTO_ENROLLMENT_SECRET="${AUTO_ENROLLMENT_SECRET:-}"
 CURL_FLAGS="${CURL_FLAGS:--s}"
 FORCE_INSTALL="${FORCE_INSTALL:-false}"
+FRIENDLY_NAME="${FRIENDLY_NAME:-}" # Optional: Custom friendly name for the host
 
 # ===== COLOR OUTPUT =====
 RED='\033[0;31m'
@@ -77,7 +81,7 @@ fi
 
 # Check for required commands
 for cmd in curl; do
-    if ! command -v $cmd &> /dev/null; then
+    if ! command -v $cmd >/dev/null 2>&1; then
         error "Required command '$cmd' not found. Please install it first."
     fi
 done
@@ -91,7 +95,14 @@ info "Gathering host information..."
 
 # Get hostname
 hostname=$(hostname)
-friendly_name="$hostname"
+
+# Use FRIENDLY_NAME env var if provided, otherwise use hostname
+if [ -n "$FRIENDLY_NAME" ]; then
+    friendly_name="$FRIENDLY_NAME"
+    info "Using custom friendly name: $friendly_name"
+else
+    friendly_name="$hostname"
+fi
 
 # Try to get machine_id (optional, for tracking)
 machine_id=""
@@ -132,6 +143,7 @@ case "$arch_raw" in
 esac
 
 info "Hostname: $hostname"
+info "Friendly Name: $friendly_name"
 info "IP Address: $ip_address"
 info "OS: $os_info"
 info "Architecture: $architecture"

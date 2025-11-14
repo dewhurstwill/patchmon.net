@@ -551,8 +551,11 @@ router.post(
 				updated_at: new Date(),
 			};
 
-			// Update machine_id if provided and current one is a placeholder
-			if (req.body.machineId && host.machine_id.startsWith("pending-")) {
+			// Update machine_id if provided and current one is a placeholder or null
+			if (
+				req.body.machineId &&
+				(host.machine_id === null || host.machine_id.startsWith("pending-"))
+			) {
 				updateData.machine_id = req.body.machineId;
 			}
 

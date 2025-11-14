@@ -35,6 +35,8 @@ const Integrations = () => {
 	const [server_url, setServerUrl] = useState("");
 	const [force_proxmox_install, setForceProxmoxInstall] = useState(false);
 	const [usage_type, setUsageType] = useState("proxmox-lxc");
+	const [selected_script_type, setSelectedScriptType] = useState("proxmox-lxc");
+	const [curl_flags, setCurlFlags] = useState("-s");
 
 	// Form state
 	const [form_data, setFormData] = useState({
@@ -50,14 +52,9 @@ const Integrations = () => {
 
 	const [copy_success, setCopySuccess] = useState({});
 
-	// Helper functions to build enrollment URLs with optional force flag
-	const getProxmoxUrl = () => {
-		const baseUrl = `${server_url}/api/v1/auto-enrollment/script?type=proxmox-lxc&token_key=${new_token.token_key}&token_secret=${new_token.token_secret}`;
-		return force_proxmox_install ? `${baseUrl}&force=true` : baseUrl;
-	};
-
-	const getDirectHostUrl = () => {
-		const baseUrl = `${server_url}/api/v1/auto-enrollment/script?type=direct-host&token_key=${new_token.token_key}&token_secret=${new_token.token_secret}`;
+	// Helper function to build enrollment URL with optional force flag and selected type
+	const getEnrollmentUrl = (scriptType = selected_script_type) => {
+		const baseUrl = `${server_url}/api/v1/auto-enrollment/script?type=${scriptType}&token_key=${new_token.token_key}&token_secret=${new_token.token_secret}`;
 		return force_proxmox_install ? `${baseUrl}&force=true` : baseUrl;
 	};
 
@@ -116,9 +113,12 @@ const Integrations = () => {
 		try {
 			const response = await api.get("/settings");
 			setServerUrl(response.data.server_url || window.location.origin);
+			// Set curl flags based on SSL settings
+			setCurlFlags(response.data.ignore_ssl_self_signed ? "-sk" : "-s");
 		} catch (error) {
 			console.error("Failed to load server URL:", error);
 			setServerUrl(window.location.origin);
+			setCurlFlags("-s");
 		}
 	};
 
@@ -599,12 +599,12 @@ const Integrations = () => {
 											<div className="flex items-center gap-2 mb-3">
 												<Server className="h-5 w-5 text-blue-600 dark:text-blue-400" />
 												<h4 className="font-semibold text-secondary-900 dark:text-white">
-													Proxmox LXC Auto-Enrollment
+													Auto-enrollment
 												</h4>
 											</div>
 											<p className="text-sm text-secondary-600 dark:text-secondary-400 mb-3">
-												Automatically discover and enroll LXC containers from
-												Proxmox hosts.
+												Automatically discover and enroll hosts from Proxmox or
+												direct enrollment.
 											</p>
 											<a
 												href="https://docs.patchmon.net/books/patchmon-application-documentation/page/proxmox-lxc-auto-enrollment-guide"
@@ -622,12 +622,12 @@ const Integrations = () => {
 											<div className="flex items-center gap-2 mb-3">
 												<Server className="h-5 w-5 text-green-600 dark:text-green-400" />
 												<h4 className="font-semibold text-secondary-900 dark:text-white">
-													API Credentials
+													Scoped credentials
 												</h4>
 											</div>
 											<p className="text-sm text-secondary-600 dark:text-secondary-400 mb-3">
-												Programmatic access to PatchMon data using Basic
-												Authentication.
+												Programmatic access to PatchMon data with granular
+												scope-based permissions.
 											</p>
 											<a
 												href="https://docs.patchmon.net/books/patchmon-application-documentation/page/integration-api-documentation"
@@ -1049,7 +1049,7 @@ const Integrations = () => {
 				<div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
 					<div className="bg-white dark:bg-secondary-800 rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
 						<div className="p-6">
-							<div className="flex items-center justify-between mb-6">
+							<div className="flex items-center justify-between mb-4">
 								<h2 className="text-xl font-bold text-secondary-900 dark:text-white">
 									{activeTab === "gethomepage"
 										? "Create GetHomepage API Key"
@@ -1060,6 +1060,7 @@ const Integrations = () => {
 									onClick={() => {
 										setShowCreateModal(false);
 										setUsageType("proxmox-lxc");
+										setSelectedScriptType("proxmox-lxc");
 									}}
 									className="text-secondary-400 hover:text-secondary-600 dark:hover:text-secondary-200"
 								>
@@ -1067,28 +1068,35 @@ const Integrations = () => {
 								</button>
 							</div>
 
-							<form onSubmit={create_token} className="space-y-4">
-								{activeTab === "auto-enrollment" && (
-									<label className="block">
-										<span className="block text-sm font-medium text-secondary-700 dark:text-secondary-300 mb-1">
-											Usage Type *
-										</span>
-										<select
-											value={usage_type}
-											onChange={(e) => setUsageType(e.target.value)}
-											className="w-full px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-white dark:bg-secondary-700 text-secondary-900 dark:text-white"
-										>
-											<option value="proxmox-lxc">
-												Proxmox LXC Auto-Enrollment
-											</option>
-											<option value="api">API Credentials</option>
-										</select>
-										<p className="mt-1 text-xs text-secondary-500 dark:text-secondary-400">
-											Select the type of token you want to create
-										</p>
-									</label>
-								)}
+							{/* Tabs for Auto-enrollment modal */}
+							{activeTab === "auto-enrollment" && (
+								<div className="flex border-b border-secondary-200 dark:border-secondary-700 mb-6">
+									<button
+										type="button"
+										onClick={() => setUsageType("proxmox-lxc")}
+										className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+											usage_type === "proxmox-lxc"
+												? "text-primary-600 dark:text-primary-400 border-primary-500"
+												: "text-secondary-500 dark:text-secondary-400 border-transparent hover:text-secondary-700 dark:hover:text-secondary-300"
+										}`}
+									>
+										Auto-enrollment
+									</button>
+									<button
+										type="button"
+										onClick={() => setUsageType("api")}
+										className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+											usage_type === "api"
+												? "text-primary-600 dark:text-primary-400 border-primary-500"
+												: "text-secondary-500 dark:text-secondary-400 border-transparent hover:text-secondary-700 dark:hover:text-secondary-300"
+										}`}
+									>
+										Scoped credentials
+									</button>
+								</div>
+							)}
 
+							<form onSubmit={create_token} className="space-y-4">
 								<label className="block">
 									<span className="block text-sm font-medium text-secondary-700 dark:text-secondary-300 mb-1">
 										Token Name *
@@ -1299,6 +1307,7 @@ const Integrations = () => {
 										setNewToken(null);
 										setShowSecret(false);
 										setUsageType("proxmox-lxc");
+										setSelectedScriptType("proxmox-lxc");
 									}}
 									className="text-secondary-400 hover:text-secondary-600 dark:hover:text-secondary-200"
 								>
@@ -1518,11 +1527,39 @@ const Integrations = () => {
 									usage_type === "proxmox-lxc") && (
 									<div className="mt-6">
 										<div className="block text-sm font-medium text-secondary-700 dark:text-secondary-300 mb-2">
-											One-Line Installation Command
+											Auto-Enrollment Command
 										</div>
+
+										{/* Script Type Toggle Buttons */}
+										<div className="flex gap-2 mb-3">
+											<button
+												type="button"
+												onClick={() => setSelectedScriptType("proxmox-lxc")}
+												className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+													selected_script_type === "proxmox-lxc"
+														? "bg-primary-600 text-white dark:bg-primary-500"
+														: "bg-secondary-200 text-secondary-700 dark:bg-secondary-700 dark:text-secondary-300 hover:bg-secondary-300 dark:hover:bg-secondary-600"
+												}`}
+											>
+												Proxmox
+											</button>
+											<button
+												type="button"
+												onClick={() => setSelectedScriptType("direct-host")}
+												className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+													selected_script_type === "direct-host"
+														? "bg-primary-600 text-white dark:bg-primary-500"
+														: "bg-secondary-200 text-secondary-700 dark:bg-secondary-700 dark:text-secondary-300 hover:bg-secondary-300 dark:hover:bg-secondary-600"
+												}`}
+											>
+												Direct Host
+											</button>
+										</div>
+
 										<p className="text-xs text-secondary-600 dark:text-secondary-400 mb-2">
-											Run this command on your Proxmox host to download and
-											execute the enrollment script:
+											{selected_script_type === "proxmox-lxc"
+												? "Run this command on your Proxmox host to automatically discover and enroll all running LXC containers:"
+												: "Run this command on individual hosts to enroll them directly:"}
 										</p>
 
 										{/* Force Install Toggle */}
@@ -1537,19 +1574,19 @@ const Integrations = () => {
 													className="rounded border-secondary-300 dark:border-secondary-600 text-primary-600 focus:ring-primary-500 dark:focus:ring-primary-400 dark:bg-secondary-700"
 												/>
 												<span className="text-secondary-800 dark:text-secondary-200">
-													Force install (bypass broken packages in containers)
+													Force install (bypass broken packages)
 												</span>
 											</label>
 											<p className="text-xs text-secondary-600 dark:text-secondary-400 mt-1">
-												Enable this if your LXC containers have broken packages
-												(CloudPanel, WHM, etc.) that block apt-get operations
+												Enable this if hosts have broken packages (CloudPanel,
+												WHM, etc.) that block apt-get operations
 											</p>
 										</div>
 
 										<div className="flex items-center gap-2">
 											<input
 												type="text"
-												value={`curl -s "${getProxmoxUrl()}" | sh`}
+												value={`curl ${curl_flags} "${getEnrollmentUrl()}" | sh`}
 												readOnly
 												className="flex-1 px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-secondary-50 dark:bg-secondary-900 text-secondary-900 dark:text-white font-mono text-xs"
 											/>
@@ -1557,13 +1594,13 @@ const Integrations = () => {
 												type="button"
 												onClick={() =>
 													copy_to_clipboard(
-														`curl -s "${getProxmoxUrl()}" | sh`,
-														"curl-command",
+														`curl ${curl_flags} "${getEnrollmentUrl()}" | sh`,
+														"enrollment-command",
 													)
 												}
 												className="btn-primary flex items-center gap-1 px-3 py-2 whitespace-nowrap"
 											>
-												{copy_success["curl-command"] ? (
+												{copy_success["enrollment-command"] ? (
 													<>
 														<CheckCircle className="h-4 w-4" />
 														Copied
@@ -1576,58 +1613,16 @@ const Integrations = () => {
 												)}
 											</button>
 										</div>
-										<p className="text-xs text-secondary-500 dark:text-secondary-400 mt-2">
-											💡 This command will automatically discover and enroll all
-											running LXC containers.
-										</p>
-									</div>
-								)}
 
-								{(new_token.metadata?.integration_type === "proxmox-lxc" ||
-									usage_type === "proxmox-lxc") && (
-									<div className="mt-6">
-										<div className="block text-sm font-medium text-secondary-700 dark:text-secondary-300 mb-2">
-											Direct Host Auto-Enrollment Command
-										</div>
-										<p className="text-xs text-secondary-600 dark:text-secondary-400 mb-2">
-											Run this command on individual hosts to enroll them
-											directly:
-										</p>
-
-										<div className="flex items-center gap-2">
-											<input
-												type="text"
-												value={`curl -s "${getDirectHostUrl()}" | sh`}
-												readOnly
-												className="flex-1 px-3 py-2 border border-secondary-300 dark:border-secondary-600 rounded-md bg-secondary-50 dark:bg-secondary-900 text-secondary-900 dark:text-white font-mono text-xs"
-											/>
-											<button
-												type="button"
-												onClick={() =>
-													copy_to_clipboard(
-														`curl -s "${getDirectHostUrl()}" | sh`,
-														"direct-host-command",
-													)
-												}
-												className="btn-primary flex items-center gap-1 px-3 py-2 whitespace-nowrap"
-											>
-												{copy_success["direct-host-command"] ? (
-													<>
-														<CheckCircle className="h-4 w-4" />
-														Copied
-													</>
-												) : (
-													<>
-														<Copy className="h-4 w-4" />
-														Copy
-													</>
-												)}
-											</button>
-										</div>
-										<p className="text-xs text-secondary-500 dark:text-secondary-400 mt-2">
-											💡 Run this on individual hosts for easy enrollment
-											without Proxmox.
-										</p>
+										{/* Usage hint for direct-host */}
+										{selected_script_type === "direct-host" && (
+											<p className="text-xs text-secondary-500 dark:text-secondary-400 mt-3 p-2 bg-blue-50 dark:bg-blue-900/20 rounded border border-blue-200 dark:border-blue-800">
+												💡 <strong>Tip:</strong> Specify a custom name:{" "}
+												<code className="text-xs bg-secondary-200 dark:bg-secondary-700 px-1 py-0.5 rounded">
+													FRIENDLY_NAME="My Server" sh
+												</code>
+											</p>
+										)}
 									</div>
 								)}
 
@@ -1765,6 +1760,7 @@ const Integrations = () => {
 										setNewToken(null);
 										setShowSecret(false);
 										setUsageType("proxmox-lxc");
+										setSelectedScriptType("proxmox-lxc");
 									}}
 									className="w-full btn-primary py-2 px-4 rounded-md"
 								>
