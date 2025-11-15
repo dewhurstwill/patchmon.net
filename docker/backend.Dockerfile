@@ -47,7 +47,7 @@ COPY --chown=node:node backend/ ./backend/
 RUN npm cache clean --force &&\
     rm -rf node_modules ~/.npm /root/.npm &&\
     npm install --workspace=backend --ignore-scripts --legacy-peer-deps --no-audit --prefer-online --fetch-retries=3 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000 &&\
-    cd backend && PRISMA_CLI_BINARY_TYPE=binary npm run db:generate &&\
+    cd backend && npx prisma generate &&\
     cd .. && npm prune --omit=dev --workspace=backend &&\
     npm cache clean --force
 
