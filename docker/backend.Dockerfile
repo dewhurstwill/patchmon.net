@@ -70,8 +70,8 @@ USER node
 
 WORKDIR /app
 
-COPY --from=builder /app/backend ./backend
-COPY --from=builder /app/node_modules ./node_modules
+COPY --from=builder --chown=node:node /app/backend ./backend
+COPY --from=builder --chown=node:node /app/node_modules ./node_modules
 COPY --chown=node:node agents ./agents_backup
 COPY --chown=node:node agents ./agents
 COPY --chmod=755 docker/backend.docker-entrypoint.sh ./entrypoint.sh
