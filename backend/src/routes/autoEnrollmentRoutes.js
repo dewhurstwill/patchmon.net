@@ -505,12 +505,10 @@ router.get("/script", async (req, res) => {
 		}
 
 		if (!script_type) {
-			return res
-				.status(400)
-				.json({
-					error:
-						"Script type required as query parameter (e.g., ?type=proxmox-lxc or ?type=direct-host)",
-				});
+			return res.status(400).json({
+				error:
+					"Script type required as query parameter (e.g., ?type=proxmox-lxc or ?type=direct-host)",
+			});
 		}
 
 		// Map script types to script file paths
@@ -520,11 +518,9 @@ router.get("/script", async (req, res) => {
 		};
 
 		if (!scriptMap[script_type]) {
-			return res
-				.status(400)
-				.json({
-					error: `Invalid script type: ${script_type}. Supported types: ${Object.keys(scriptMap).join(", ")}`,
-				});
+			return res.status(400).json({
+				error: `Invalid script type: ${script_type}. Supported types: ${Object.keys(scriptMap).join(", ")}`,
+			});
 		}
 
 		// Validate token
@@ -556,11 +552,9 @@ router.get("/script", async (req, res) => {
 		);
 
 		if (!fs.existsSync(script_path)) {
-			return res
-				.status(404)
-				.json({
-					error: `Enrollment script not found: ${scriptMap[script_type]}`,
-				});
+			return res.status(404).json({
+				error: `Enrollment script not found: ${scriptMap[script_type]}`,
+			});
 		}
 
 		let script = fs.readFileSync(script_path, "utf8");
