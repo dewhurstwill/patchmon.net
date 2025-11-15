@@ -36,6 +36,9 @@ CMD ["/app/entrypoint.sh"]
 # Use Debian-based Node for better QEMU ARM64 compatibility
 FROM node:lts-slim AS builder
 
+# Install OpenSSL for Prisma
+RUN apt-get update -y && apt-get install -y openssl && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY --chown=node:node package*.json ./
