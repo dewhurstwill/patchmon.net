@@ -20,9 +20,7 @@ COPY --chown=node:node agents ./agents_backup
 COPY --chown=node:node agents ./agents
 COPY --chmod=755 docker/backend.docker-entrypoint.sh ./entrypoint.sh
 
-WORKDIR /app/backend
-
-RUN npm ci --ignore-scripts && npx prisma generate
+RUN npm install --workspace=backend --ignore-scripts && cd backend && npx prisma generate
 
 EXPOSE 3001
 
@@ -44,13 +42,11 @@ WORKDIR /app
 COPY --chown=node:node package*.json ./
 COPY --chown=node:node backend/ ./backend/
 
-WORKDIR /app/backend
-
 RUN npm cache clean --force &&\
     rm -rf node_modules ~/.npm /root/.npm &&\
-    npm ci --ignore-scripts --legacy-peer-deps --no-audit --prefer-online --fetch-retries=3 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000 &&\
-    PRISMA_CLI_BINARY_TYPE=binary npm run db:generate &&\
-    npm prune --omit=dev &&\
+    npm install --workspace=backend --ignore-scripts --legacy-peer-deps --no-audit --prefer-online --fetch-retries=3 --fetch-retry-mintimeout=20000 --fetch-retry-maxtimeout=120000 &&\
+    cd backend && PRISMA_CLI_BINARY_TYPE=binary npm run db:generate &&\
+    cd .. && npm prune --omit=dev --workspace=backend &&\
     npm cache clean --force
 
 # Production stage

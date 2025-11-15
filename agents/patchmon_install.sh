@@ -19,20 +19,20 @@ NC='\033[0m' # No Color
 
 # Functions
 error() {
-    printf "%b\n" "${RED}❌ ERROR: $1${NC}" >&2
+    printf "%b\n" "${RED}ERROR: $1${NC}" >&2
     exit 1
 }
 
 info() {
-    printf "%b\n" "${BLUE}ℹ️  $1${NC}"
+    printf "%b\n" "${BLUE}INFO: $1${NC}"
 }
 
 success() {
-    printf "%b\n" "${GREEN}✅ $1${NC}"
+    printf "%b\n" "${GREEN}SUCCESS: $1${NC}"
 }
 
 warning() {
-    printf "%b\n" "${YELLOW}⚠️  $1${NC}"
+    printf "%b\n" "${YELLOW}WARNING: $1${NC}"
 }
 
 # Check if running as root
@@ -42,7 +42,7 @@ fi
 
 # Verify system datetime and timezone
 verify_datetime() {
-    info "🕐 Verifying system datetime and timezone..."
+    info "Verifying system datetime and timezone..."
     
     # Get current system time
     system_time=$(date)
@@ -50,7 +50,7 @@ verify_datetime() {
     
     # Display current datetime info
     echo ""
-    printf "%b\n" "${BLUE}📅 Current System Date/Time:${NC}"
+    printf "%b\n" "${BLUE}Current System Date/Time:${NC}"
     echo "   • Date/Time: $system_time"
     echo "   • Timezone: $timezone"
     echo ""
@@ -62,26 +62,26 @@ verify_datetime() {
         read -r response
         case "$response" in
             [Yy]*) 
-                success "✅ Date/time verification passed"
+                success "Date/time verification passed"
                 echo ""
                 return 0
                 ;;
             *)
             echo ""
-            printf "%b\n" "${RED}❌ Date/time verification failed${NC}"
+            printf "%b\n" "${RED}Date/time verification failed${NC}"
             echo ""
-            printf "%b\n" "${YELLOW}💡 Please fix the date/time and re-run the installation script:${NC}"
+            printf "%b\n" "${YELLOW}Please fix the date/time and re-run the installation script:${NC}"
             echo "   sudo timedatectl set-time 'YYYY-MM-DD HH:MM:SS'"
             echo "   sudo timedatectl set-timezone 'America/New_York'  # or your timezone"
             echo "   sudo timedatectl list-timezones  # to see available timezones"
             echo ""
-                printf "%b\n" "${BLUE}ℹ️  After fixing the date/time, re-run this installation script.${NC}"
+                printf "%b\n" "${BLUE}After fixing the date/time, re-run this installation script.${NC}"
                 error "Installation cancelled - please fix date/time and re-run"
                 ;;
         esac
     else
         # Non-interactive (piped from curl) - show warning and continue
-        printf "%b\n" "${YELLOW}⚠️  Non-interactive installation detected${NC}"
+        printf "%b\n" "${YELLOW}Non-interactive installation detected${NC}"
         echo ""
         echo "Please verify the date/time shown above is correct."
         echo "If the date/time is incorrect, it may cause issues with:"
@@ -89,8 +89,8 @@ verify_datetime() {
         echo "   • Scheduled updates"
         echo "   • Data synchronization"
         echo ""
-        printf "%b\n" "${GREEN}✅ Continuing with installation...${NC}"
-        success "✅ Date/time verification completed (assumed correct)"
+        printf "%b\n" "${GREEN}Continuing with installation...${NC}"
+        success "Date/time verification completed (assumed correct)"
         echo ""
     fi
 }
@@ -159,7 +159,7 @@ if [ -z "$ARCHITECTURE" ]; then
             ARCHITECTURE="arm"
             ;;
         *)
-            warning "⚠️  Unknown architecture '$arch_raw', defaulting to amd64"
+            warning "Unknown architecture '$arch_raw', defaulting to amd64"
             ARCHITECTURE="amd64"
             ;;
     esac
@@ -177,31 +177,21 @@ case "$*" in
 esac
 if [ "$FORCE_INSTALL" = "true" ]; then
     FORCE_INSTALL="true"
-    warning "⚠️  Force mode enabled - will bypass broken packages"
+    warning "Force mode enabled - will bypass broken packages"
 fi
 
 # Get unique machine ID for this host
 MACHINE_ID=$(get_machine_id)
 export MACHINE_ID
 
-info "🚀 Starting PatchMon Agent Installation..."
-info "📋 Server: $PATCHMON_URL"
-info "🔑 API ID: $(echo "$API_ID" | cut -c1-16)..."
-info "🆔 Machine ID: $(echo "$MACHINE_ID" | cut -c1-16)..."
-info "🏗️  Architecture: $ARCHITECTURE"
-
-# Display diagnostic information
-echo ""
-printf "%b\n" "${BLUE}🔧 Installation Diagnostics:${NC}"
-echo "   • URL: $PATCHMON_URL"
-echo "   • CURL FLAGS: $CURL_FLAGS"
-echo "   • API ID: $(echo "$API_ID" | cut -c1-16)..."
-echo "   • API Key: $(echo "$API_KEY" | cut -c1-16)..."
-echo "   • Architecture: $ARCHITECTURE"
-echo ""
+info "Starting PatchMon Agent Installation..."
+info "Server: $PATCHMON_URL"
+info "API ID: $(echo "$API_ID" | cut -c1-16)..."
+info "Machine ID: $(echo "$MACHINE_ID" | cut -c1-16)..."
+info "Architecture: $ARCHITECTURE"
 
 # Install required dependencies
-info "📦 Installing required dependencies..."
+info "Installing required dependencies..."
 echo ""
 
 # Function to check if a command exists
@@ -417,7 +407,7 @@ if command -v apt-get >/dev/null 2>&1; then
         if [ "$FORCE_INSTALL" = "true" ]; then
             warning "Detected broken packages on system - force mode will work around them"
         else
-            warning "⚠️  Broken packages detected on system"
+            warning "Broken packages detected on system"
             warning "If installation fails, retry with: curl -s {URL}/api/v1/hosts/install --force -H ..."
         fi
     fi
@@ -466,88 +456,88 @@ success "Dependencies installation completed"
 echo ""
 
 # Step 1: Handle existing configuration directory
-info "📁 Setting up configuration directory..."
+info "Setting up configuration directory..."
 
 # Check if configuration directory already exists
 if [ -d "/etc/patchmon" ]; then
-    warning "⚠️  Configuration directory already exists at /etc/patchmon"
-    warning "⚠️  Preserving existing configuration files"
+    warning "Configuration directory already exists at /etc/patchmon"
+    warning "Preserving existing configuration files"
     
     # List existing files for user awareness
-    info "📋 Existing files in /etc/patchmon:"
+    info "Existing files in /etc/patchmon:"
     ls -la /etc/patchmon/ 2>/dev/null | grep -v "^total" | while read -r line; do
         echo "   $line"
     done
 else
-    info "📁 Creating new configuration directory..."
+    info "Creating new configuration directory..."
     mkdir -p /etc/patchmon
 fi
 
 # Check if agent is already configured and working (before we overwrite anything)
-info "🔍 Checking if agent is already configured..."
+info "Checking if agent is already configured..."
 
 if [ -f /etc/patchmon/config.yml ] && [ -f /etc/patchmon/credentials.yml ]; then
     if [ -f /usr/local/bin/patchmon-agent ]; then
-        info "📋 Found existing agent configuration"
-        info "🧪 Testing existing configuration with ping..."
+        info "Found existing agent configuration"
+        info "Testing existing configuration with ping..."
         
         if /usr/local/bin/patchmon-agent ping >/dev/null 2>&1; then
-            success "✅ Agent is already configured and ping successful"
-            info "📋 Existing configuration is working - skipping installation"
+            success "Agent is already configured and ping successful"
+            info "Existing configuration is working - skipping installation"
             info ""
             info "If you want to reinstall, remove the configuration files first:"
             info "  sudo rm -f /etc/patchmon/config.yml /etc/patchmon/credentials.yml"
             echo ""
             exit 0
         else
-            warning "⚠️  Agent configuration exists but ping failed"
-            warning "⚠️  Will move existing configuration and reinstall"
+            warning "Agent configuration exists but ping failed"
+            warning "Will move existing configuration and reinstall"
             echo ""
         fi
     else
-        warning "⚠️  Configuration files exist but agent binary is missing"
-        warning "⚠️  Will move existing configuration and reinstall"
+        warning "Configuration files exist but agent binary is missing"
+        warning "Will move existing configuration and reinstall"
         echo ""
     fi
 else
-    success "✅ Agent not yet configured - proceeding with installation"
+    success "Agent not yet configured - proceeding with installation"
     echo ""
 fi
 
 # Step 2: Create configuration files
-info "🔐 Creating configuration files..."
+info "Creating configuration files..."
 
 # Check if config file already exists
 if [ -f "/etc/patchmon/config.yml" ]; then
-    warning "⚠️  Config file already exists at /etc/patchmon/config.yml"
-    warning "⚠️  Moving existing file out of the way for fresh installation"
+    warning "Config file already exists at /etc/patchmon/config.yml"
+    warning "Moving existing file out of the way for fresh installation"
     
     # Clean up old config backups (keep only last 3)
     ls -t /etc/patchmon/config.yml.backup.* 2>/dev/null | tail -n +4 | xargs -r rm -f
     
     # Move existing file out of the way
     mv /etc/patchmon/config.yml /etc/patchmon/config.yml.backup.$(date +%Y%m%d_%H%M%S)
-    info "📋 Moved existing config to: /etc/patchmon/config.yml.backup.$(date +%Y%m%d_%H%M%S)"
+    info "Moved existing config to: /etc/patchmon/config.yml.backup.$(date +%Y%m%d_%H%M%S)"
 fi
 
 # Check if credentials file already exists
 if [ -f "/etc/patchmon/credentials.yml" ]; then
-    warning "⚠️  Credentials file already exists at /etc/patchmon/credentials.yml"
-    warning "⚠️  Moving existing file out of the way for fresh installation"
+    warning "Credentials file already exists at /etc/patchmon/credentials.yml"
+    warning "Moving existing file out of the way for fresh installation"
     
     # Clean up old credential backups (keep only last 3)
     ls -t /etc/patchmon/credentials.yml.backup.* 2>/dev/null | tail -n +4 | xargs -r rm -f
     
     # Move existing file out of the way
     mv /etc/patchmon/credentials.yml /etc/patchmon/credentials.yml.backup.$(date +%Y%m%d_%H%M%S)
-    info "📋 Moved existing credentials to: /etc/patchmon/credentials.yml.backup.$(date +%Y%m%d_%H%M%S)"
+    info "Moved existing credentials to: /etc/patchmon/credentials.yml.backup.$(date +%Y%m%d_%H%M%S)"
 fi
 
 # Clean up old credentials file if it exists (from previous installations)
 if [ -f "/etc/patchmon/credentials" ]; then
-    warning "⚠️  Found old credentials file, removing it..."
+    warning "Found old credentials file, removing it..."
     rm -f /etc/patchmon/credentials
-    info "📋 Removed old credentials file"
+    info "Removed old credentials file"
 fi
 
 # Create main config file
@@ -574,29 +564,29 @@ chmod 600 /etc/patchmon/config.yml
 chmod 600 /etc/patchmon/credentials.yml
 
 # Step 3: Download the PatchMon agent binary using API credentials
-info "📥 Downloading PatchMon agent binary..."
+info "Downloading PatchMon agent binary..."
 
 # Determine the binary filename based on architecture
 BINARY_NAME="patchmon-agent-linux-${ARCHITECTURE}"
 
 # Check if agent binary already exists
 if [ -f "/usr/local/bin/patchmon-agent" ]; then
-    warning "⚠️  Agent binary already exists at /usr/local/bin/patchmon-agent"
-    warning "⚠️  Moving existing file out of the way for fresh installation"
+    warning "Agent binary already exists at /usr/local/bin/patchmon-agent"
+    warning "Moving existing file out of the way for fresh installation"
     
     # Clean up old agent backups (keep only last 3)
     ls -t /usr/local/bin/patchmon-agent.backup.* 2>/dev/null | tail -n +4 | xargs -r rm -f
     
     # Move existing file out of the way
     mv /usr/local/bin/patchmon-agent /usr/local/bin/patchmon-agent.backup.$(date +%Y%m%d_%H%M%S)
-    info "📋 Moved existing agent to: /usr/local/bin/patchmon-agent.backup.$(date +%Y%m%d_%H%M%S)"
+    info "Moved existing agent to: /usr/local/bin/patchmon-agent.backup.$(date +%Y%m%d_%H%M%S)"
 fi
 
 # Clean up old shell script if it exists (from previous installations)
 if [ -f "/usr/local/bin/patchmon-agent.sh" ]; then
-    warning "⚠️  Found old shell script agent, removing it..."
+    warning "Found old shell script agent, removing it..."
     rm -f /usr/local/bin/patchmon-agent.sh
-    info "📋 Removed old shell script agent"
+    info "Removed old shell script agent"
 fi
 
 # Download the binary
@@ -610,30 +600,30 @@ chmod +x /usr/local/bin/patchmon-agent
 
 # Get the agent version from the binary
 AGENT_VERSION=$(/usr/local/bin/patchmon-agent version 2>/dev/null || echo "Unknown")
-info "📋 Agent version: $AGENT_VERSION"
+info "Agent version: $AGENT_VERSION"
 
 # Handle existing log files and create log directory
-info "📁 Setting up log directory..."
+info "Setting up log directory..."
 
 # Create log directory if it doesn't exist
 mkdir -p /etc/patchmon/logs
 
 # Handle existing log files
 if [ -f "/etc/patchmon/logs/patchmon-agent.log" ]; then
-    warning "⚠️  Existing log file found at /etc/patchmon/logs/patchmon-agent.log"
-    warning "⚠️  Rotating log file for fresh start"
+    warning "Existing log file found at /etc/patchmon/logs/patchmon-agent.log"
+    warning "Rotating log file for fresh start"
     
     # Rotate the log file
     mv /etc/patchmon/logs/patchmon-agent.log /etc/patchmon/logs/patchmon-agent.log.old.$(date +%Y%m%d_%H%M%S)
-    info "📋 Log file rotated to: /etc/patchmon/logs/patchmon-agent.log.old.$(date +%Y%m%d_%H%M%S)"
+    info "Log file rotated to: /etc/patchmon/logs/patchmon-agent.log.old.$(date +%Y%m%d_%H%M%S)"
 fi
 
 # Step 4: Test the configuration
-info "🧪 Testing API credentials and connectivity..."
+info "Testing API credentials and connectivity..."
 if /usr/local/bin/patchmon-agent ping; then
-    success "✅ TEST: API credentials are valid and server is reachable"
+    success "TEST: API credentials are valid and server is reachable"
 else
-    error "❌ Failed to validate API credentials or reach server"
+    error "Failed to validate API credentials or reach server"
 fi
 
 # Step 5: Setup service for WebSocket connection
@@ -641,16 +631,16 @@ fi
 # Detect init system and create appropriate service
 if command -v systemctl >/dev/null 2>&1; then
     # Systemd is available
-    info "🔧 Setting up systemd service..."
+    info "Setting up systemd service..."
     
     # Stop and disable existing service if it exists
     if systemctl is-active --quiet patchmon-agent.service 2>/dev/null; then
-        warning "⚠️  Stopping existing PatchMon agent service..."
+        warning "Stopping existing PatchMon agent service..."
         systemctl stop patchmon-agent.service
     fi
     
     if systemctl is-enabled --quiet patchmon-agent.service 2>/dev/null; then
-        warning "⚠️  Disabling existing PatchMon agent service..."
+        warning "Disabling existing PatchMon agent service..."
         systemctl disable patchmon-agent.service
     fi
     
@@ -680,9 +670,9 @@ EOF
     
     # Clean up old crontab entries if they exist (from previous installations)
     if crontab -l 2>/dev/null | grep -q "patchmon-agent"; then
-        warning "⚠️  Found old crontab entries, removing them..."
+        warning "Found old crontab entries, removing them..."
         crontab -l 2>/dev/null | grep -v "patchmon-agent" | crontab -
-        info "📋 Removed old crontab entries"
+        info "Removed old crontab entries"
     fi
     
     # Reload systemd and enable/start the service
@@ -692,25 +682,25 @@ EOF
     
     # Check if service started successfully
     if systemctl is-active --quiet patchmon-agent.service; then
-        success "✅ PatchMon Agent service started successfully"
-        info "🔗 WebSocket connection established"
+        success "PatchMon Agent service started successfully"
+        info "WebSocket connection established"
     else
-        warning "⚠️  Service may have failed to start. Check status with: systemctl status patchmon-agent"
+        warning "Service may have failed to start. Check status with: systemctl status patchmon-agent"
     fi
     
     SERVICE_TYPE="systemd"
 elif [ -d /etc/init.d ] && command -v rc-service >/dev/null 2>&1; then
     # OpenRC is available (Alpine Linux)
-    info "🔧 Setting up OpenRC service..."
+    info "Setting up OpenRC service..."
     
     # Stop and disable existing service if it exists
     if rc-service patchmon-agent status >/dev/null 2>&1; then
-        warning "⚠️  Stopping existing PatchMon agent service..."
+        warning "Stopping existing PatchMon agent service..."
         rc-service patchmon-agent stop
     fi
     
     if rc-update show default 2>/dev/null | grep -q "patchmon-agent"; then
-        warning "⚠️  Disabling existing PatchMon agent service..."
+        warning "Disabling existing PatchMon agent service..."
         rc-update del patchmon-agent default
     fi
     
@@ -737,9 +727,9 @@ EOF
     
     # Clean up old crontab entries if they exist (from previous installations)
     if crontab -l 2>/dev/null | grep -q "patchmon-agent"; then
-        warning "⚠️  Found old crontab entries, removing them..."
+        warning "Found old crontab entries, removing them..."
         crontab -l 2>/dev/null | grep -v "patchmon-agent" | crontab -
-        info "📋 Removed old crontab entries"
+        info "Removed old crontab entries"
     fi
     
     # Enable and start the service
@@ -748,40 +738,40 @@ EOF
     
     # Check if service started successfully
     if rc-service patchmon-agent status >/dev/null 2>&1; then
-        success "✅ PatchMon Agent service started successfully"
-        info "🔗 WebSocket connection established"
+        success "PatchMon Agent service started successfully"
+        info "WebSocket connection established"
     else
-        warning "⚠️  Service may have failed to start. Check status with: rc-service patchmon-agent status"
+        warning "Service may have failed to start. Check status with: rc-service patchmon-agent status"
     fi
     
     SERVICE_TYPE="openrc"
 else
     # No init system detected, use crontab as fallback
-    warning "⚠️  No init system detected (systemd or OpenRC). Using crontab for service management."
+    warning "No init system detected (systemd or OpenRC). Using crontab for service management."
     
     # Clean up old crontab entries if they exist
     if crontab -l 2>/dev/null | grep -q "patchmon-agent"; then
-        warning "⚠️  Found old crontab entries, removing them..."
+        warning "Found old crontab entries, removing them..."
         crontab -l 2>/dev/null | grep -v "patchmon-agent" | crontab -
-        info "📋 Removed old crontab entries"
+        info "Removed old crontab entries"
     fi
     
     # Add crontab entry to run the agent
     (crontab -l 2>/dev/null; echo "@reboot /usr/local/bin/patchmon-agent serve >/dev/null 2>&1") | crontab -
-    info "📋 Added crontab entry for PatchMon agent"
+    info "Added crontab entry for PatchMon agent"
     
     # Start the agent manually
     /usr/local/bin/patchmon-agent serve >/dev/null 2>&1 &
-    success "✅ PatchMon Agent started in background"
-    info "🔗 WebSocket connection established"
+    success "PatchMon Agent started in background"
+    info "WebSocket connection established"
     
     SERVICE_TYPE="crontab"
 fi
 
 # Installation complete
-success "🎉 PatchMon Agent installation completed successfully!"
+success "PatchMon Agent installation completed successfully!"
 echo ""
-printf "%b\n" "${GREEN}📋 Installation Summary:${NC}"
+printf "%b\n" "${GREEN}Installation Summary:${NC}"
 echo "   • Configuration directory: /etc/patchmon"
 echo "   • Agent binary installed: /usr/local/bin/patchmon-agent"
 echo "   • Architecture: $ARCHITECTURE"
@@ -801,16 +791,16 @@ echo "   • Logs directory: /etc/patchmon/logs"
 MOVED_FILES=$(ls /etc/patchmon/credentials.yml.backup.* /etc/patchmon/config.yml.backup.* /usr/local/bin/patchmon-agent.backup.* /etc/patchmon/logs/patchmon-agent.log.old.* /usr/local/bin/patchmon-agent.sh.backup.* /etc/patchmon/credentials.backup.* 2>/dev/null || true)
 if [ -n "$MOVED_FILES" ]; then
     echo ""
-    printf "%b\n" "${YELLOW}📋 Files Moved for Fresh Installation:${NC}"
+    printf "%b\n" "${YELLOW}Files Moved for Fresh Installation:${NC}"
     echo "$MOVED_FILES" | while read -r moved_file; do
         echo "   • $moved_file"
     done
     echo ""
-    printf "%b\n" "${BLUE}💡 Note: Old files are automatically cleaned up (keeping last 3)${NC}"
+    printf "%b\n" "${BLUE}Note: Old files are automatically cleaned up (keeping last 3)${NC}"
 fi
 
 echo ""
-printf "%b\n" "${BLUE}🔧 Management Commands:${NC}"
+printf "%b\n" "${BLUE}Management Commands:${NC}"
 echo "   • Test connection: /usr/local/bin/patchmon-agent ping"
 echo "   • Manual report: /usr/local/bin/patchmon-agent report"
 echo "   • Check status: /usr/local/bin/patchmon-agent diagnostics"
@@ -827,4 +817,4 @@ else
     echo "   • Restart service: pkill -f 'patchmon-agent serve' && /usr/local/bin/patchmon-agent serve &"
 fi
 echo ""
-success "✅ Your system is now being monitored by PatchMon!"
+success "Your system is now being monitored by PatchMon!"

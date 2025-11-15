@@ -81,7 +81,7 @@ model host_repositories {
 
 model hosts {
   id                      String                    @id
-  machine_id              String                    @unique
+  machine_id              String?
   friendly_name           String
   ip                      String?
   os_type                 String
