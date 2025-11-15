@@ -33,9 +33,8 @@ ENTRYPOINT ["/sbin/tini", "--"]
 CMD ["/app/entrypoint.sh"]
 
 # Builder stage for production
-FROM node:lts-alpine AS builder
-
-RUN apk add --no-cache openssl
+# Use Debian-based Node for better QEMU ARM64 compatibility
+FROM node:lts-slim AS builder
 
 WORKDIR /app
 
