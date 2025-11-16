@@ -53,12 +53,63 @@ const Settings = () => {
 	});
 	const [errors, setErrors] = useState({});
 	const [isDirty, setIsDirty] = useState(false);
+	const [toast, setToast] = useState(null);
 
 	// Tab management
 	const [activeTab, setActiveTab] = useState("server");
 
 	// Get update notification state
 	const { updateAvailable } = useUpdateNotification();
+
+	// Auto-hide toast after 3 seconds
+	useEffect(() => {
+		if (toast) {
+			const timer = setTimeout(() => {
+				setToast(null);
+			}, 3000);
+			return () => clearTimeout(timer);
+		}
+	}, [toast]);
+
+	const showToast = (message, type = "success") => {
+		setToast({ message, type });
+	};
+
+	// Fallback clipboard copy function for HTTP and older browsers
+	const copyToClipboard = async (text) => {
+		// Try modern clipboard API first
+		if (navigator.clipboard && navigator.clipboard.writeText) {
+			try {
+				await navigator.clipboard.writeText(text);
+				return true;
+			} catch (err) {
+				console.warn("Clipboard API failed, using fallback:", err);
+			}
+		}
+
+		// Fallback for HTTP or unsupported browsers
+		try {
+			const textArea = document.createElement("textarea");
+			textArea.value = text;
+			textArea.style.position = "fixed";
+			textArea.style.left = "-999999px";
+			textArea.style.top = "-999999px";
+			document.body.appendChild(textArea);
+			textArea.focus();
+			textArea.select();
+
+			const successful = document.execCommand("copy");
+			document.body.removeChild(textArea);
+
+			if (successful) {
+				return true;
+			}
+			throw new Error("execCommand failed");
+		} catch (err) {
+			console.error("Fallback copy failed:", err);
+			throw err;
+		}
+	};
 
 	// Tab configuration
 	const tabs = [
@@ -120,7 +171,7 @@ const Settings = () => {
 	});
 
 	// Helper function to get curl flags based on settings
-	const _getCurlFlags = () => {
+	const getCurlFlags = () => {
 		return settings?.ignore_ssl_self_signed ? "-sk" : "-s";
 	};
 
@@ -442,6 +493,53 @@ const Settings = () => {
 
 	return (
 		<div className="max-w-4xl mx-auto p-6">
+			{/* Toast Notification */}
+			{toast && (
+				<div
+					className={`fixed top-4 right-4 z-50 max-w-md rounded-lg shadow-lg border-2 p-4 flex items-start space-x-3 animate-in slide-in-from-top-5 ${
+						toast.type === "success"
+							? "bg-green-50 dark:bg-green-900/90 border-green-500 dark:border-green-600"
+							: "bg-red-50 dark:bg-red-900/90 border-red-500 dark:border-red-600"
+					}`}
+				>
+					<div
+						className={`flex-shrink-0 rounded-full p-1 ${
+							toast.type === "success"
+								? "bg-green-100 dark:bg-green-800"
+								: "bg-red-100 dark:bg-red-800"
+						}`}
+					>
+						{toast.type === "success" ? (
+							<CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />
+						) : (
+							<AlertCircle className="h-5 w-5 text-red-600 dark:text-red-400" />
+						)}
+					</div>
+					<div className="flex-1">
+						<p
+							className={`text-sm font-medium ${
+								toast.type === "success"
+									? "text-green-800 dark:text-green-100"
+									: "text-red-800 dark:text-red-100"
+							}`}
+						>
+							{toast.message}
+						</p>
+					</div>
+					<button
+						type="button"
+						onClick={() => setToast(null)}
+						className={`flex-shrink-0 rounded-lg p-1 transition-colors ${
+							toast.type === "success"
+								? "hover:bg-green-100 dark:hover:bg-green-800 text-green-600 dark:text-green-400"
+								: "hover:bg-red-100 dark:hover:bg-red-800 text-red-600 dark:text-red-400"
+						}`}
+					>
+						<X className="h-4 w-4" />
+					</button>
+				</div>
+			)}
+
 			<div className="mb-8">
 				<p className="text-secondary-600 dark:text-secondary-300">
 					Configure your PatchMon server settings. These settings will be used
@@ -1159,19 +1257,74 @@ const Settings = () => {
 														To completely remove PatchMon from a host:
 													</p>
 
-													{/* Go Agent Uninstall */}
+													{/* Agent Removal Script - Standard */}
 													<div className="mb-3">
 														<div className="space-y-2">
+															<div className="text-xs font-semibold text-red-700 dark:text-red-300 mb-1">
+																Standard Removal (preserves backups):
+															</div>
 															<div className="flex items-center gap-2">
 																<div className="bg-red-100 dark:bg-red-800 rounded p-2 font-mono text-xs flex-1">
-																	sudo patchmon-agent uninstall
+																	curl {getCurlFlags()} {window.location.origin}
+																	/api/v1/hosts/remove | sudo sh
 																</div>
 																<button
 																	type="button"
-																	onClick={() => {
-																		navigator.clipboard.writeText(
-																			"sudo patchmon-agent uninstall",
-																		);
+																	onClick={async () => {
+																		try {
+																			await copyToClipboard(
+																				`curl ${getCurlFlags()} ${window.location.origin}/api/v1/hosts/remove | sudo sh`,
+																			);
+																			showToast(
+																				"Standard removal command copied!",
+																				"success",
+																			);
+																		} catch (err) {
+																			console.error("Failed to copy:", err);
+																			showToast(
+																				"Failed to copy to clipboard",
+																				"error",
+																			);
+																		}
+																	}}
+																	className="px-2 py-1 bg-red-200 dark:bg-red-700 text-red-800 dark:text-red-200 rounded text-xs hover:bg-red-300 dark:hover:bg-red-600 transition-colors"
+																>
+																	Copy
+																</button>
+															</div>
+														</div>
+													</div>
+
+													{/* Agent Removal Script - Complete */}
+													<div className="mb-3">
+														<div className="space-y-2">
+															<div className="text-xs font-semibold text-red-700 dark:text-red-300 mb-1">
+																Complete Removal (includes backups):
+															</div>
+															<div className="flex items-center gap-2">
+																<div className="bg-red-100 dark:bg-red-800 rounded p-2 font-mono text-xs flex-1">
+																	curl {getCurlFlags()} {window.location.origin}
+																	/api/v1/hosts/remove | sudo REMOVE_BACKUPS=1
+																	sh
+																</div>
+																<button
+																	type="button"
+																	onClick={async () => {
+																		try {
+																			await copyToClipboard(
+																				`curl ${getCurlFlags()} ${window.location.origin}/api/v1/hosts/remove | sudo REMOVE_BACKUPS=1 sh`,
+																			);
+																			showToast(
+																				"Complete removal command copied!",
+																				"success",
+																			);
+																		} catch (err) {
+																			console.error("Failed to copy:", err);
+																			showToast(
+																				"Failed to copy to clipboard",
+																				"error",
+																			);
+																		}
 																	}}
 																	className="px-2 py-1 bg-red-200 dark:bg-red-700 text-red-800 dark:text-red-200 rounded text-xs hover:bg-red-300 dark:hover:bg-red-600 transition-colors"
 																>
@@ -1179,16 +1332,16 @@ const Settings = () => {
 																</button>
 															</div>
 															<div className="text-xs text-red-600 dark:text-red-400">
-																Options: <code>--remove-config</code>,{" "}
-																<code>--remove-logs</code>,{" "}
-																<code>--remove-all</code>, <code>--force</code>
+																This removes: binaries, systemd/OpenRC services,
+																configuration files, logs, crontab entries, and
+																backup files
 															</div>
 														</div>
 													</div>
 
-													<p className="mt-2 text-xs">
-														⚠️ This command will remove all PatchMon files,
-														configuration, and crontab entries
+													<p className="mt-2 text-xs text-red-700 dark:text-red-400">
+														⚠️ Standard removal preserves backup files for
+														safety. Use complete removal to delete everything.
 													</p>
 												</div>
 											</div>

@@ -13,10 +13,12 @@ import {
 } from "chart.js";
 import {
 	AlertTriangle,
+	CheckCircle,
 	Folder,
 	GitBranch,
 	Package,
 	RefreshCw,
+	RotateCcw,
 	Server,
 	Settings,
 	Shield,
@@ -97,6 +99,20 @@ const Dashboard = () => {
 
 	const handleRepositoriesClick = () => {
 		navigate("/repositories");
+	};
+
+	const handleNeedsRebootClick = () => {
+		// Navigate to hosts with reboot filter, clearing any other filters
+		const newSearchParams = new URLSearchParams();
+		newSearchParams.set("reboot", "true");
+		navigate(`/hosts?${newSearchParams.toString()}`);
+	};
+
+	const handleUpToDateClick = () => {
+		// Navigate to hosts with upToDate filter, clearing any other filters
+		const newSearchParams = new URLSearchParams();
+		newSearchParams.set("filter", "upToDate");
+		navigate(`/hosts?${newSearchParams.toString()}`);
 	};
 
 	const _handleOSDistributionClick = () => {
@@ -308,9 +324,10 @@ const Dashboard = () => {
 			[
 				"totalHosts",
 				"hostsNeedingUpdates",
+				"upToDateHosts",
 				"totalOutdatedPackages",
 				"securityUpdates",
-				"upToDateHosts",
+				"hostsNeedingReboot",
 				"totalHostGroups",
 				"totalUsers",
 				"totalRepos",
@@ -341,7 +358,7 @@ const Dashboard = () => {
 	const getGroupClassName = (cardType) => {
 		switch (cardType) {
 			case "stats":
-				return "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4";
+				return "grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4";
 			case "charts":
 				return "grid grid-cols-1 lg:grid-cols-3 gap-6";
 			case "widecharts":
@@ -356,23 +373,33 @@ const Dashboard = () => {
 	// Helper function to render a card by ID
 	const renderCard = (cardId) => {
 		switch (cardId) {
-			case "upToDateHosts":
+			case "hostsNeedingReboot":
 				return (
-					<div className="card p-4">
+					<button
+						type="button"
+						className="card p-4 cursor-pointer hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow duration-200 w-full text-left"
+						onClick={handleNeedsRebootClick}
+						onKeyDown={(e) => {
+							if (e.key === "Enter" || e.key === " ") {
+								e.preventDefault();
+								handleNeedsRebootClick();
+							}
+						}}
+					>
 						<div className="flex items-center">
 							<div className="flex-shrink-0">
-								<TrendingUp className="h-5 w-5 text-success-600 mr-2" />
+								<RotateCcw className="h-5 w-5 text-orange-600 mr-2" />
 							</div>
 							<div className="w-0 flex-1">
 								<p className="text-sm text-secondary-500 dark:text-white">
-									Up to date
+									Needs Reboots
 								</p>
 								<p className="text-xl font-semibold text-secondary-900 dark:text-white">
-									{stats.cards.upToDateHosts}/{stats.cards.totalHosts}
+									{stats.cards.hostsNeedingReboot}
 								</p>
 							</div>
 						</div>
-					</div>
+					</button>
 				);
 			case "totalHosts":
 				return (
@@ -426,6 +453,35 @@ const Dashboard = () => {
 								</p>
 								<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 									{stats.cards.hostsNeedingUpdates}
+								</p>
+							</div>
+						</div>
+					</button>
+				);
+
+			case "upToDateHosts":
+				return (
+					<button
+						type="button"
+						className="card p-4 cursor-pointer hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow duration-200 w-full text-left"
+						onClick={handleUpToDateClick}
+						onKeyDown={(e) => {
+							if (e.key === "Enter" || e.key === " ") {
+								e.preventDefault();
+								handleUpToDateClick();
+							}
+						}}
+					>
+						<div className="flex items-center">
+							<div className="flex-shrink-0">
+								<CheckCircle className="h-5 w-5 text-success-600 mr-2" />
+							</div>
+							<div className="w-0 flex-1">
+								<p className="text-sm text-secondary-500 dark:text-white">
+									Up to date
+								</p>
+								<p className="text-xl font-semibold text-secondary-900 dark:text-white">
+									{stats.cards.upToDateHosts}
 								</p>
 							</div>
 						</div>

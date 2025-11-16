@@ -11,6 +11,12 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const BACKEND_URL = process.env.BACKEND_URL || "http://backend:3001";
 
+// Add security headers to prevent search engine indexing
+app.use((_req, res, next) => {
+	res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive, nosnippet");
+	next();
+});
+
 // Enable CORS for API calls
 app.use(
 	cors({

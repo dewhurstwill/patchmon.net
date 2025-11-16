@@ -16,6 +16,7 @@ import {
 	GripVertical,
 	Plus,
 	RefreshCw,
+	RotateCcw,
 	Search,
 	Server,
 	Square,
@@ -247,6 +248,7 @@ const Hosts = () => {
 		const showFiltersParam = searchParams.get("showFilters");
 		const osFilterParam = searchParams.get("osFilter");
 		const groupParam = searchParams.get("group");
+		const rebootParam = searchParams.get("reboot");
 
 		if (filter === "needsUpdates") {
 			setShowFilters(true);
@@ -331,10 +333,11 @@ const Hosts = () => {
 			},
 			{ id: "ws_status", label: "Connection", visible: true, order: 9 },
 			{ id: "status", label: "Status", visible: true, order: 10 },
-			{ id: "updates", label: "Updates", visible: true, order: 11 },
-			{ id: "notes", label: "Notes", visible: false, order: 12 },
-			{ id: "last_update", label: "Last Update", visible: true, order: 13 },
-			{ id: "actions", label: "Actions", visible: true, order: 14 },
+			{ id: "needs_reboot", label: "Reboot", visible: true, order: 11 },
+			{ id: "updates", label: "Updates", visible: true, order: 12 },
+			{ id: "notes", label: "Notes", visible: false, order: 13 },
+			{ id: "last_update", label: "Last Update", visible: true, order: 14 },
+			{ id: "actions", label: "Actions", visible: true, order: 15 },
 		];
 
 		const saved = localStorage.getItem("hosts-column-config");
@@ -356,8 +359,25 @@ const Hosts = () => {
 					localStorage.removeItem("hosts-column-config");
 					return defaultConfig;
 				} else {
-					// Ensure ws_status column is visible in saved config
-					const updatedConfig = savedConfig.map((col) =>
+					// Merge saved config with defaults to handle new columns
+					// This preserves user's visibility preferences while adding new columns
+					const mergedConfig = defaultConfig.map((defaultCol) => {
+						const savedCol = savedConfig.find(
+							(col) => col.id === defaultCol.id,
+						);
+						if (savedCol) {
+							// Use saved visibility preference, but keep default order and label
+							return {
+								...defaultCol,
+								visible: savedCol.visible,
+							};
+						}
+						// New column not in saved config, use default
+						return defaultCol;
+					});
+
+					// Ensure ws_status column is visible
+					const updatedConfig = mergedConfig.map((col) =>
 						col.id === "ws_status" ? { ...col, visible: true } : col,
 					);
 					return updatedConfig;
@@ -673,8 +693,9 @@ const Hosts = () => {
 				osFilter === "all" ||
 				host.os_type?.toLowerCase() === osFilter.toLowerCase();
 
-			// URL filter for hosts needing updates, inactive hosts, up-to-date hosts, stale hosts, or offline hosts
+			// URL filter for hosts needing updates, inactive hosts, up-to-date hosts, stale hosts, offline hosts, or reboot required
 			const filter = searchParams.get("filter");
+			const rebootParam = searchParams.get("reboot");
 			const matchesUrlFilter =
 				(filter !== "needsUpdates" ||
 					(host.updatesCount && host.updatesCount > 0)) &&
@@ -682,7 +703,9 @@ const Hosts = () => {
 					(host.effectiveStatus || host.status) === "inactive") &&
 				(filter !== "upToDate" || (!host.isStale && host.updatesCount === 0)) &&
 				(filter !== "stale" || host.isStale) &&
-				(filter !== "offline" || wsStatusMap[host.api_id]?.connected !== true);
+				(filter !== "offline" ||
+					wsStatusMap[host.api_id]?.connected !== true) &&
+				(!rebootParam || host.needs_reboot === true);
 
 			// Hide stale filter
 			const matchesHideStale = !hideStale || !host.isStale;
@@ -757,6 +780,11 @@ const Hosts = () => {
 				case "updates":
 					aValue = a.updatesCount || 0;
 					bValue = b.updatesCount || 0;
+					break;
+				case "needs_reboot":
+					// Sort by boolean: false (0) comes before true (1)
+					aValue = a.needs_reboot ? 1 : 0;
+					bValue = b.needs_reboot ? 1 : 0;
 					break;
 				case "last_update":
 					aValue = new Date(a.last_update);
@@ -917,10 +945,11 @@ const Hosts = () => {
 			},
 			{ id: "ws_status", label: "Connection", visible: true, order: 9 },
 			{ id: "status", label: "Status", visible: true, order: 10 },
-			{ id: "updates", label: "Updates", visible: true, order: 11 },
-			{ id: "notes", label: "Notes", visible: false, order: 12 },
-			{ id: "last_update", label: "Last Update", visible: true, order: 13 },
-			{ id: "actions", label: "Actions", visible: true, order: 14 },
+			{ id: "needs_reboot", label: "Reboot", visible: true, order: 11 },
+			{ id: "updates", label: "Updates", visible: true, order: 12 },
+			{ id: "notes", label: "Notes", visible: false, order: 13 },
+			{ id: "last_update", label: "Last Update", visible: true, order: 14 },
+			{ id: "actions", label: "Actions", visible: true, order: 15 },
 		];
 		updateColumnConfig(defaultConfig);
 	};
@@ -1077,6 +1106,22 @@ const Hosts = () => {
 							(host.effectiveStatus || host.status).slice(1)}
 					</div>
 				);
+			case "needs_reboot":
+				return (
+					<div className="flex justify-center">
+						{host.needs_reboot ? (
+							<span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200">
+								<RotateCcw className="h-3 w-3" />
+								Required
+							</span>
+						) : (
+							<span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+								<CheckCircle className="h-3 w-3" />
+								No
+							</span>
+						)}
+					</div>
+				);
 			case "updates":
 				return (
 					<button
@@ -1149,9 +1194,10 @@ const Hosts = () => {
 		// Filter to show only up-to-date hosts
 		setStatusFilter("active");
 		setShowFilters(true);
-		// Use the upToDate URL filter
+		// Clear conflicting filters and set upToDate filter
 		const newSearchParams = new URLSearchParams(window.location.search);
 		newSearchParams.set("filter", "upToDate");
+		newSearchParams.delete("reboot"); // Clear reboot filter when switching to upToDate
 		navigate(`/hosts?${newSearchParams.toString()}`, { replace: true });
 	};
 
@@ -1159,9 +1205,10 @@ const Hosts = () => {
 		// Filter to show hosts needing updates (regardless of status)
 		setStatusFilter("all");
 		setShowFilters(true);
-		// We'll use the existing needsUpdates URL filter logic
+		// Clear conflicting filters and set needsUpdates filter
 		const newSearchParams = new URLSearchParams(window.location.search);
 		newSearchParams.set("filter", "needsUpdates");
+		newSearchParams.delete("reboot"); // Clear reboot filter when switching to needsUpdates
 		navigate(`/hosts?${newSearchParams.toString()}`, { replace: true });
 	};
 
@@ -1169,9 +1216,10 @@ const Hosts = () => {
 		// Filter to show offline hosts (not connected via WebSocket)
 		setStatusFilter("all");
 		setShowFilters(true);
-		// Use a new URL filter for connection status
+		// Clear conflicting filters and set offline filter
 		const newSearchParams = new URLSearchParams(window.location.search);
 		newSearchParams.set("filter", "offline");
+		newSearchParams.delete("reboot"); // Clear reboot filter when switching to offline
 		navigate(`/hosts?${newSearchParams.toString()}`, { replace: true });
 	};
 
@@ -1265,24 +1313,6 @@ const Hosts = () => {
 				<button
 					type="button"
 					className="card p-4 cursor-pointer hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow duration-200 text-left w-full"
-					onClick={handleUpToDateClick}
-				>
-					<div className="flex items-center">
-						<CheckCircle className="h-5 w-5 text-success-600 mr-2" />
-						<div>
-							<p className="text-sm text-secondary-500 dark:text-white">
-								Up to Date
-							</p>
-							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
-								{hosts?.filter((h) => !h.isStale && h.updatesCount === 0)
-									.length || 0}
-							</p>
-						</div>
-					</div>
-				</button>
-				<button
-					type="button"
-					className="card p-4 cursor-pointer hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow duration-200 text-left w-full"
 					onClick={handleNeedsUpdatesClick}
 				>
 					<div className="flex items-center">
@@ -1293,6 +1323,28 @@ const Hosts = () => {
 							</p>
 							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
 								{hosts?.filter((h) => h.updatesCount > 0).length || 0}
+							</p>
+						</div>
+					</div>
+				</button>
+				<button
+					type="button"
+					className="card p-4 cursor-pointer hover:shadow-card-hover dark:hover:shadow-card-hover-dark transition-shadow duration-200 text-left w-full"
+					onClick={() => {
+						const newSearchParams = new URLSearchParams();
+						newSearchParams.set("reboot", "true");
+						// Clear filter parameter when setting reboot filter
+						navigate(`/hosts?${newSearchParams.toString()}`, { replace: true });
+					}}
+				>
+					<div className="flex items-center">
+						<RotateCcw className="h-5 w-5 text-orange-600 mr-2" />
+						<div>
+							<p className="text-sm text-secondary-500 dark:text-white">
+								Needs Reboots
+							</p>
+							<p className="text-xl font-semibold text-secondary-900 dark:text-white">
+								{hosts?.filter((h) => h.needs_reboot === true).length || 0}
 							</p>
 						</div>
 					</div>
@@ -1678,6 +1730,17 @@ const Hosts = () => {
 																			>
 																				{column.label}
 																				{getSortIcon("updates")}
+																			</button>
+																		) : column.id === "needs_reboot" ? (
+																			<button
+																				type="button"
+																				onClick={() =>
+																					handleSort("needs_reboot")
+																				}
+																				className="flex items-center gap-2 hover:text-secondary-700"
+																			>
+																				{column.label}
+																				{getSortIcon("needs_reboot")}
 																			</button>
 																		) : column.id === "last_update" ? (
 																			<button

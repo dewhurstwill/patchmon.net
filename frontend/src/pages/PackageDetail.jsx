@@ -8,6 +8,7 @@ import {
 	Download,
 	Package,
 	RefreshCw,
+	RotateCcw,
 	Search,
 	Server,
 	Shield,
@@ -370,6 +371,9 @@ const PackageDetail = () => {
 										<th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
 											Last Updated
 										</th>
+										<th className="px-6 py-3 text-left text-xs font-medium text-secondary-500 dark:text-secondary-300 uppercase tracking-wider">
+											Reboot Required
+										</th>
 									</tr>
 								</thead>
 								<tbody className="bg-white dark:bg-secondary-800 divide-y divide-secondary-200 dark:divide-secondary-600">
@@ -419,6 +423,18 @@ const PackageDetail = () => {
 												{host.lastUpdate
 													? formatRelativeTime(host.lastUpdate)
 													: "Never"}
+											</td>
+											<td className="px-6 py-4 whitespace-nowrap">
+												{host.needsReboot ? (
+													<span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200">
+														<RotateCcw className="h-3 w-3" />
+														Required
+													</span>
+												) : (
+													<span className="text-sm text-secondary-500 dark:text-secondary-300">
+														No
+													</span>
+												)}
 											</td>
 										</tr>
 									))}

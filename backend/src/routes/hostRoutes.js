@@ -533,6 +533,14 @@ router.post(
 			.optional()
 			.isString()
 			.withMessage("Machine ID must be a string"),
+		body("needsReboot")
+			.optional()
+			.isBoolean()
+			.withMessage("Needs reboot must be a boolean"),
+		body("rebootReason")
+			.optional()
+			.isString()
+			.withMessage("Reboot reason must be a string"),
 	],
 	async (req, res) => {
 		try {
@@ -595,6 +603,10 @@ router.post(
 			if (req.body.systemUptime)
 				updateData.system_uptime = req.body.systemUptime;
 			if (req.body.loadAverage) updateData.load_average = req.body.loadAverage;
+
+			// Reboot Status
+			if (req.body.needsReboot !== undefined)
+				updateData.needs_reboot = req.body.needsReboot;
 
 			// If this is the first update (status is 'pending'), change to 'active'
 			if (host.status === "pending") {

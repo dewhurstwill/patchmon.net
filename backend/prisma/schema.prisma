@@ -110,6 +110,7 @@ model hosts {
   swap_size               Int?
   system_uptime           String?
   notes                   String?
+  needs_reboot            Boolean?                  @default(false)
   host_packages           host_packages[]
   host_repositories       host_repositories[]
   host_group_memberships  host_group_memberships[]
@@ -121,6 +122,7 @@ model hosts {
   @@index([machine_id])
   @@index([friendly_name])
   @@index([hostname])
+  @@index([needs_reboot])
 }
 
 model packages {

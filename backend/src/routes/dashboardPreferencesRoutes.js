@@ -92,58 +92,63 @@ async function createDefaultDashboardPreferences(userId, userRole = "user") {
 				requiredPermission: "can_view_hosts",
 				order: 5,
 			},
+			{
+				cardId: "hostsNeedingReboot",
+				requiredPermission: "can_view_hosts",
+				order: 6,
+			},
 
 			// Repository-related cards
-			{ cardId: "totalRepos", requiredPermission: "can_view_hosts", order: 6 },
+			{ cardId: "totalRepos", requiredPermission: "can_view_hosts", order: 7 },
 
 			// User management cards (admin only)
-			{ cardId: "totalUsers", requiredPermission: "can_view_users", order: 7 },
+			{ cardId: "totalUsers", requiredPermission: "can_view_users", order: 8 },
 
 			// System/Report cards
 			{
 				cardId: "osDistribution",
 				requiredPermission: "can_view_reports",
-				order: 8,
+				order: 9,
 			},
 			{
 				cardId: "osDistributionBar",
 				requiredPermission: "can_view_reports",
-				order: 9,
+				order: 10,
 			},
 			{
 				cardId: "osDistributionDoughnut",
 				requiredPermission: "can_view_reports",
-				order: 10,
+				order: 11,
 			},
 			{
 				cardId: "recentCollection",
 				requiredPermission: "can_view_hosts",
-				order: 11,
+				order: 12,
 			},
 			{
 				cardId: "updateStatus",
 				requiredPermission: "can_view_reports",
-				order: 12,
+				order: 13,
 			},
 			{
 				cardId: "packagePriority",
 				requiredPermission: "can_view_packages",
-				order: 13,
+				order: 14,
 			},
 			{
 				cardId: "packageTrends",
 				requiredPermission: "can_view_packages",
-				order: 14,
+				order: 15,
 			},
 			{
 				cardId: "recentUsers",
 				requiredPermission: "can_view_users",
-				order: 15,
+				order: 16,
 			},
 			{
 				cardId: "quickStats",
 				requiredPermission: "can_view_dashboard",
-				order: 16,
+				order: 17,
 			},
 		];
 
@@ -291,25 +296,32 @@ router.get("/defaults", authenticateToken, async (_req, res) => {
 				order: 5,
 			},
 			{
+				cardId: "hostsNeedingReboot",
+				title: "Needs Reboots",
+				icon: "RotateCcw",
+				enabled: true,
+				order: 6,
+			},
+			{
 				cardId: "totalRepos",
 				title: "Repositories",
 				icon: "GitBranch",
 				enabled: true,
-				order: 6,
+				order: 7,
 			},
 			{
 				cardId: "totalUsers",
 				title: "Users",
 				icon: "Users",
 				enabled: true,
-				order: 7,
+				order: 8,
 			},
 			{
 				cardId: "osDistribution",
 				title: "OS Distribution",
 				icon: "BarChart3",
 				enabled: true,
-				order: 8,
+				order: 9,
 			},
 			{
 				cardId: "osDistributionBar",
