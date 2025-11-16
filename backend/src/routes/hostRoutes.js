@@ -13,6 +13,7 @@ const {
 const { queueManager, QUEUE_NAMES } = require("../services/automation");
 const { pushIntegrationToggle, isConnected } = require("../services/agentWs");
 const agentVersionService = require("../services/agentVersionService");
+const { compareVersions } = require("../services/automation/shared/utils");
 
 const router = express.Router();
 const prisma = getPrismaClient();
@@ -209,8 +210,9 @@ router.get("/agent/version", async (req, res) => {
 							const serverVersion = versionMatch[1];
 							const agentVersion = req.query.currentVersion || serverVersion;
 
-							// Simple version comparison (assuming semantic versioning)
-							const hasUpdate = agentVersion !== serverVersion;
+							// Proper semantic version comparison: only update if server version is NEWER
+							const hasUpdate =
+								compareVersions(serverVersion, agentVersion) > 0;
 
 							return res.json({
 								currentVersion: agentVersion,
@@ -248,9 +250,10 @@ router.get("/agent/version", async (req, res) => {
 					});
 				}
 
-				// Simple version comparison (assuming semantic versioning)
+				// Proper semantic version comparison: only update if latest version is NEWER
 				const hasUpdate =
-					agentVersion !== latestVersion && latestVersion !== null;
+					latestVersion !== null &&
+					compareVersions(latestVersion, agentVersion) > 0;
 
 				res.json({
 					currentVersion: agentVersion,
