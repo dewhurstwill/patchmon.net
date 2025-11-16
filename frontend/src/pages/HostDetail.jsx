@@ -21,6 +21,7 @@ import {
 	Monitor,
 	Package,
 	RefreshCw,
+	RotateCcw,
 	Server,
 	Shield,
 	Terminal,
@@ -493,6 +494,12 @@ const HostDetail = () => {
 								{getStatusIcon(isStale, host.stats.outdated_packages > 0)}
 								{getStatusText(isStale, host.stats.outdated_packages > 0)}
 							</div>
+							{host.needs_reboot && (
+								<span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200">
+									<RotateCcw className="h-3 w-3" />
+									Reboot Required
+								</span>
+							)}
 						</div>
 						{/* Info row with uptime and last updated */}
 						<div className="flex items-center gap-4 text-sm text-secondary-600 dark:text-secondary-400">
@@ -994,7 +1001,7 @@ const HostDetail = () => {
 											<Terminal className="h-4 w-4 text-primary-600 dark:text-primary-400" />
 											System Information
 										</h4>
-										<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+										<div className="grid grid-cols-1 md:grid-cols-3 gap-4">
 											{host.architecture && (
 												<div>
 													<p className="text-xs text-secondary-500 dark:text-secondary-300">
@@ -1006,19 +1013,31 @@ const HostDetail = () => {
 												</div>
 											)}
 
-											{host.kernel_version && (
-												<div>
-													<p className="text-xs text-secondary-500 dark:text-secondary-300">
-														Kernel Version
-													</p>
-													<p className="font-medium text-secondary-900 dark:text-white font-mono text-sm">
-														{host.kernel_version}
-													</p>
+											{(host.kernel_version ||
+												host.installed_kernel_version) && (
+												<div className="flex flex-col gap-2">
+													{host.kernel_version && (
+														<div>
+															<p className="text-xs text-secondary-500 dark:text-secondary-300 mb-1">
+																Running Kernel
+															</p>
+															<p className="font-medium text-secondary-900 dark:text-white font-mono text-sm break-all">
+																{host.kernel_version}
+															</p>
+														</div>
+													)}
+													{host.installed_kernel_version && (
+														<div>
+															<p className="text-xs text-secondary-500 dark:text-secondary-300 mb-1">
+																Installed Kernel
+															</p>
+															<p className="font-medium text-secondary-900 dark:text-white font-mono text-sm break-all">
+																{host.installed_kernel_version}
+															</p>
+														</div>
+													)}
 												</div>
 											)}
-
-											{/* Empty div to push SELinux status to the right */}
-											<div></div>
 
 											{host.selinux_status && (
 												<div>

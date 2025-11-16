@@ -142,6 +142,7 @@ router.get("/", async (req, res) => {
 								friendly_name: true,
 								hostname: true,
 								os_type: true,
+								needs_reboot: true,
 							},
 						},
 						current_version: true,
@@ -236,6 +237,7 @@ router.get("/:packageId", async (req, res) => {
 								os_type: true,
 								os_version: true,
 								last_update: true,
+								needs_reboot: true,
 							},
 						},
 					},
@@ -365,6 +367,7 @@ router.get("/:packageId/hosts", async (req, res) => {
 						os_type: true,
 						os_version: true,
 						last_update: true,
+						needs_reboot: true,
 					},
 				},
 			},
@@ -386,6 +389,7 @@ router.get("/:packageId/hosts", async (req, res) => {
 			needsUpdate: hp.needs_update,
 			isSecurityUpdate: hp.is_security_update,
 			lastChecked: hp.last_checked,
+			needsReboot: hp.hosts.needs_reboot,
 		}));
 
 		res.json({

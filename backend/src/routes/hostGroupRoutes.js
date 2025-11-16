@@ -59,6 +59,7 @@ router.get("/:id", authenticateToken, async (req, res) => {
 								os_version: true,
 								status: true,
 								last_update: true,
+								needs_reboot: true,
 							},
 						},
 					},
@@ -259,6 +260,7 @@ router.get("/:id/hosts", authenticateToken, async (req, res) => {
 				status: true,
 				last_update: true,
 				created_at: true,
+				needs_reboot: true,
 			},
 			orderBy: {
 				friendly_name: "asc",

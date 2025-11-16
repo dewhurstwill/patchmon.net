@@ -119,6 +119,7 @@ router.get(
 									os_version: true,
 									status: true,
 									last_update: true,
+									needs_reboot: true,
 								},
 							},
 						},

@@ -41,6 +41,7 @@ router.get(
 				erroredHosts,
 				securityUpdates,
 				offlineHosts,
+				hostsNeedingReboot,
 				totalHostGroups,
 				totalUsers,
 				totalRepos,
@@ -103,6 +104,13 @@ router.get(
 								.subtract(updateIntervalMinutes * 3, "minutes")
 								.toDate(),
 						},
+					},
+				}),
+
+				// Hosts needing reboot
+				prisma.hosts.count({
+					where: {
+						needs_reboot: true,
 					},
 				}),
 
@@ -174,6 +182,7 @@ router.get(
 					erroredHosts,
 					securityUpdates,
 					offlineHosts,
+					hostsNeedingReboot,
 					totalHostGroups,
 					totalUsers,
 					totalRepos,
@@ -217,6 +226,7 @@ router.get("/hosts", authenticateToken, requireViewHosts, async (_req, res) => {
 				auto_update: true,
 				notes: true,
 				api_id: true,
+				needs_reboot: true,
 				host_group_memberships: {
 					include: {
 						host_groups: {

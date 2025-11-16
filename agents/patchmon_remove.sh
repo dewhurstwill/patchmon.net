@@ -2,7 +2,9 @@
 
 # PatchMon Agent Removal Script
 # POSIX-compliant shell script (works with dash, ash, bash, etc.)
-# Usage: curl -s {PATCHMON_URL}/api/v1/hosts/remove | sh
+# Usage: curl -s {PATCHMON_URL}/api/v1/hosts/remove | sudo sh
+#        curl -s {PATCHMON_URL}/api/v1/hosts/remove | sudo REMOVE_BACKUPS=1 sh
+#        curl -s {PATCHMON_URL}/api/v1/hosts/remove | sudo SILENT=1 sh
 # This script completely removes PatchMon from the system
 
 set -e
@@ -12,12 +14,30 @@ set -e
 # future (left for consistency with install script).
 CURL_FLAGS=""
 
-# Colors for output
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
-NC='\033[0m' # No Color
+# Detect if running in silent mode (only with explicit SILENT env var)
+SILENT_MODE=0
+if [ -n "$SILENT" ]; then
+    SILENT_MODE=1
+fi
+
+# Check if backup files should be removed (default: preserve for safety)
+# Usage: REMOVE_BACKUPS=1 when piping the script
+REMOVE_BACKUPS="${REMOVE_BACKUPS:-0}"
+
+# Colors for output (disabled in silent mode)
+if [ "$SILENT_MODE" -eq 0 ]; then
+    RED='\033[0;31m'
+    GREEN='\033[0;32m'
+    YELLOW='\033[1;33m'
+    BLUE='\033[0;34m'
+    NC='\033[0m' # No Color
+else
+    RED=''
+    GREEN=''
+    YELLOW=''
+    BLUE=''
+    NC=''
+fi
 
 # Functions
 error() {
@@ -26,15 +46,21 @@ error() {
 }
 
 info() {
-    printf "%b\n" "${BLUE}ℹ️  $1${NC}"
+    if [ "$SILENT_MODE" -eq 0 ]; then
+        printf "%b\n" "${BLUE}ℹ️  $1${NC}"
+    fi
 }
 
 success() {
-    printf "%b\n" "${GREEN}✅ $1${NC}"
+    if [ "$SILENT_MODE" -eq 0 ]; then
+        printf "%b\n" "${GREEN}✅ $1${NC}"
+    fi
 }
 
 warning() {
-    printf "%b\n" "${YELLOW}⚠️  $1${NC}"
+    if [ "$SILENT_MODE" -eq 0 ]; then
+        printf "%b\n" "${YELLOW}⚠️  $1${NC}"
+    fi
 }
 
 # Check if running as root
@@ -43,7 +69,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 info "🗑️  Starting PatchMon Agent Removal..."
-echo ""
+[ "$SILENT_MODE" -eq 0 ] && echo ""
 
 # Step 1: Stop systemd/OpenRC service if it exists
 info "🛑 Stopping PatchMon service..."
@@ -51,24 +77,75 @@ SERVICE_STOPPED=0
 
 # Check for systemd service
 if command -v systemctl >/dev/null 2>&1; then
+    info "📋 Checking systemd service status..."
+    
+    # Check if service is active
     if systemctl is-active --quiet patchmon-agent.service 2>/dev/null; then
-        warning "Stopping systemd service..."
-        systemctl stop patchmon-agent.service || true
-        SERVICE_STOPPED=1
+        SERVICE_STATUS=$(systemctl is-active patchmon-agent.service 2>/dev/null || echo "unknown")
+        warning "Service is active (status: $SERVICE_STATUS). Stopping it now..."
+        if systemctl stop patchmon-agent.service 2>/dev/null; then
+            success "✓ Service stopped successfully"
+            SERVICE_STOPPED=1
+        else
+            warning "✗ Failed to stop service (continuing anyway...)"
+        fi
+        # Verify it stopped
+        sleep 1
+        if systemctl is-active --quiet patchmon-agent.service 2>/dev/null; then
+            warning "⚠️  Service is STILL ACTIVE after stop command!"
+        else
+            info "✓ Verified: Service is no longer active"
+        fi
+    else
+        info "Service is not active"
     fi
     
+    # Check if service is enabled
     if systemctl is-enabled --quiet patchmon-agent.service 2>/dev/null; then
-        warning "Disabling systemd service..."
-        systemctl disable patchmon-agent.service || true
+        ENABLED_STATUS=$(systemctl is-enabled patchmon-agent.service 2>/dev/null || echo "unknown")
+        warning "Service is enabled (status: $ENABLED_STATUS). Disabling it now..."
+        if systemctl disable patchmon-agent.service 2>/dev/null; then
+            success "✓ Service disabled successfully"
+        else
+            warning "✗ Failed to disable service (may already be disabled)"
+        fi
+    else
+        info "Service is not enabled"
     fi
     
+    # Check for service file
     if [ -f "/etc/systemd/system/patchmon-agent.service" ]; then
-        warning "Removing systemd service file..."
-        rm -f /etc/systemd/system/patchmon-agent.service
-        systemctl daemon-reload || true
-        success "Systemd service removed"
+        warning "Found service file: /etc/systemd/system/patchmon-agent.service"
+        info "Removing service file..."
+        if rm -f /etc/systemd/system/patchmon-agent.service 2>/dev/null; then
+            success "✓ Service file removed"
+        else
+            warning "✗ Failed to remove service file (check permissions)"
+        fi
+        
+        info "Reloading systemd daemon..."
+        if systemctl daemon-reload 2>/dev/null; then
+            success "✓ Systemd daemon reloaded"
+        else
+            warning "✗ Failed to reload systemd daemon"
+        fi
+        
         SERVICE_STOPPED=1
+        
+        # Verify the file is gone
+        if [ -f "/etc/systemd/system/patchmon-agent.service" ]; then
+            warning "⚠️  Service file STILL EXISTS after removal!"
+        else
+            info "✓ Verified: Service file removed"
+        fi
+    else
+        info "Service file not found at /etc/systemd/system/patchmon-agent.service"
     fi
+    
+    # Final status check
+    info "📊 Final systemd status check..."
+    FINAL_STATUS=$(systemctl is-active patchmon-agent.service 2>&1 || echo "not-found")
+    info "Service status: $FINAL_STATUS"
 fi
 
 # Check for OpenRC service (Alpine Linux)
@@ -93,11 +170,47 @@ if command -v rc-service >/dev/null 2>&1; then
 fi
 
 # Stop any remaining running processes (legacy or manual starts)
+info "🔍 Checking for running PatchMon processes..."
 if pgrep -f "patchmon-agent" >/dev/null; then
-    warning "Found running PatchMon processes, stopping them..."
-    pkill -f "patchmon-agent" || true
+    PROCESS_COUNT=$(pgrep -f "patchmon-agent" | wc -l | tr -d ' ')
+    warning "Found $PROCESS_COUNT running PatchMon process(es)"
+    
+    # Show process details
+    if [ "$SILENT_MODE" -eq 0 ]; then
+        info "Process details:"
+        ps aux | grep "[p]atchmon-agent" | while IFS= read -r line; do
+            echo "   $line"
+        done
+    fi
+    
+    warning "Sending SIGTERM to all patchmon-agent processes..."
+    if pkill -f "patchmon-agent" 2>/dev/null; then
+        success "✓ Sent SIGTERM signal"
+    else
+        warning "Failed to send SIGTERM (processes may have already stopped)"
+    fi
+    
     sleep 2
+    
+    # Check if processes still exist
+    if pgrep -f "patchmon-agent" >/dev/null; then
+        REMAINING=$(pgrep -f "patchmon-agent" | wc -l | tr -d ' ')
+        warning "⚠️  $REMAINING process(es) still running! Sending SIGKILL..."
+        pkill -9 -f "patchmon-agent" 2>/dev/null || true
+        sleep 1
+        
+        if pgrep -f "patchmon-agent" >/dev/null; then
+            warning "⚠️  CRITICAL: Processes still running after SIGKILL!"
+        else
+            success "✓ All processes terminated"
+        fi
+    else
+        success "✓ All processes stopped successfully"
+    fi
+    
     SERVICE_STOPPED=1
+else
+    info "No running PatchMon processes found"
 fi
 
 if [ "$SERVICE_STOPPED" -eq 1 ]; then
@@ -159,11 +272,13 @@ info "📁 Removing configuration files..."
 if [ -d "/etc/patchmon" ]; then
     warning "Removing configuration directory: /etc/patchmon"
     
-    # Show what's being removed
-    info "📋 Files in /etc/patchmon:"
-    ls -la /etc/patchmon/ 2>/dev/null | grep -v "^total" | while read -r line; do
-        echo "   $line"
-    done
+    # Show what's being removed (only in verbose mode)
+    if [ "$SILENT_MODE" -eq 0 ]; then
+        info "📋 Files in /etc/patchmon:"
+        ls -la /etc/patchmon/ 2>/dev/null | grep -v "^total" | while read -r line; do
+            echo "   $line"
+        done
+    fi
     
     # Remove the directory
     rm -rf /etc/patchmon
@@ -182,83 +297,105 @@ else
     info "Log file not found"
 fi
 
-# Step 6: Clean up backup files (optional)
-info "🧹 Cleaning up backup files..."
+# Step 6: Clean up backup files
+info "🧹 Checking backup files..."
 BACKUP_COUNT=0
+BACKUP_REMOVED=0
 
-# Count credential backups
-CRED_BACKUPS=$(ls /etc/patchmon/credentials.backup.* 2>/dev/null | wc -l || echo "0")
-if [ "$CRED_BACKUPS" -gt 0 ]; then
-    BACKUP_COUNT=$((BACKUP_COUNT + CRED_BACKUPS))
-fi
-
-# Count agent backups
-AGENT_BACKUPS=$(ls /usr/local/bin/patchmon-agent.sh.backup.* 2>/dev/null | wc -l || echo "0")
-if [ "$AGENT_BACKUPS" -gt 0 ]; then
-    BACKUP_COUNT=$((BACKUP_COUNT + AGENT_BACKUPS))
-fi
-
-# Count log backups
-LOG_BACKUPS=$(ls /var/log/patchmon-agent.log.old.* 2>/dev/null | wc -l || echo "0")
-if [ "$LOG_BACKUPS" -gt 0 ]; then
-    BACKUP_COUNT=$((BACKUP_COUNT + LOG_BACKUPS))
-fi
-
-if [ "$BACKUP_COUNT" -gt 0 ]; then
-    warning "Found $BACKUP_COUNT backup files"
-    echo ""
-    printf "%b\n" "${YELLOW}📋 Backup files found:${NC}"
+if [ "$REMOVE_BACKUPS" -eq 1 ]; then
+    info "Removing backup files (REMOVE_BACKUPS=1)..."
     
-    # Show credential backups
-    if [ "$CRED_BACKUPS" -gt 0 ]; then
-        echo "   Credential backups:"
-        ls /etc/patchmon/credentials.backup.* 2>/dev/null | while read -r file; do
-            echo "     • $file"
-        done
+    # Remove credential backups (already removed with /etc/patchmon directory, but check anyway)
+    if ls /etc/patchmon/credentials.backup.* >/dev/null 2>&1; then
+        CRED_BACKUPS=$(ls /etc/patchmon/credentials.backup.* 2>/dev/null | wc -l | tr -d ' ')
+        warning "Removing $CRED_BACKUPS credential backup file(s)..."
+        rm -f /etc/patchmon/credentials.backup.*
+        BACKUP_COUNT=$((BACKUP_COUNT + CRED_BACKUPS))
+        BACKUP_REMOVED=1
     fi
     
-    # Show agent backups
-    if [ "$AGENT_BACKUPS" -gt 0 ]; then
-        echo "   Agent script backups:"
-        ls /usr/local/bin/patchmon-agent.sh.backup.* 2>/dev/null | while read -r file; do
-            echo "     • $file"
-        done
+    # Remove config backups (already removed with /etc/patchmon directory, but check anyway)
+    if ls /etc/patchmon/*.backup.* >/dev/null 2>&1; then
+        CONFIG_BACKUPS=$(ls /etc/patchmon/*.backup.* 2>/dev/null | wc -l | tr -d ' ')
+        warning "Removing $CONFIG_BACKUPS config backup file(s)..."
+        rm -f /etc/patchmon/*.backup.*
+        BACKUP_COUNT=$((BACKUP_COUNT + CONFIG_BACKUPS))
+        BACKUP_REMOVED=1
     fi
     
-    # Show log backups
-    if [ "$LOG_BACKUPS" -gt 0 ]; then
-        echo "   Log file backups:"
-        ls /var/log/patchmon-agent.log.old.* 2>/dev/null | while read -r file; do
-            echo "     • $file"
-        done
+    # Remove Go agent backups
+    if ls /usr/local/bin/patchmon-agent.backup.* >/dev/null 2>&1; then
+        GO_AGENT_BACKUPS=$(ls /usr/local/bin/patchmon-agent.backup.* 2>/dev/null | wc -l | tr -d ' ')
+        warning "Removing $GO_AGENT_BACKUPS Go agent backup file(s)..."
+        rm -f /usr/local/bin/patchmon-agent.backup.*
+        BACKUP_COUNT=$((BACKUP_COUNT + GO_AGENT_BACKUPS))
+        BACKUP_REMOVED=1
     fi
     
-    echo ""
-    printf "%b\n" "${BLUE}💡 Note: Backup files are preserved for safety${NC}"
-    printf "%b\n" "${BLUE}💡 You can remove them manually if not needed${NC}"
+    # Remove legacy shell agent backups
+    if ls /usr/local/bin/patchmon-agent.sh.backup.* >/dev/null 2>&1; then
+        SHELL_AGENT_BACKUPS=$(ls /usr/local/bin/patchmon-agent.sh.backup.* 2>/dev/null | wc -l | tr -d ' ')
+        warning "Removing $SHELL_AGENT_BACKUPS legacy agent backup file(s)..."
+        rm -f /usr/local/bin/patchmon-agent.sh.backup.*
+        BACKUP_COUNT=$((BACKUP_COUNT + SHELL_AGENT_BACKUPS))
+        BACKUP_REMOVED=1
+    fi
+    
+    # Remove log backups
+    if ls /var/log/patchmon-agent.log.old.* >/dev/null 2>&1; then
+        LOG_BACKUPS=$(ls /var/log/patchmon-agent.log.old.* 2>/dev/null | wc -l | tr -d ' ')
+        warning "Removing $LOG_BACKUPS log backup file(s)..."
+        rm -f /var/log/patchmon-agent.log.old.*
+        BACKUP_COUNT=$((BACKUP_COUNT + LOG_BACKUPS))
+        BACKUP_REMOVED=1
+    fi
+    
+    if [ "$BACKUP_REMOVED" -eq 1 ]; then
+        success "Removed $BACKUP_COUNT backup file(s)"
+    else
+        info "No backup files found to remove"
+    fi
 else
-    info "No backup files found"
+    # Just count backup files without removing
+    CRED_BACKUPS=0
+    CONFIG_BACKUPS=0
+    GO_AGENT_BACKUPS=0
+    SHELL_AGENT_BACKUPS=0
+    LOG_BACKUPS=0
+    
+    if ls /etc/patchmon/credentials.backup.* >/dev/null 2>&1; then
+        CRED_BACKUPS=$(ls /etc/patchmon/credentials.backup.* 2>/dev/null | wc -l | tr -d ' ')
+    fi
+    
+    if ls /etc/patchmon/*.backup.* >/dev/null 2>&1; then
+        CONFIG_BACKUPS=$(ls /etc/patchmon/*.backup.* 2>/dev/null | wc -l | tr -d ' ')
+    fi
+    
+    if ls /usr/local/bin/patchmon-agent.backup.* >/dev/null 2>&1; then
+        GO_AGENT_BACKUPS=$(ls /usr/local/bin/patchmon-agent.backup.* 2>/dev/null | wc -l | tr -d ' ')
+    fi
+    
+    if ls /usr/local/bin/patchmon-agent.sh.backup.* >/dev/null 2>&1; then
+        SHELL_AGENT_BACKUPS=$(ls /usr/local/bin/patchmon-agent.sh.backup.* 2>/dev/null | wc -l | tr -d ' ')
+    fi
+    
+    if ls /var/log/patchmon-agent.log.old.* >/dev/null 2>&1; then
+        LOG_BACKUPS=$(ls /var/log/patchmon-agent.log.old.* 2>/dev/null | wc -l | tr -d ' ')
+    fi
+    
+    BACKUP_COUNT=$((CRED_BACKUPS + CONFIG_BACKUPS + GO_AGENT_BACKUPS + SHELL_AGENT_BACKUPS + LOG_BACKUPS))
+    
+    if [ "$BACKUP_COUNT" -gt 0 ]; then
+        info "Found $BACKUP_COUNT backup file(s) - preserved for safety"
+        if [ "$SILENT_MODE" -eq 0 ]; then
+            printf "%b\n" "${BLUE}💡 To remove backups, run with: REMOVE_BACKUPS=1${NC}"
+        fi
+    else
+        info "No backup files found"
+    fi
 fi
 
-# Step 7: Remove dependencies (optional)
-info "📦 Checking for PatchMon-specific dependencies..."
-if command -v jq >/dev/null 2>&1; then
-    warning "jq is installed (used by PatchMon)"
-    printf "%b\n" "${BLUE}💡 Note: jq may be used by other applications${NC}"
-    printf "%b\n" "${BLUE}💡 Consider keeping it unless you're sure it's not needed${NC}"
-else
-    info "jq not found"
-fi
-
-if command -v curl >/dev/null 2>&1; then
-    warning "curl is installed (used by PatchMon)"
-    printf "%b\n" "${BLUE}💡 Note: curl is commonly used by many applications${NC}"
-    printf "%b\n" "${BLUE}💡 Consider keeping it unless you're sure it's not needed${NC}"
-else
-    info "curl not found"
-fi
-
-# Step 8: Final verification
+# Step 7: Final verification
 info "🔍 Verifying removal..."
 REMAINING_FILES=0
 
@@ -294,21 +431,30 @@ if [ "$REMAINING_FILES" -eq 0 ]; then
     success "✅ PatchMon has been completely removed from the system!"
 else
     warning "⚠️  Some PatchMon files may still remain ($REMAINING_FILES items)"
-    printf "%b\n" "${BLUE}💡 You may need to remove them manually${NC}"
+    if [ "$SILENT_MODE" -eq 0 ]; then
+        printf "%b\n" "${BLUE}💡 You may need to remove them manually${NC}"
+    fi
 fi
 
-echo ""
-printf "%b\n" "${GREEN}📋 Removal Summary:${NC}"
-echo "   • Agent binaries: Removed"
-echo "   • System services: Removed (systemd/OpenRC)"
-echo "   • Configuration files: Removed"
-echo "   • Log files: Removed"
-echo "   • Crontab entries: Removed"
-echo "   • Running processes: Stopped"
-echo "   • Backup files: Preserved (if any)"
-echo ""
-printf "%b\n" "${BLUE}🔧 Manual cleanup (if needed):${NC}"
-echo "   • Remove backup files: rm /etc/patchmon/credentials.backup.* /usr/local/bin/patchmon-agent.sh.backup.* /var/log/patchmon-agent.log.old.*"
-echo "   • Remove dependencies: apt remove jq curl (if not needed by other apps)"
-echo ""
+if [ "$SILENT_MODE" -eq 0 ]; then
+    echo ""
+    printf "%b\n" "${GREEN}📋 Removal Summary:${NC}"
+    echo "   • Agent binaries: Removed"
+    echo "   • System services: Removed (systemd/OpenRC)"
+    echo "   • Configuration files: Removed"
+    echo "   • Log files: Removed"
+    echo "   • Crontab entries: Removed"
+    echo "   • Running processes: Stopped"
+    if [ "$REMOVE_BACKUPS" -eq 1 ]; then
+        echo "   • Backup files: Removed"
+    else
+        echo "   • Backup files: Preserved (${BACKUP_COUNT} files)"
+    fi
+    echo ""
+    if [ "$REMOVE_BACKUPS" -eq 0 ] && [ "$BACKUP_COUNT" -gt 0 ]; then
+        printf "%b\n" "${BLUE}🔧 Manual cleanup (if needed):${NC}"
+        echo "   • Remove backup files: curl -s \${PATCHMON_URL}/api/v1/hosts/remove | sudo REMOVE_BACKUPS=1 sh"
+        echo ""
+    fi
+fi
 success "🎉 PatchMon removal completed!"
