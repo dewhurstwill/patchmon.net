@@ -45,35 +45,113 @@ fi
 info "🗑️  Starting PatchMon Agent Removal..."
 echo ""
 
-# Step 1: Stop any running PatchMon processes
-info "🛑 Stopping PatchMon processes..."
-if pgrep -f "patchmon-agent.sh" >/dev/null; then
+# Step 1: Stop systemd/OpenRC service if it exists
+info "🛑 Stopping PatchMon service..."
+SERVICE_STOPPED=0
+
+# Check for systemd service
+if command -v systemctl >/dev/null 2>&1; then
+    if systemctl is-active --quiet patchmon-agent.service 2>/dev/null; then
+        warning "Stopping systemd service..."
+        systemctl stop patchmon-agent.service || true
+        SERVICE_STOPPED=1
+    fi
+    
+    if systemctl is-enabled --quiet patchmon-agent.service 2>/dev/null; then
+        warning "Disabling systemd service..."
+        systemctl disable patchmon-agent.service || true
+    fi
+    
+    if [ -f "/etc/systemd/system/patchmon-agent.service" ]; then
+        warning "Removing systemd service file..."
+        rm -f /etc/systemd/system/patchmon-agent.service
+        systemctl daemon-reload || true
+        success "Systemd service removed"
+        SERVICE_STOPPED=1
+    fi
+fi
+
+# Check for OpenRC service (Alpine Linux)
+if command -v rc-service >/dev/null 2>&1; then
+    if rc-service patchmon-agent status >/dev/null 2>&1; then
+        warning "Stopping OpenRC service..."
+        rc-service patchmon-agent stop || true
+        SERVICE_STOPPED=1
+    fi
+    
+    if rc-update show default 2>/dev/null | grep -q "patchmon-agent"; then
+        warning "Removing from runlevel..."
+        rc-update del patchmon-agent default || true
+    fi
+    
+    if [ -f "/etc/init.d/patchmon-agent" ]; then
+        warning "Removing OpenRC service file..."
+        rm -f /etc/init.d/patchmon-agent
+        success "OpenRC service removed"
+        SERVICE_STOPPED=1
+    fi
+fi
+
+# Stop any remaining running processes (legacy or manual starts)
+if pgrep -f "patchmon-agent" >/dev/null; then
     warning "Found running PatchMon processes, stopping them..."
-    pkill -f "patchmon-agent.sh" || true
+    pkill -f "patchmon-agent" || true
     sleep 2
-    success "PatchMon processes stopped"
+    SERVICE_STOPPED=1
+fi
+
+if [ "$SERVICE_STOPPED" -eq 1 ]; then
+    success "PatchMon service/processes stopped"
 else
-    info "No running PatchMon processes found"
+    info "No running PatchMon service or processes found"
 fi
 
 # Step 2: Remove crontab entries
 info "📅 Removing PatchMon crontab entries..."
-if crontab -l 2>/dev/null | grep -q "patchmon-agent.sh"; then
+if crontab -l 2>/dev/null | grep -q "patchmon-agent"; then
     warning "Found PatchMon crontab entries, removing them..."
-    crontab -l 2>/dev/null | grep -v "patchmon-agent.sh" | crontab -
+    crontab -l 2>/dev/null | grep -v "patchmon-agent" | crontab -
     success "Crontab entries removed"
 else
     info "No PatchMon crontab entries found"
 fi
 
-# Step 3: Remove agent script
-info "📄 Removing agent script..."
+# Step 3: Remove agent binaries and scripts
+info "📄 Removing agent binaries and scripts..."
+AGENTS_REMOVED=0
+
+# Remove Go agent binary
+if [ -f "/usr/local/bin/patchmon-agent" ]; then
+    warning "Removing Go agent binary: /usr/local/bin/patchmon-agent"
+    rm -f /usr/local/bin/patchmon-agent
+    AGENTS_REMOVED=1
+fi
+
+# Remove legacy shell script agent
 if [ -f "/usr/local/bin/patchmon-agent.sh" ]; then
-    warning "Removing agent script: /usr/local/bin/patchmon-agent.sh"
+    warning "Removing legacy agent script: /usr/local/bin/patchmon-agent.sh"
     rm -f /usr/local/bin/patchmon-agent.sh
-    success "Agent script removed"
+    AGENTS_REMOVED=1
+fi
+
+# Remove backup files for Go agent
+if ls /usr/local/bin/patchmon-agent.backup.* >/dev/null 2>&1; then
+    warning "Removing Go agent backup files..."
+    rm -f /usr/local/bin/patchmon-agent.backup.*
+    AGENTS_REMOVED=1
+fi
+
+# Remove backup files for legacy shell script
+if ls /usr/local/bin/patchmon-agent.sh.backup.* >/dev/null 2>&1; then
+    warning "Removing legacy agent backup files..."
+    rm -f /usr/local/bin/patchmon-agent.sh.backup.*
+    AGENTS_REMOVED=1
+fi
+
+if [ "$AGENTS_REMOVED" -eq 1 ]; then
+    success "Agent binaries and scripts removed"
 else
-    info "Agent script not found"
+    info "No agent binaries or scripts found"
 fi
 
 # Step 4: Remove configuration directory and files
@@ -184,7 +262,19 @@ fi
 info "🔍 Verifying removal..."
 REMAINING_FILES=0
 
+if [ -f "/usr/local/bin/patchmon-agent" ]; then
+    REMAINING_FILES=$((REMAINING_FILES + 1))
+fi
+
 if [ -f "/usr/local/bin/patchmon-agent.sh" ]; then
+    REMAINING_FILES=$((REMAINING_FILES + 1))
+fi
+
+if [ -f "/etc/systemd/system/patchmon-agent.service" ]; then
+    REMAINING_FILES=$((REMAINING_FILES + 1))
+fi
+
+if [ -f "/etc/init.d/patchmon-agent" ]; then
     REMAINING_FILES=$((REMAINING_FILES + 1))
 fi
 
@@ -196,7 +286,7 @@ if [ -f "/var/log/patchmon-agent.log" ]; then
     REMAINING_FILES=$((REMAINING_FILES + 1))
 fi
 
-if crontab -l 2>/dev/null | grep -q "patchmon-agent.sh"; then
+if crontab -l 2>/dev/null | grep -q "patchmon-agent"; then
     REMAINING_FILES=$((REMAINING_FILES + 1))
 fi
 
@@ -209,7 +299,8 @@ fi
 
 echo ""
 printf "%b\n" "${GREEN}📋 Removal Summary:${NC}"
-echo "   • Agent script: Removed"
+echo "   • Agent binaries: Removed"
+echo "   • System services: Removed (systemd/OpenRC)"
 echo "   • Configuration files: Removed"
 echo "   • Log files: Removed"
 echo "   • Crontab entries: Removed"
