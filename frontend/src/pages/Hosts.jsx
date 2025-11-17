@@ -335,9 +335,15 @@ const Hosts = () => {
 			{ id: "status", label: "Status", visible: true, order: 10 },
 			{ id: "needs_reboot", label: "Reboot", visible: true, order: 11 },
 			{ id: "updates", label: "Updates", visible: true, order: 12 },
-			{ id: "notes", label: "Notes", visible: false, order: 13 },
-			{ id: "last_update", label: "Last Update", visible: true, order: 14 },
-			{ id: "actions", label: "Actions", visible: true, order: 15 },
+			{
+				id: "security_updates",
+				label: "Security Updates",
+				visible: true,
+				order: 13,
+			},
+			{ id: "notes", label: "Notes", visible: false, order: 14 },
+			{ id: "last_update", label: "Last Update", visible: true, order: 15 },
+			{ id: "actions", label: "Actions", visible: true, order: 16 },
 		];
 
 		const saved = localStorage.getItem("hosts-column-config");
@@ -781,6 +787,10 @@ const Hosts = () => {
 					aValue = a.updatesCount || 0;
 					bValue = b.updatesCount || 0;
 					break;
+				case "security_updates":
+					aValue = a.securityUpdatesCount || 0;
+					bValue = b.securityUpdatesCount || 0;
+					break;
 				case "needs_reboot":
 					// Sort by boolean: false (0) comes before true (1)
 					aValue = a.needs_reboot ? 1 : 0;
@@ -947,9 +957,15 @@ const Hosts = () => {
 			{ id: "status", label: "Status", visible: true, order: 10 },
 			{ id: "needs_reboot", label: "Reboot", visible: true, order: 11 },
 			{ id: "updates", label: "Updates", visible: true, order: 12 },
-			{ id: "notes", label: "Notes", visible: false, order: 13 },
-			{ id: "last_update", label: "Last Update", visible: true, order: 14 },
-			{ id: "actions", label: "Actions", visible: true, order: 15 },
+			{
+				id: "security_updates",
+				label: "Security Updates",
+				visible: true,
+				order: 13,
+			},
+			{ id: "notes", label: "Notes", visible: false, order: 14 },
+			{ id: "last_update", label: "Last Update", visible: true, order: 15 },
+			{ id: "actions", label: "Actions", visible: true, order: 16 },
 		];
 		updateColumnConfig(defaultConfig);
 	};
@@ -1133,6 +1149,19 @@ const Hosts = () => {
 						title="View outdated packages for this host"
 					>
 						{host.updatesCount || 0}
+					</button>
+				);
+			case "security_updates":
+				return (
+					<button
+						type="button"
+						onClick={() =>
+							navigate(`/packages?host=${host.id}&filter=security-updates`)
+						}
+						className="text-sm text-red-600 hover:text-red-900 dark:text-red-400 dark:hover:text-red-300 font-medium hover:underline"
+						title="View security updates for this host"
+					>
+						{host.securityUpdatesCount || 0}
 					</button>
 				);
 			case "last_update":
@@ -1730,6 +1759,17 @@ const Hosts = () => {
 																			>
 																				{column.label}
 																				{getSortIcon("updates")}
+																			</button>
+																		) : column.id === "security_updates" ? (
+																			<button
+																				type="button"
+																				onClick={() =>
+																					handleSort("security_updates")
+																				}
+																				className="flex items-center gap-2 hover:text-secondary-700"
+																			>
+																				{column.label}
+																				{getSortIcon("security_updates")}
 																			</button>
 																		) : column.id === "needs_reboot" ? (
 																			<button

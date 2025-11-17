@@ -242,32 +242,47 @@ router.get("/hosts", authenticateToken, requireViewHosts, async (_req, res) => {
 			orderBy: { last_update: "desc" },
 		});
 
-		// OPTIMIZATION: Get all package counts in 2 batch queries instead of N*2 queries
+		// OPTIMIZATION: Get all package counts in 3 batch queries instead of N*3 queries
 		const hostIds = hosts.map((h) => h.id);
 
-		const [updateCounts, totalCounts] = await Promise.all([
-			// Get update counts for all hosts at once
-			prisma.host_packages.groupBy({
-				by: ["host_id"],
-				where: {
-					host_id: { in: hostIds },
-					needs_update: true,
-				},
-				_count: { id: true },
-			}),
-			// Get total counts for all hosts at once
-			prisma.host_packages.groupBy({
-				by: ["host_id"],
-				where: {
-					host_id: { in: hostIds },
-				},
-				_count: { id: true },
-			}),
-		]);
+		const [updateCounts, securityUpdateCounts, totalCounts] = await Promise.all(
+			[
+				// Get update counts for all hosts at once
+				prisma.host_packages.groupBy({
+					by: ["host_id"],
+					where: {
+						host_id: { in: hostIds },
+						needs_update: true,
+					},
+					_count: { id: true },
+				}),
+				// Get security update counts for all hosts at once
+				prisma.host_packages.groupBy({
+					by: ["host_id"],
+					where: {
+						host_id: { in: hostIds },
+						needs_update: true,
+						is_security_update: true,
+					},
+					_count: { id: true },
+				}),
+				// Get total counts for all hosts at once
+				prisma.host_packages.groupBy({
+					by: ["host_id"],
+					where: {
+						host_id: { in: hostIds },
+					},
+					_count: { id: true },
+				}),
+			],
+		);
 
 		// Create lookup maps for O(1) access
 		const updateCountMap = new Map(
 			updateCounts.map((item) => [item.host_id, item._count.id]),
+		);
+		const securityUpdateCountMap = new Map(
+			securityUpdateCounts.map((item) => [item.host_id, item._count.id]),
 		);
 		const totalCountMap = new Map(
 			totalCounts.map((item) => [item.host_id, item._count.id]),
@@ -276,6 +291,7 @@ router.get("/hosts", authenticateToken, requireViewHosts, async (_req, res) => {
 		// Process hosts with counts from maps (no more DB queries!)
 		const hostsWithUpdateInfo = hosts.map((host) => {
 			const updatesCount = updateCountMap.get(host.id) || 0;
+			const securityUpdatesCount = securityUpdateCountMap.get(host.id) || 0;
 			const totalPackagesCount = totalCountMap.get(host.id) || 0;
 
 			// Calculate effective status based on reporting interval
@@ -292,6 +308,7 @@ router.get("/hosts", authenticateToken, requireViewHosts, async (_req, res) => {
 			return {
 				...host,
 				updatesCount,
+				securityUpdatesCount,
 				totalPackagesCount,
 				isStale,
 				effectiveStatus,
