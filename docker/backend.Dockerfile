@@ -10,8 +10,6 @@ ENV NODE_ENV=development \
 
 RUN apk add --no-cache openssl tini curl libc6-compat
 
-USER node
-
 WORKDIR /app
 
 COPY --chown=node:node package*.json ./
@@ -20,7 +18,10 @@ COPY --chown=node:node agents ./agents_backup
 COPY --chown=node:node agents ./agents
 COPY --chmod=755 docker/backend.docker-entrypoint.sh ./entrypoint.sh
 
-RUN npm install --workspace=backend --ignore-scripts && cd backend && npx prisma generate
+USER node
+
+RUN npm install --workspace=backend --ignore-scripts && cd backend && npx prisma generate && \
+    chmod -R u+w /app/node_modules/@prisma/engines 2>/dev/null || true
 
 EXPOSE 3001
 
@@ -66,8 +67,6 @@ ENV NODE_ENV=production \
 
 RUN apk add --no-cache openssl tini curl libc6-compat
 
-USER node
-
 WORKDIR /app
 
 COPY --from=builder --chown=node:node /app/backend ./backend
@@ -75,6 +74,14 @@ COPY --from=builder --chown=node:node /app/node_modules ./node_modules
 COPY --chown=node:node agents ./agents_backup
 COPY --chown=node:node agents ./agents
 COPY --chmod=755 docker/backend.docker-entrypoint.sh ./entrypoint.sh
+
+# Ensure Prisma engines directory is writable for rootless Docker (Prisma 6.1.0+ requirement)
+# This must be done as root before switching to node user
+# Order: chown first (sets ownership), then chmod (sets permissions)
+RUN chown -R node:node /app/node_modules/@prisma/engines && \
+    chmod -R u+w /app/node_modules/@prisma/engines
+
+USER node
 
 WORKDIR /app/backend
 

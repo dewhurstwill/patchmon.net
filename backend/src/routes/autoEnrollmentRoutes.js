@@ -588,8 +588,11 @@ router.get("/script", async (req, res) => {
 		// Check for --force parameter
 		const force_install = req.query.force === "true" || req.query.force === "1";
 
+		// Use bash for proxmox-lxc, sh for others
+		const shebang = script_type === "proxmox-lxc" ? "#!/bin/bash" : "#!/bin/sh";
+
 		// Inject the token credentials, server URL, curl flags, and force flag into the script
-		const env_vars = `#!/bin/sh
+		const env_vars = `${shebang}
 # PatchMon Auto-Enrollment Configuration (Auto-generated)
 export PATCHMON_URL="${server_url}"
 export AUTO_ENROLLMENT_KEY="${token.token_key}"
