@@ -495,7 +495,7 @@ const HostDetail = () => {
 								{getStatusText(isStale, host.stats.outdated_packages > 0)}
 							</div>
 							{host.needs_reboot && (
-								<span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200">
+								<span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200">
 									<RotateCcw className="h-3 w-3" />
 									Reboot Required
 								</span>
@@ -856,7 +856,7 @@ const HostDetail = () => {
 												toggleAutoUpdateMutation.mutate(!host.auto_update)
 											}
 											disabled={toggleAutoUpdateMutation.isPending}
-											className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ${
+											className={`relative inline-flex h-5 w-9 items-center rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ${
 												host.auto_update
 													? "bg-primary-600 dark:bg-primary-500"
 													: "bg-secondary-200 dark:bg-secondary-600"
@@ -1593,7 +1593,7 @@ const HostDetail = () => {
 																	? "Disable Docker integration"
 																	: "Enable Docker integration"
 														}
-														className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ${
+														className={`relative inline-flex h-5 w-9 items-center rounded-md transition-colors focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ${
 															integrationsData?.data?.integrations?.docker
 																? "bg-primary-600 dark:bg-primary-500"
 																: "bg-secondary-200 dark:bg-secondary-600"

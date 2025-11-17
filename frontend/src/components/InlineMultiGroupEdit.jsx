@@ -203,7 +203,7 @@ const InlineMultiGroupEdit = ({
 												className="mr-2 h-4 w-4 text-primary-600 focus:ring-primary-500 border-secondary-300 rounded"
 											/>
 											<span
-												className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-white"
+												className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium text-white"
 												style={{ backgroundColor: option.color }}
 											>
 												{option.name}
@@ -250,7 +250,7 @@ const InlineMultiGroupEdit = ({
 	return (
 		<div className={`flex items-center gap-1 group ${className}`}>
 			{displayGroups.length === 0 ? (
-				<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-secondary-100 text-secondary-800">
+				<span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium bg-secondary-100 text-secondary-800">
 					Ungrouped
 				</span>
 			) : (
@@ -258,7 +258,7 @@ const InlineMultiGroupEdit = ({
 					{displayGroups.map((group) => (
 						<span
 							key={group.id}
-							className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium text-white"
+							className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium text-white"
 							style={{ backgroundColor: group.color }}
 						>
 							{group.name}

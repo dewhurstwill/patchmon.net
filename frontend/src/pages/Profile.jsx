@@ -206,7 +206,7 @@ const Profile = () => {
 						</p>
 						<div className="mt-2">
 							<span
-								className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+								className={`inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium ${
 									user?.role === "admin"
 										? "bg-primary-100 text-primary-800"
 										: user?.role === "host_manager"
@@ -400,7 +400,7 @@ const Profile = () => {
 										<button
 											type="button"
 											onClick={toggleTheme}
-											className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ${
+											className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-md border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2 ${
 												isDark ? "bg-primary-600" : "bg-secondary-200"
 											}`}
 											role="switch"
@@ -1345,12 +1345,12 @@ const SessionsTab = () => {
 													{session.device_info?.os}
 												</h4>
 												{session.is_current_session && (
-													<span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-primary-100 text-primary-800 dark:bg-primary-900 dark:text-primary-200">
+													<span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-primary-100 text-primary-800 dark:bg-primary-900 dark:text-primary-200">
 														Current Session
 													</span>
 												)}
 												{session.tfa_remember_me && (
-													<span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-success-100 text-success-800 dark:bg-success-900 dark:text-success-200">
+													<span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-success-100 text-success-800 dark:bg-success-900 dark:text-success-200">
 														Remembered
 													</span>
 												)}
