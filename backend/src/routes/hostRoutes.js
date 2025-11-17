@@ -181,6 +181,9 @@ router.get("/agent/version", async (req, res) => {
 
 			if (fs.existsSync(binaryPath)) {
 				// Binary exists in server's agents folder - use its version
+				let serverVersion = null;
+
+				// Try method 1: Execute binary (works for same architecture)
 				try {
 					const { stdout } = await execAsync(`${binaryPath} --help`, {
 						timeout: 10000,
@@ -192,30 +195,63 @@ router.get("/agent/version", async (req, res) => {
 					);
 
 					if (versionMatch) {
-						const serverVersion = versionMatch[1];
-						const agentVersion = req.query.currentVersion || serverVersion;
-
-						// Proper semantic version comparison: only update if server version is NEWER
-						const hasUpdate = compareVersions(serverVersion, agentVersion) > 0;
-
-						return res.json({
-							currentVersion: agentVersion,
-							latestVersion: serverVersion,
-							hasUpdate: hasUpdate,
-							downloadUrl: `/api/v1/hosts/agent/download?arch=${architecture}`,
-							releaseNotes: `PatchMon Agent v${serverVersion}`,
-							minServerVersion: null,
-							architecture: architecture,
-							agentType: "go",
-						});
+						serverVersion = versionMatch[1];
 					}
 				} catch (execError) {
-					// Execution failed, but binary exists - try to get version another way
+					// Execution failed (likely cross-architecture) - try alternative method
 					console.warn(
-						`Failed to execute binary ${binaryName} to get version: ${execError.message}`,
+						`Failed to execute binary ${binaryName} to get version (may be cross-architecture): ${execError.message}`,
 					);
-					// Fall through to error response
+
+					// Try method 2: Extract version using strings command (works for cross-architecture)
+					try {
+						const { stdout: stringsOutput } = await execAsync(
+							`strings "${binaryPath}" | grep -E "PatchMon Agent v[0-9]+\\.[0-9]+\\.[0-9]+" | head -1`,
+							{
+								timeout: 10000,
+							},
+						);
+
+						const versionMatch = stringsOutput.match(
+							/PatchMon Agent v([0-9]+\.[0-9]+\.[0-9]+)/i,
+						);
+
+						if (versionMatch) {
+							serverVersion = versionMatch[1];
+							console.log(
+								`✅ Extracted version ${serverVersion} from binary using strings command`,
+							);
+						}
+					} catch (stringsError) {
+						console.warn(
+							`Failed to extract version using strings command: ${stringsError.message}`,
+						);
+					}
 				}
+
+				// If we successfully got the version, return it
+				if (serverVersion) {
+					const agentVersion = req.query.currentVersion || serverVersion;
+
+					// Proper semantic version comparison: only update if server version is NEWER
+					const hasUpdate = compareVersions(serverVersion, agentVersion) > 0;
+
+					return res.json({
+						currentVersion: agentVersion,
+						latestVersion: serverVersion,
+						hasUpdate: hasUpdate,
+						downloadUrl: `/api/v1/hosts/agent/download?arch=${architecture}`,
+						releaseNotes: `PatchMon Agent v${serverVersion}`,
+						minServerVersion: null,
+						architecture: architecture,
+						agentType: "go",
+					});
+				}
+
+				// If we couldn't get version, fall through to error response
+				console.warn(
+					`Could not determine version for binary ${binaryName} using any method`,
+				);
 			}
 
 			// Binary doesn't exist or couldn't get version - return error
