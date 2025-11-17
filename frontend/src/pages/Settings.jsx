@@ -917,7 +917,7 @@ const Settings = () => {
 												key={m}
 												type="button"
 												onClick={() => handleInputChange("updateInterval", m)}
-												className={`px-3 py-1.5 rounded-full text-xs font-medium border ${
+												className={`px-3 py-1.5 rounded-md text-xs font-medium border ${
 													formData.updateInterval === m
 														? "bg-primary-600 text-white border-primary-600"
 														: "bg-white dark:bg-secondary-700 text-secondary-700 dark:text-secondary-200 border-secondary-300 dark:border-secondary-600 hover:bg-secondary-50 dark:hover:bg-secondary-600"

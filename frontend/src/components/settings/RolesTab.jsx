@@ -318,7 +318,7 @@ const RolePermissionsCard = ({
 							{role.role}
 						</h3>
 						{isBuiltInRole && (
-							<span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary-100 text-primary-800">
+							<span className="ml-2 inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium bg-primary-100 text-primary-800">
 								Built-in Role
 							</span>
 						)}

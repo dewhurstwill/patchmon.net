@@ -32,7 +32,7 @@ const AlertChannels = () => {
 							including email, Slack, Discord, and webhooks.
 						</p>
 						<div className="mt-3">
-							<span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-primary-100 text-primary-800 dark:bg-primary-900 dark:text-primary-200">
+							<span className="inline-flex items-center px-2.5 py-0.5 rounded-md text-xs font-medium bg-primary-100 text-primary-800 dark:bg-primary-900 dark:text-primary-200">
 								In Development
 							</span>
 						</div>

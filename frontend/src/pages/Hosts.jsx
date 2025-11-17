@@ -1071,7 +1071,7 @@ const Hosts = () => {
 				const wsStatus = wsStatusMap[host.api_id];
 				if (!wsStatus) {
 					return (
-						<span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">
+						<span className="inline-flex items-center px-2 py-1 rounded-md text-xs font-medium bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400">
 							<div className="w-2 h-2 bg-gray-400 rounded-full mr-1.5"></div>
 							Unknown
 						</span>
@@ -1079,7 +1079,7 @@ const Hosts = () => {
 				}
 				return (
 					<span
-						className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium ${
+						className={`inline-flex items-center px-2 py-1 rounded-md text-xs font-medium ${
 							wsStatus.connected
 								? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
 								: "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200"
@@ -1110,12 +1110,12 @@ const Hosts = () => {
 				return (
 					<div className="flex justify-center">
 						{host.needs_reboot ? (
-							<span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200">
+							<span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200">
 								<RotateCcw className="h-3 w-3" />
 								Required
 							</span>
 						) : (
-							<span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+							<span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
 								<CheckCircle className="h-3 w-3" />
 								No
 							</span>
