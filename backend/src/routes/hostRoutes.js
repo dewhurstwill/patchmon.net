@@ -170,111 +170,65 @@ router.get("/agent/version", async (req, res) => {
 			});
 		} else {
 			// Go agent version check
-			// Detect server architecture and map to Go architecture names
-			const os = require("node:os");
+			// Always check the server's local binary for the requested architecture
+			// The server's agents folder is the source of truth, not GitHub
 			const { exec } = require("node:child_process");
 			const { promisify } = require("node:util");
 			const execAsync = promisify(exec);
 
-			const serverArch = os.arch();
-			// Map Node.js architecture to Go architecture names
-			const archMap = {
-				x64: "amd64",
-				ia32: "386",
-				arm64: "arm64",
-				arm: "arm",
-			};
-			const serverGoArch = archMap[serverArch] || serverArch;
+			const binaryName = `patchmon-agent-linux-${architecture}`;
+			const binaryPath = path.join(__dirname, "../../../agents", binaryName);
 
-			// If requested architecture matches server architecture, execute the binary
-			if (architecture === serverGoArch) {
-				const binaryName = `patchmon-agent-linux-${architecture}`;
-				const binaryPath = path.join(__dirname, "../../../agents", binaryName);
-
-				if (!fs.existsSync(binaryPath)) {
-					// Binary doesn't exist, fall back to GitHub
-					console.log(`Binary ${binaryName} not found, falling back to GitHub`);
-				} else {
-					// Execute the binary to get its version
-					try {
-						const { stdout } = await execAsync(`${binaryPath} --help`, {
-							timeout: 10000,
-						});
-
-						// Parse version from help output (e.g., "PatchMon Agent v1.3.1")
-						const versionMatch = stdout.match(
-							/PatchMon Agent v([0-9]+\.[0-9]+\.[0-9]+)/i,
-						);
-
-						if (versionMatch) {
-							const serverVersion = versionMatch[1];
-							const agentVersion = req.query.currentVersion || serverVersion;
-
-							// Proper semantic version comparison: only update if server version is NEWER
-							const hasUpdate =
-								compareVersions(serverVersion, agentVersion) > 0;
-
-							return res.json({
-								currentVersion: agentVersion,
-								latestVersion: serverVersion,
-								hasUpdate: hasUpdate,
-								downloadUrl: `/api/v1/hosts/agent/download?arch=${architecture}`,
-								releaseNotes: `PatchMon Agent v${serverVersion}`,
-								minServerVersion: null,
-								architecture: architecture,
-								agentType: "go",
-							});
-						}
-					} catch (execError) {
-						// Execution failed, fall back to GitHub
-						console.log(
-							`Failed to execute binary ${binaryName}: ${execError.message}, falling back to GitHub`,
-						);
-					}
-				}
-			}
-
-			// Fall back to GitHub if architecture doesn't match or binary execution failed
-			try {
-				const versionInfo = await agentVersionService.getVersionInfo();
-				const latestVersion = versionInfo.latestVersion;
-				const agentVersion =
-					req.query.currentVersion || latestVersion || "unknown";
-
-				if (!latestVersion) {
-					return res.status(503).json({
-						error: "Unable to determine latest version from GitHub releases",
-						currentVersion: agentVersion,
-						latestVersion: null,
-						hasUpdate: false,
+			if (fs.existsSync(binaryPath)) {
+				// Binary exists in server's agents folder - use its version
+				try {
+					const { stdout } = await execAsync(`${binaryPath} --help`, {
+						timeout: 10000,
 					});
+
+					// Parse version from help output (e.g., "PatchMon Agent v1.3.1")
+					const versionMatch = stdout.match(
+						/PatchMon Agent v([0-9]+\.[0-9]+\.[0-9]+)/i,
+					);
+
+					if (versionMatch) {
+						const serverVersion = versionMatch[1];
+						const agentVersion = req.query.currentVersion || serverVersion;
+
+						// Proper semantic version comparison: only update if server version is NEWER
+						const hasUpdate = compareVersions(serverVersion, agentVersion) > 0;
+
+						return res.json({
+							currentVersion: agentVersion,
+							latestVersion: serverVersion,
+							hasUpdate: hasUpdate,
+							downloadUrl: `/api/v1/hosts/agent/download?arch=${architecture}`,
+							releaseNotes: `PatchMon Agent v${serverVersion}`,
+							minServerVersion: null,
+							architecture: architecture,
+							agentType: "go",
+						});
+					}
+				} catch (execError) {
+					// Execution failed, but binary exists - try to get version another way
+					console.warn(
+						`Failed to execute binary ${binaryName} to get version: ${execError.message}`,
+					);
+					// Fall through to error response
 				}
-
-				// Proper semantic version comparison: only update if latest version is NEWER
-				const hasUpdate =
-					latestVersion !== null &&
-					compareVersions(latestVersion, agentVersion) > 0;
-
-				res.json({
-					currentVersion: agentVersion,
-					latestVersion: latestVersion,
-					hasUpdate: hasUpdate,
-					downloadUrl: `/api/v1/hosts/agent/download?arch=${architecture}`,
-					releaseNotes: `PatchMon Agent v${latestVersion}`,
-					minServerVersion: null,
-					architecture: architecture,
-					agentType: "go",
-				});
-			} catch (serviceError) {
-				console.error(
-					"Failed to get version from agentVersionService:",
-					serviceError.message,
-				);
-				return res.status(500).json({
-					error: "Failed to get agent version from service",
-					details: serviceError.message,
-				});
 			}
+
+			// Binary doesn't exist or couldn't get version - return error
+			// Don't fall back to GitHub - the server's agents folder is the source of truth
+			const agentVersion = req.query.currentVersion || "unknown";
+			return res.status(404).json({
+				error: `Agent binary not found for architecture: ${architecture}. Please ensure the binary is in the server's agents folder.`,
+				currentVersion: agentVersion,
+				latestVersion: null,
+				hasUpdate: false,
+				architecture: architecture,
+				agentType: "go",
+			});
 		}
 	} catch (error) {
 		console.error("Version check error:", error);
