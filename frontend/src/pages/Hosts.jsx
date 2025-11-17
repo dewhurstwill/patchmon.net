@@ -248,7 +248,6 @@ const Hosts = () => {
 		const showFiltersParam = searchParams.get("showFilters");
 		const osFilterParam = searchParams.get("osFilter");
 		const groupParam = searchParams.get("group");
-		const rebootParam = searchParams.get("reboot");
 
 		if (filter === "needsUpdates") {
 			setShowFilters(true);
@@ -1219,7 +1218,7 @@ const Hosts = () => {
 		navigate("/hosts", { replace: true });
 	};
 
-	const handleUpToDateClick = () => {
+	const _handleUpToDateClick = () => {
 		// Filter to show only up-to-date hosts
 		setStatusFilter("active");
 		setShowFilters(true);

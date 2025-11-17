@@ -12,7 +12,6 @@ const {
 } = require("../middleware/permissions");
 const { queueManager, QUEUE_NAMES } = require("../services/automation");
 const { pushIntegrationToggle, isConnected } = require("../services/agentWs");
-const agentVersionService = require("../services/agentVersionService");
 const { compareVersions } = require("../services/automation/shared/utils");
 
 const router = express.Router();
