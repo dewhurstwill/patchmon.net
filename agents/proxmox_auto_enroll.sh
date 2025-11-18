@@ -197,6 +197,40 @@ while IFS= read -r line; do
         continue
     fi
 
+    # Check if agent is already installed and working BEFORE enrollment
+    info "  Checking if agent is already configured..."
+    config_check=$(timeout 10 pct exec "$vmid" -- bash -c "
+        if [[ -f /etc/patchmon/config.yml ]] && [[ -f /etc/patchmon/credentials.yml ]]; then
+            if [[ -f /usr/local/bin/patchmon-agent ]]; then
+                # Try to ping using existing configuration
+                if /usr/local/bin/patchmon-agent ping >/dev/null 2>&1; then
+                    echo 'ping_success'
+                else
+                    echo 'ping_failed'
+                fi
+            else
+                echo 'binary_missing'
+            fi
+        else
+            echo 'not_configured'
+        fi
+    " 2>/dev/null </dev/null || echo "error")
+
+    if [[ "$config_check" == "ping_success" ]]; then
+        info "  ✓ Host already enrolled and agent ping successful - skipping enrollment"
+        ((skipped_count++)) || true
+        echo ""
+        continue
+    elif [[ "$config_check" == "ping_failed" ]]; then
+        warn "  ⚠ Agent configuration exists but ping failed - will re-enroll and reinstall"
+    elif [[ "$config_check" == "binary_missing" ]]; then
+        warn "  ⚠ Config exists but agent binary missing - will re-enroll and reinstall"
+    elif [[ "$config_check" == "not_configured" ]]; then
+        info "  ℹ Agent not yet configured - proceeding with enrollment"
+    else
+        warn "  ⚠ Could not check agent status - proceeding with enrollment"
+    fi
+
     # Call PatchMon auto-enrollment API
     info "  Enrolling $friendly_name in PatchMon..."
     
@@ -229,40 +263,6 @@ while IFS= read -r line; do
         fi
 
         info "  ✓ Host enrolled successfully: $api_id"
-
-        # Check if agent is already installed and working
-        info "  Checking if agent is already configured..."
-        config_check=$(timeout 10 pct exec "$vmid" -- bash -c "
-            if [[ -f /etc/patchmon/config.yml ]] && [[ -f /etc/patchmon/credentials.yml ]]; then
-                if [[ -f /usr/local/bin/patchmon-agent ]]; then
-                    # Try to ping using existing configuration
-                    if /usr/local/bin/patchmon-agent ping >/dev/null 2>&1; then
-                        echo 'ping_success'
-                    else
-                        echo 'ping_failed'
-                    fi
-                else
-                    echo 'binary_missing'
-                fi
-            else
-                echo 'not_configured'
-            fi
-        " 2>/dev/null </dev/null || echo "error")
-
-        if [[ "$config_check" == "ping_success" ]]; then
-            info "  ✓ Host already enrolled and agent ping successful - skipping"
-            ((skipped_count++)) || true
-            echo ""
-            continue
-        elif [[ "$config_check" == "ping_failed" ]]; then
-            warn "  ⚠ Agent configuration exists but ping failed - will reinstall"
-        elif [[ "$config_check" == "binary_missing" ]]; then
-            warn "  ⚠ Config exists but agent binary missing - will reinstall"
-        elif [[ "$config_check" == "not_configured" ]]; then
-            info "  ℹ Agent not yet configured - proceeding with installation"
-        else
-            warn "  ⚠ Could not check agent status - proceeding with installation"
-        fi
 
         # Ensure curl is installed in the container
         info "  Checking for curl in container..."
