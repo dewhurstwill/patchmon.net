@@ -1013,29 +1013,25 @@ const HostDetail = () => {
 												</div>
 											)}
 
-											{(host.kernel_version ||
-												host.installed_kernel_version) && (
-												<div className="flex flex-col gap-2">
-													{host.kernel_version && (
-														<div>
-															<p className="text-xs text-secondary-500 dark:text-secondary-300 mb-1">
-																Running Kernel
-															</p>
-															<p className="font-medium text-secondary-900 dark:text-white font-mono text-sm break-all">
-																{host.kernel_version}
-															</p>
-														</div>
-													)}
-													{host.installed_kernel_version && (
-														<div>
-															<p className="text-xs text-secondary-500 dark:text-secondary-300 mb-1">
-																Installed Kernel
-															</p>
-															<p className="font-medium text-secondary-900 dark:text-white font-mono text-sm break-all">
-																{host.installed_kernel_version}
-															</p>
-														</div>
-													)}
+											{host.kernel_version && (
+												<div>
+													<p className="text-xs text-secondary-500 dark:text-secondary-300">
+														Running Kernel
+													</p>
+													<p className="font-medium text-secondary-900 dark:text-white font-mono text-sm break-all">
+														{host.kernel_version}
+													</p>
+												</div>
+											)}
+
+											{host.installed_kernel_version && (
+												<div>
+													<p className="text-xs text-secondary-500 dark:text-secondary-300">
+														Installed Kernel
+													</p>
+													<p className="font-medium text-secondary-900 dark:text-white font-mono text-sm break-all">
+														{host.installed_kernel_version}
+													</p>
 												</div>
 											)}
 

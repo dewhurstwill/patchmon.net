@@ -103,6 +103,7 @@ model hosts {
   gateway_ip              String?
   hostname                String?
   kernel_version          String?
+  installed_kernel_version String?
   load_average             Json?
   network_interfaces      Json?
   ram_installed           Int?

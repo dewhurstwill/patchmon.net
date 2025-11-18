@@ -649,11 +649,27 @@ const Hosts = () => {
 		);
 	};
 
-	const handleSelectAll = () => {
-		if (selectedHosts.length === hosts.length) {
-			setSelectedHosts([]);
+	const handleSelectAll = (hostsToSelect) => {
+		const hostIdsToSelect = hostsToSelect.map((host) => host.id);
+		const allSelected = hostIdsToSelect.every((id) =>
+			selectedHosts.includes(id),
+		);
+		if (allSelected) {
+			// Deselect all hosts in this group
+			setSelectedHosts((prev) =>
+				prev.filter((id) => !hostIdsToSelect.includes(id)),
+			);
 		} else {
-			setSelectedHosts(hosts.map((host) => host.id));
+			// Select all hosts in this group (merge with existing selections)
+			setSelectedHosts((prev) => {
+				const newSelection = [...prev];
+				hostIdsToSelect.forEach((id) => {
+					if (!newSelection.includes(id)) {
+						newSelection.push(id);
+					}
+				});
+				return newSelection;
+			});
 		}
 	};
 
@@ -1655,11 +1671,14 @@ const Hosts = () => {
 																		{column.id === "select" ? (
 																			<button
 																				type="button"
-																				onClick={handleSelectAll}
+																				onClick={() =>
+																					handleSelectAll(groupHosts)
+																				}
 																				className="flex items-center gap-2 hover:text-secondary-700"
 																			>
-																				{selectedHosts.length ===
-																				groupHosts.length ? (
+																				{groupHosts.every((host) =>
+																					selectedHosts.includes(host.id),
+																				) ? (
 																					<CheckSquare className="h-4 w-4" />
 																				) : (
 																					<Square className="h-4 w-4" />
