@@ -1,5 +1,7 @@
 require("dotenv").config();
 
+const { getPermissionBasedPreferences } = require("./helpers");
+
 // Validate required environment variables on startup
 function validateEnvironmentVariables() {
 	const requiredVars = {
@@ -48,30 +50,8 @@ const {
 const winston = require("winston");
 
 // Import routes
-const authRoutes = require("./routes/authRoutes");
-const hostRoutes = require("./routes/hostRoutes");
-const hostGroupRoutes = require("./routes/hostGroupRoutes");
-const packageRoutes = require("./routes/packageRoutes");
-const dashboardRoutes = require("./routes/dashboardRoutes");
-const permissionsRoutes = require("./routes/permissionsRoutes");
-const settingsRoutes = require("./routes/settingsRoutes");
-const {
-	router: dashboardPreferencesRoutes,
-} = require("./routes/dashboardPreferencesRoutes");
-const repositoryRoutes = require("./routes/repositoryRoutes");
-const versionRoutes = require("./routes/versionRoutes");
-const tfaRoutes = require("./routes/tfaRoutes");
-const searchRoutes = require("./routes/searchRoutes");
-const autoEnrollmentRoutes = require("./routes/autoEnrollmentRoutes");
-const gethomepageRoutes = require("./routes/gethomepageRoutes");
-const automationRoutes = require("./routes/automationRoutes");
-const dockerRoutes = require("./routes/dockerRoutes");
-const integrationRoutes = require("./routes/integrationRoutes");
-const wsRoutes = require("./routes/wsRoutes");
-const agentVersionRoutes = require("./routes/agentVersionRoutes");
-const metricsRoutes = require("./routes/metricsRoutes");
-const userPreferencesRoutes = require("./routes/userPreferencesRoutes");
-const apiHostsRoutes = require("./routes/apiHostsRoutes");
+import routes from "./routes";
+
 const { initSettings } = require("./services/settingsService");
 const { queueManager } = require("./services/automation");
 const { authenticateToken, requireAdmin } = require("./middleware/auth");
@@ -441,6 +421,7 @@ const authLimiter = rateLimit({
 	legacyHeaders: false,
 	skipSuccessfulRequests: true,
 });
+
 const agentLimiter = rateLimit({
 	windowMs: parseInt(process.env.AGENT_RATE_LIMIT_WINDOW_MS, 10) || 60 * 1000,
 	max: parseInt(process.env.AGENT_RATE_LIMIT_MAX, 10) || 1000,
@@ -456,32 +437,35 @@ const agentLimiter = rateLimit({
 	skipSuccessfulRequests: true,
 });
 
-app.use(`/api/${apiVersion}/auth`, authLimiter, authRoutes);
-app.use(`/api/${apiVersion}/hosts`, agentLimiter, hostRoutes);
-app.use(`/api/${apiVersion}/host-groups`, hostGroupRoutes);
-app.use(`/api/${apiVersion}/packages`, packageRoutes);
-app.use(`/api/${apiVersion}/dashboard`, dashboardRoutes);
-app.use(`/api/${apiVersion}/permissions`, permissionsRoutes);
-app.use(`/api/${apiVersion}/settings`, settingsRoutes);
-app.use(`/api/${apiVersion}/dashboard-preferences`, dashboardPreferencesRoutes);
-app.use(`/api/${apiVersion}/repositories`, repositoryRoutes);
-app.use(`/api/${apiVersion}/version`, versionRoutes);
-app.use(`/api/${apiVersion}/tfa`, tfaRoutes);
-app.use(`/api/${apiVersion}/search`, searchRoutes);
+app.use(`/api/${apiVersion}/auth`, authLimiter, routes.authRoutes);
+app.use(`/api/${apiVersion}/hosts`, agentLimiter, routes.hostRoutes);
+app.use(`/api/${apiVersion}/host-groups`, routes.hostGroupRoutes);
+app.use(`/api/${apiVersion}/packages`, routes.packageRoutes);
+app.use(`/api/${apiVersion}/dashboard`, routes.dashboardRoutes);
+app.use(`/api/${apiVersion}/permissions`, routes.permissionsRoutes);
+app.use(`/api/${apiVersion}/settings`, routes.settingsRoutes);
+app.use(
+	`/api/${apiVersion}/dashboard-preferences`,
+	routes.dashboardPreferencesRoutes,
+);
+app.use(`/api/${apiVersion}/repositories`, routes.repositoryRoutes);
+app.use(`/api/${apiVersion}/version`, routes.versionRoutes);
+app.use(`/api/${apiVersion}/tfa`, routes.tfaRoutes);
+app.use(`/api/${apiVersion}/search`, routes.searchRoutes);
 app.use(
 	`/api/${apiVersion}/auto-enrollment`,
 	authLimiter,
-	autoEnrollmentRoutes,
+	routes.autoEnrollmentRoutes,
 );
-app.use(`/api/${apiVersion}/gethomepage`, gethomepageRoutes);
-app.use(`/api/${apiVersion}/automation`, automationRoutes);
-app.use(`/api/${apiVersion}/docker`, dockerRoutes);
-app.use(`/api/${apiVersion}/integrations`, integrationRoutes);
-app.use(`/api/${apiVersion}/ws`, wsRoutes);
-app.use(`/api/${apiVersion}/agent`, agentVersionRoutes);
-app.use(`/api/${apiVersion}/metrics`, metricsRoutes);
-app.use(`/api/${apiVersion}/user/preferences`, userPreferencesRoutes);
-app.use(`/api/${apiVersion}/api`, authLimiter, apiHostsRoutes);
+app.use(`/api/${apiVersion}/gethomepage`, routes.gethomepageRoutes);
+app.use(`/api/${apiVersion}/automation`, routes.automationRoutes);
+app.use(`/api/${apiVersion}/docker`, routes.dockerRoutes);
+app.use(`/api/${apiVersion}/integrations`, routes.integrationRoutes);
+app.use(`/api/${apiVersion}/ws`, routes.wsRoutes);
+app.use(`/api/${apiVersion}/agent`, routes.agentVersionRoutes);
+app.use(`/api/${apiVersion}/metrics`, routes.metricsRoutes);
+app.use(`/api/${apiVersion}/user/preferences`, routes.userPreferencesRoutes);
+app.use(`/api/${apiVersion}/api`, authLimiter, routes.apiHostsRoutes);
 
 // Bull Board - will be populated after queue manager initializes
 let bullBoardRouter = null;
@@ -712,148 +696,6 @@ async function initializeDashboardPreferences() {
 		console.error("❌ Error initializing dashboard preferences:", error);
 		throw error;
 	}
-}
-
-// Helper function to get user permissions based on role
-async function getUserPermissions(userRole) {
-	try {
-		const permissions = await prisma.role_permissions.findUnique({
-			where: { role: userRole },
-		});
-
-		// If no specific permissions found, return default admin permissions (for backward compatibility)
-		if (!permissions) {
-			console.warn(
-				`No permissions found for role: ${userRole}, defaulting to admin access`,
-			);
-			return {
-				can_view_dashboard: true,
-				can_view_hosts: true,
-				can_manage_hosts: true,
-				can_view_packages: true,
-				can_manage_packages: true,
-				can_view_users: true,
-				can_manage_users: true,
-				can_view_reports: true,
-				can_export_data: true,
-				can_manage_settings: true,
-			};
-		}
-
-		return permissions;
-	} catch (error) {
-		console.error("Error fetching user permissions:", error);
-		// Return admin permissions as fallback
-		return {
-			can_view_dashboard: true,
-			can_view_hosts: true,
-			can_manage_hosts: true,
-			can_view_packages: true,
-			can_manage_packages: true,
-			can_view_users: true,
-			can_manage_users: true,
-			can_view_reports: true,
-			can_export_data: true,
-			can_manage_settings: true,
-		};
-	}
-}
-
-// Helper function to get permission-based dashboard preferences for a role
-async function getPermissionBasedPreferences(userRole) {
-	// Get user's actual permissions
-	const permissions = await getUserPermissions(userRole);
-
-	// Define all possible dashboard cards with their required permissions
-	const allCards = [
-		// Host-related cards
-		{ cardId: "totalHosts", requiredPermission: "can_view_hosts", order: 0 },
-		{
-			cardId: "hostsNeedingUpdates",
-			requiredPermission: "can_view_hosts",
-			order: 1,
-		},
-
-		// Package-related cards
-		{
-			cardId: "totalOutdatedPackages",
-			requiredPermission: "can_view_packages",
-			order: 2,
-		},
-		{
-			cardId: "securityUpdates",
-			requiredPermission: "can_view_packages",
-			order: 3,
-		},
-
-		// Host-related cards (continued)
-		{
-			cardId: "totalHostGroups",
-			requiredPermission: "can_view_hosts",
-			order: 4,
-		},
-		{ cardId: "upToDateHosts", requiredPermission: "can_view_hosts", order: 5 },
-
-		// Repository-related cards
-		{ cardId: "totalRepos", requiredPermission: "can_view_hosts", order: 6 }, // Repos are host-related
-
-		// User management cards (admin only)
-		{ cardId: "totalUsers", requiredPermission: "can_view_users", order: 7 },
-
-		// System/Report cards
-		{
-			cardId: "osDistribution",
-			requiredPermission: "can_view_reports",
-			order: 8,
-		},
-		{
-			cardId: "osDistributionBar",
-			requiredPermission: "can_view_reports",
-			order: 9,
-		},
-		{
-			cardId: "osDistributionDoughnut",
-			requiredPermission: "can_view_reports",
-			order: 10,
-		},
-		{
-			cardId: "recentCollection",
-			requiredPermission: "can_view_hosts",
-			order: 11,
-		}, // Collection is host-related
-		{
-			cardId: "updateStatus",
-			requiredPermission: "can_view_reports",
-			order: 12,
-		},
-		{
-			cardId: "packagePriority",
-			requiredPermission: "can_view_packages",
-			order: 13,
-		},
-		{
-			cardId: "packageTrends",
-			requiredPermission: "can_view_packages",
-			order: 14,
-		},
-		{ cardId: "recentUsers", requiredPermission: "can_view_users", order: 15 },
-		{
-			cardId: "quickStats",
-			requiredPermission: "can_view_dashboard",
-			order: 16,
-		},
-	];
-
-	// Filter cards based on user's permissions
-	const allowedCards = allCards.filter((card) => {
-		return permissions[card.requiredPermission] === true;
-	});
-
-	return allowedCards.map((card) => ({
-		cardId: card.cardId,
-		enabled: true,
-		order: card.order, // Preserve original order from allCards
-	}));
 }
 
 // Start server with database health check
