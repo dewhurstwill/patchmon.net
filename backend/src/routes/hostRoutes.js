@@ -506,6 +506,10 @@ router.post(
 			.optional()
 			.isString()
 			.withMessage("Kernel version must be a string"),
+		body("installedKernelVersion")
+			.optional()
+			.isString()
+			.withMessage("Installed kernel version must be a string"),
 		body("selinuxStatus")
 			.optional()
 			.isIn(["enabled", "disabled", "permissive"])
@@ -587,6 +591,8 @@ router.post(
 			// System Information
 			if (req.body.kernelVersion)
 				updateData.kernel_version = req.body.kernelVersion;
+			if (req.body.installedKernelVersion)
+				updateData.installed_kernel_version = req.body.installedKernelVersion;
 			if (req.body.selinuxStatus)
 				updateData.selinux_status = req.body.selinuxStatus;
 			if (req.body.systemUptime)
